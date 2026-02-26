@@ -1,0 +1,7 @@
+config/gitconfig-agent
+config/config.toml
+*.bak.*
+__pycache__/
+*.pyc
+scripts/__pycache__/
+agent/settings.json

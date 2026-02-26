@@ -1,0 +1,75 @@
+# Copy to config.toml and replace ALL placeholder values.
+# This file intentionally uses dummy values for open-source safety.
+
+[sandbox]
+image = "example/pi-sandbox:latest"
+containerfile = "~/.config/pi-sandbox/Containerfile"
+sandbox_pi_dir = "~/.pi/agent-sandbox"
+host_pi_dir = "~/.pi/agent"
+host_claude_dir = "~/.claude"
+cache_dir = "~/.cache/pi-sandbox"
+gitconfig_path = "~/.config/pi-sandbox/gitconfig-agent"
+auth_key = "~/.ssh/pi-agent-auth"
+sign_key = "~/.ssh/pi-agent-signing"
+bootstrap_files = ["auth.json", "models.json"]
+container_boot_dirs = ["/home/dev/.ssh", "/home/dev/.config/example-tool"]
+passthrough_env = ["EXAMPLE_API_KEY"]
+
+# Base mounts (replace with paths you actually need)
+[[mount]]
+host = "~/path/to/pi/prompts"
+container = "/home/dev/.pi/agent-host/prompts"
+mode = "ro"
+kind = "dir"
+optional = true
+
+[[mount]]
+host = "~/path/to/shared/skills"
+container = "/home/dev/.claude/skills"
+mode = "ro"
+kind = "dir"
+optional = true
+
+# Generic tool example
+[[tool]]
+name = "example-tool"
+path = "~/path/to/example-tool"
+container_path = "/usr/local/bin/example-tool"
+mode = "ro"
+optional = true
+
+[[tool.directory]]
+host = "~/.config/example-tool"
+container = "/home/dev/.config/example-tool"
+mode = "rw"
+kind = "dir"
+create = true
+
+[[tool.secret]]
+env = "EXAMPLE_TOOL_TOKEN"
+from_env = "EXAMPLE_TOOL_TOKEN"
+
+[[tool.secret]]
+env = "EXAMPLE_TOOL_TOKEN"
+secret_store = { service = "example-service", username = "example-user" }
+
+# Generic secret example
+[[secret]]
+env = "EXAMPLE_GH_TOKEN"
+from_env = "EXAMPLE_GH_TOKEN"
+
+[[secret]]
+env = "EXAMPLE_GH_TOKEN"
+secret_store = { service = "example-gh-service", account = "example-account" }
+
+[browser]
+enabled = false
+command = "your-browser-command"
+profile_dir = "~/.cache/pi-sandbox/browser-profile"
+debug_port = 9222
+pi_skill_path = "/home/dev/example-browser-skill"
+command_args = []
+
+[update]
+pi_spec = "@mariozechner/pi-coding-agent"
+minimum_release_age = 1440

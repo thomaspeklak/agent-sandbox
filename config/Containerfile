@@ -1,0 +1,63 @@
+FROM registry.fedoraproject.org/fedora:41
+
+RUN dnf -y update && \
+    dnf -y install \
+      bash \
+      ca-certificates \
+      coreutils \
+      diffutils \
+      fd-find \
+      file \
+      findutils \
+      gcc \
+      gcc-c++ \
+      gh \
+      git \
+      grep \
+      ImageMagick \
+      jq \
+      less \
+      make \
+      nodejs \
+      npm \
+      pnpm \
+      openssh-clients \
+      patch \
+      procps-ng \
+      python3 \
+      python3-pip \
+      ripgrep \
+      rsync \
+      ruby \
+      sed \
+      socat \
+      tar \
+      tree \
+      unzip \
+      util-linux \
+      wget \
+      which \
+      xz \
+      zip && \
+    dnf clean all
+
+RUN useradd -m -u 1000 -s /bin/bash dev && \
+    mkdir -p /workspace /home/dev/.local/bin && \
+    chown -R dev:dev /workspace /home/dev
+
+ARG PNPM_MINIMUM_RELEASE_AGE=1440
+ARG PI_CODING_AGENT_SPEC=@mariozechner/pi-coding-agent
+ARG PI_REFRESH=0
+RUN mkdir -p /root/.config/pnpm /usr/local/pnpm && \
+    printf 'minimum-release-age=%s\n' "$PNPM_MINIMUM_RELEASE_AGE" > /root/.config/pnpm/rc && \
+    PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH pnpm add -g "$PI_CODING_AGENT_SPEC" && \
+    ln -sf /usr/local/pnpm/pi /usr/local/bin/pi && \
+    mkdir -p /usr/local/share && \
+    printf '%s\n' "$PI_REFRESH" > /usr/local/share/pi-refresh-marker
+
+USER dev
+WORKDIR /workspace
+
+ENV HOME=/home/dev
+ENV PNPM_HOME=/usr/local/pnpm
+ENV PATH=/home/dev/.local/bin:/usr/local/pnpm:/usr/local/bin:/usr/bin:/bin
