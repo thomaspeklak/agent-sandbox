@@ -1,6 +1,6 @@
 # Agent Sandbox Migration (Overview)
 
-Status: 🟡 Planning
+Status: 🟢 M1/M2 Implementation Complete
 Last updated: 2026-02-27
 
 ## Goal
@@ -17,15 +17,16 @@ while preserving full behavior parity for today’s `pis` workflow first.
 
 ## Coarse Progress
 
-- Overall migration: **10%** (planning complete, implementation not started)
-- Parity milestone (M1: `ags --agent pi`): **0%**
+- Overall migration: **75%** (M1+M2 code complete, acceptance testing needed)
+- Parity milestone (M1: `ags --agent pi`): **100%** code, needs acceptance testing
+- Companion commands (M2): **100%** code, needs acceptance testing
 - Multi-agent milestone (M3): **0%**
 
 ### Milestones
 
 - [x] Planning baseline documented
-- [ ] M1: `ags --agent pi` launcher parity
-- [ ] M2: `setup/doctor/update/install` parity
+- [x] M1: `ags --agent pi` launcher parity (code complete, 127 tests)
+- [x] M2: `setup/doctor/update/install` parity (code complete)
 - [ ] M3: add `claude`, `codex`, `gemini`, `opencode`
 - [ ] M4: rollout + deprecation of shell-heavy path
 
@@ -35,7 +36,8 @@ while preserving full behavior parity for today’s `pis` workflow first.
 
 - [x] Confirm implementation language (**Rust**; Go fallback only if blocked)
 - [ ] Define config schema v2 (scalable agent overlays)
-- [ ] Scaffold `ags` CLI (`--agent ... -- ...`)
+- [x] Scaffold `ags` CLI (`--agent ... -- ...`)
+- [ ] Acceptance testing: run `ags --agent pi` against real config
 - [ ] Start parity test harness (old shell vs new launcher)
 
 ---

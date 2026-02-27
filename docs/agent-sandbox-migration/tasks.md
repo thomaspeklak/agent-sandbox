@@ -2,30 +2,30 @@
 
 ## Phase 0 — Foundation
 - [x] Confirm language choice (Rust / Go fallback)
-- [ ] Scaffold compiled launcher project
+- [x] Scaffold compiled launcher project
 - [ ] Add CI build + lint + test pipeline
 - [ ] Add migration docs + ADR for language decision
 
 ## Phase 1 — Config + Plan Engine
-- [ ] Parse/validate existing config schema parity
-- [ ] Implement normalized launch-plan model
-- [ ] Implement mount expansion from `[[tool]]`
-- [ ] Implement secret source resolution (`env`, `secret-tool`)
+- [x] Parse/validate existing config schema parity
+- [x] Implement normalized launch-plan model
+- [x] Implement mount expansion from `[[tool]]`
+- [x] Implement secret source resolution (`env`, `secret-tool`)
 
 ## Phase 2 — `pi` Runtime Parity
-- [ ] Podman image ensure/build parity
-- [ ] Gitconfig bootstrap parity
-- [ ] Dedicated SSH agent parity
-- [ ] Browser sidecar parity
-- [ ] Wayland/clipboard parity
-- [ ] External git metadata mount parity (worktree support)
-- [ ] `ags --agent pi` command parity
+- [x] Podman image ensure/build parity
+- [x] Gitconfig bootstrap parity
+- [x] Dedicated SSH agent parity
+- [x] Browser sidecar parity
+- [x] Wayland/clipboard parity
+- [x] External git metadata mount parity (worktree support)
+- [x] `ags --agent pi` command parity
 
 ## Phase 3 — Companion Commands Parity
-- [ ] `ags setup` parity
-- [ ] `ags doctor` parity
-- [ ] `ags update` parity
-- [ ] `ags install` / `ags uninstall` parity
+- [x] `ags setup` parity
+- [x] `ags doctor` parity
+- [x] `ags update` parity
+- [x] `ags install` / `ags uninstall` parity
 - [ ] Keep `pis*` wrappers for compatibility
 
 ## Phase 4 — Additional Agent Adapters
