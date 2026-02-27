@@ -54,7 +54,23 @@ if [[ "$CONTAINER_WORKDIR" != /* ]]; then
   CONTAINER_WORKDIR="$WORKDIR"
 fi
 
-mkdir -p "$CACHE_DIR" "$SANDBOX_PI_DIR/extensions"
+PNPM_HOME_CONTAINER="/home/dev/.local/share/pnpm"
+CARGO_HOME_CONTAINER="/home/dev/.cargo"
+GOPATH_CONTAINER="/home/dev/go"
+GOCACHE_CONTAINER="/home/dev/.cache/go-build"
+
+PNPM_HOME_HOST="$CACHE_DIR/pnpm-home"
+CARGO_HOME_HOST="$CACHE_DIR/cargo-home"
+GOPATH_HOST="$CACHE_DIR/go-path"
+GOCACHE_HOST="$CACHE_DIR/go-build"
+
+mkdir -p \
+  "$CACHE_DIR" \
+  "$SANDBOX_PI_DIR/extensions" \
+  "$PNPM_HOME_HOST" \
+  "$CARGO_HOME_HOST" \
+  "$GOPATH_HOST" \
+  "$GOCACHE_HOST"
 
 if [[ ! -f "$CONTAINERFILE" ]]; then
   echo "Missing Containerfile: $CONTAINERFILE" >&2
@@ -331,6 +347,10 @@ PODMAN_ARGS=(
   -e PI_CODING_AGENT_DIR=/home/dev/.pi/agent
   -e GIT_CONFIG_GLOBAL=/home/dev/.config/pi-sandbox/gitconfig
   -e SSH_AUTH_SOCK=/ssh-agent
+  -e PNPM_HOME="$PNPM_HOME_CONTAINER"
+  -e CARGO_HOME="$CARGO_HOME_CONTAINER"
+  -e GOPATH="$GOPATH_CONTAINER"
+  -e GOCACHE="$GOCACHE_CONTAINER"
   -e TERM
   -e COLORTERM
   -e EDITOR
@@ -340,6 +360,10 @@ PODMAN_ARGS=(
   -w "$CONTAINER_WORKDIR"
   -v "$SANDBOX_PI_DIR:/home/dev/.pi/agent:rw"
   -v "$GITCFG_PATH:/home/dev/.config/pi-sandbox/gitconfig:ro"
+  -v "$PNPM_HOME_HOST:$PNPM_HOME_CONTAINER:rw"
+  -v "$CARGO_HOME_HOST:$CARGO_HOME_CONTAINER:rw"
+  -v "$GOPATH_HOST:$GOPATH_CONTAINER:rw"
+  -v "$GOCACHE_HOST:$GOCACHE_CONTAINER:rw"
 )
 
 read_roots=("$CONTAINER_WORKDIR" "/tmp" "/home/dev/.pi/agent")

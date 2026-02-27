@@ -58,6 +58,11 @@ All mounts, tools, and secret sources come from:
 
 No integration is auto-detected by hardcoded tool defaults.
 
+Built-in language/tool caches are persisted under `sandbox.cache_dir`:
+- pnpm (`pnpm-home`)
+- cargo (`cargo-home`)
+- go (`go-path`, `go-build`)
+
 Use `config/config.example.toml` as the schema/template. It contains dummy placeholders only.
 
 ### Tool + directory + secret pattern
