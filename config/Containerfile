@@ -6,6 +6,7 @@ RUN dnf -y update && \
       ca-certificates \
       coreutils \
       curl \
+      dbus-devel \
       diffutils \
       fd-find \
       file \
@@ -25,6 +26,7 @@ RUN dnf -y update && \
       pnpm \
       openssh-clients \
       patch \
+      pkgconf-pkg-config \
       procps-ng \
       python3 \
       python3-pip \
