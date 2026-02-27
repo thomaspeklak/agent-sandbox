@@ -15,6 +15,9 @@
 
 ## Command cadence (fast feedback first)
 
+Precondition: these commands apply once a Rust workspace exists (`Cargo.toml` present).
+For pre-scaffold documentation/planning tasks, record the missing workspace as expected.
+
 Run this way while implementing:
 
 1. Run `cargo check` often (after each meaningful change).

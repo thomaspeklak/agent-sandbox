@@ -16,11 +16,12 @@ Checklist:
 2) Enforce Rust guidelines:
    - file size < 400 LOC
    - no inline tests in production files
-3) Run and fix until green:
+3) Run and fix until green (when a Rust workspace exists / `Cargo.toml` is present):
    - `cargo check`
    - `cargo fmt --all` (apply if needed)
    - `cargo clippy --all-targets --all-features`
    - `cargo test --all-targets --all-features` (last)
+   - If no `Cargo.toml` exists yet, report this as a scaffold blocker instead of treating it as a code failure.
 4) Fix anything broken or inconsistent (code, docs, checklist status).
 5) If a checkbox was marked done incorrectly, correct it.
 6) If you made changes, create a follow-up commit with a clear review-fix message.

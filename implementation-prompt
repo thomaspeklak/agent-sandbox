@@ -14,8 +14,9 @@ Execution loop for this run:
 3) Implement only that scope.
 4) Keep each Rust code file < 400 LOC; split if needed.
 5) Do not write tests inside production code files; place tests in separate files.
-6) Run `cargo check` frequently during implementation.
-7) Before wrapping up, run in this order:
+6) If a Rust workspace exists (`Cargo.toml` present), run `cargo check` frequently during implementation.
+   - If the task is pre-scaffold (no `Cargo.toml` yet), explicitly note that cargo commands are blocked until scaffolding is done.
+7) Before wrapping up, if a Rust workspace exists, run in this order:
    - `cargo fmt --all`
    - `cargo clippy --all-targets --all-features`
    - `cargo test --all-targets --all-features` (last)
@@ -26,7 +27,7 @@ Execution loop for this run:
    - Any risks/known gaps
    - Next best small task
 10) After `/reflect`, fix any issues you identified.
-11) Re-run validation commands if you changed code:
+11) Re-run validation commands if you changed Rust code and a Rust workspace exists:
    - `cargo check`
    - `cargo fmt --all`
    - `cargo clippy --all-targets --all-features`
