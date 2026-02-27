@@ -62,6 +62,7 @@ Built-in language/tool caches are persisted under `sandbox.cache_dir`:
 - pnpm (`pnpm-home`)
 - cargo (`cargo-home`)
 - go (`go-path`, `go-build`)
+- rust compiler cache tools (`sccache`, `cachepot`)
 
 Use `config/config.example.toml` as the schema/template. It contains dummy placeholders only.
 

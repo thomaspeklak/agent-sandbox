@@ -58,11 +58,15 @@ PNPM_HOME_CONTAINER="/home/dev/.local/share/pnpm"
 CARGO_HOME_CONTAINER="/home/dev/.cargo"
 GOPATH_CONTAINER="/home/dev/go"
 GOCACHE_CONTAINER="/home/dev/.cache/go-build"
+SCCACHE_DIR_CONTAINER="/home/dev/.cache/sccache"
+CACHEPOT_DIR_CONTAINER="/home/dev/.cache/cachepot"
 
 PNPM_HOME_HOST="$CACHE_DIR/pnpm-home"
 CARGO_HOME_HOST="$CACHE_DIR/cargo-home"
 GOPATH_HOST="$CACHE_DIR/go-path"
 GOCACHE_HOST="$CACHE_DIR/go-build"
+SCCACHE_DIR_HOST="$CACHE_DIR/sccache"
+CACHEPOT_DIR_HOST="$CACHE_DIR/cachepot"
 
 mkdir -p \
   "$CACHE_DIR" \
@@ -70,7 +74,9 @@ mkdir -p \
   "$PNPM_HOME_HOST" \
   "$CARGO_HOME_HOST" \
   "$GOPATH_HOST" \
-  "$GOCACHE_HOST"
+  "$GOCACHE_HOST" \
+  "$SCCACHE_DIR_HOST" \
+  "$CACHEPOT_DIR_HOST"
 
 if [[ ! -f "$CONTAINERFILE" ]]; then
   echo "Missing Containerfile: $CONTAINERFILE" >&2
@@ -351,6 +357,8 @@ PODMAN_ARGS=(
   -e CARGO_HOME="$CARGO_HOME_CONTAINER"
   -e GOPATH="$GOPATH_CONTAINER"
   -e GOCACHE="$GOCACHE_CONTAINER"
+  -e SCCACHE_DIR="$SCCACHE_DIR_CONTAINER"
+  -e CACHEPOT_DIR="$CACHEPOT_DIR_CONTAINER"
   -e TERM
   -e COLORTERM
   -e EDITOR
@@ -364,6 +372,8 @@ PODMAN_ARGS=(
   -v "$CARGO_HOME_HOST:$CARGO_HOME_CONTAINER:rw"
   -v "$GOPATH_HOST:$GOPATH_CONTAINER:rw"
   -v "$GOCACHE_HOST:$GOCACHE_CONTAINER:rw"
+  -v "$SCCACHE_DIR_HOST:$SCCACHE_DIR_CONTAINER:rw"
+  -v "$CACHEPOT_DIR_HOST:$CACHEPOT_DIR_CONTAINER:rw"
 )
 
 read_roots=("$CONTAINER_WORKDIR" "/tmp" "/home/dev/.pi/agent")
