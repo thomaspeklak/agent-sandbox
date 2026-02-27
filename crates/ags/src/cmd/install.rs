@@ -1,8 +1,9 @@
 use std::fmt;
 use std::fs;
 use std::io;
-use std::os::unix::fs as unix_fs;
 use std::path::{Path, PathBuf};
+
+use crate::assets;
 
 #[derive(Debug)]
 pub enum InstallError {
@@ -27,63 +28,67 @@ impl From<io::Error> for InstallError {
     }
 }
 
-/// Install symlinks for ags and legacy pis commands.
-pub fn run(project_root: &Path) -> Result<(), InstallError> {
+/// Install ags: write embedded assets and clean up legacy symlinks.
+pub fn run() -> Result<(), InstallError> {
     let home = dirs::home_dir().ok_or(InstallError::HomeDir)?;
     let bin_dir = home.join(".local/bin");
-    let config_link = home.join(".config/pi-sandbox");
+    let config_dir = home.join(".config/ags");
     let agent_dir = std::env::var("PI_SBOX_AGENT_DIR")
-        .map_or_else(|_| home.join(".pi/agent-sandbox"), PathBuf::from);
+        .map_or_else(|_| config_dir.join("pi"), PathBuf::from);
 
-    fs::create_dir_all(&bin_dir)?;
-    fs::create_dir_all(home.join(".config"))?;
+    fs::create_dir_all(&config_dir)?;
     fs::create_dir_all(agent_dir.join("extensions"))?;
 
-    // Link config directory
-    link_path(&project_root.join("config"), &config_link)?;
+    // Write embedded Containerfile
+    let containerfile = config_dir.join("Containerfile");
+    assets::ensure_containerfile(&containerfile)?;
+    println!("Wrote Containerfile: {}", containerfile.display());
 
-    // Bootstrap sandbox settings
-    bootstrap_sandbox_settings(project_root, &agent_dir, &home)?;
+    // Write guard extension
+    assets::ensure_guard_extension(&agent_dir)?;
+    println!("Wrote guard extension: {}", agent_dir.join("extensions/guard.ts").display());
 
-    // Link guard extension
-    link_path(
-        &project_root.join("agent/extensions/guard.ts"),
-        &agent_dir.join("extensions/guard.ts"),
-    )?;
-
-    // Link CLI commands
-    let commands = ["pis", "pisb", "pis-setup", "pis-doctor", "pis-update"];
-    for cmd in &commands {
-        let source = project_root.join("bin").join(cmd);
-        make_executable(&source);
-        link_path(&source, &bin_dir.join(cmd))?;
+    // Write settings template (only if missing)
+    let settings = agent_dir.join("settings.json");
+    if !settings.exists() {
+        assets::ensure_settings_template(&agent_dir)?;
+        println!("Wrote settings template: {}", settings.display());
+    } else {
+        println!("Using existing settings: {}", settings.display());
     }
 
-    // Ensure pis-run is executable but not linked into PATH
-    make_executable(&project_root.join("bin/pis-run"));
-    let _ = fs::remove_file(bin_dir.join("pis-run"));
+    // Remove legacy config-dir symlink if it points elsewhere
+    remove_legacy_symlink(&config_dir);
 
-    // Remove legacy aliases
-    for legacy in &["pi-sbox", "pi-sbox-browser", "pi-sbox-setup"] {
-        let path = bin_dir.join(legacy);
-        if path.exists() || path.symlink_metadata().is_ok() {
-            fs::remove_file(&path)?;
-            println!("Removed legacy alias: {}", path.display());
+    // Remove legacy shell script symlinks
+    let legacy_commands = [
+        "pis",
+        "pisb",
+        "pis-setup",
+        "pis-doctor",
+        "pis-update",
+        "pis-run",
+        "pi-sbox",
+        "pi-sbox-browser",
+        "pi-sbox-setup",
+    ];
+    for cmd in &legacy_commands {
+        let path = bin_dir.join(cmd);
+        if path.symlink_metadata().is_ok() {
+            let _ = fs::remove_file(&path);
+            println!("Removed legacy symlink: {}", path.display());
         }
     }
 
     println!("\nInstall complete.");
-    println!("Run: pis doctor");
+    println!("Run: ags doctor");
     Ok(())
 }
 
-/// Remove symlinks that point back into the project.
-pub fn uninstall(project_root: &Path) -> Result<(), InstallError> {
+/// Remove symlinks that were installed by a previous version.
+pub fn uninstall() -> Result<(), InstallError> {
     let home = dirs::home_dir().ok_or(InstallError::HomeDir)?;
     let bin_dir = home.join(".local/bin");
-    let config_link = home.join(".config/pi-sandbox");
-    let agent_dir = std::env::var("PI_SBOX_AGENT_DIR")
-        .map_or_else(|_| home.join(".pi/agent-sandbox"), PathBuf::from);
 
     let commands = [
         "pis",
@@ -92,148 +97,28 @@ pub fn uninstall(project_root: &Path) -> Result<(), InstallError> {
         "pis-doctor",
         "pis-update",
         "pis-run",
+        "pi-sbox",
+        "pi-sbox-browser",
+        "pi-sbox-setup",
     ];
     for cmd in &commands {
-        unlink_if_points_to(project_root, &bin_dir.join(cmd));
+        let path = bin_dir.join(cmd);
+        if path.symlink_metadata().is_ok() {
+            let _ = fs::remove_file(&path);
+            println!("Removed: {}", path.display());
+        }
     }
-
-    unlink_if_points_to(project_root, &config_link);
-    unlink_if_points_to(project_root, &agent_dir.join("settings.json"));
-    unlink_if_points_to(project_root, &agent_dir.join("extensions/guard.ts"));
 
     println!("Uninstall complete.");
     Ok(())
 }
 
-fn link_path(source: &Path, target: &Path) -> Result<(), InstallError> {
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    // Already correctly linked?
-    if target.symlink_metadata().is_ok() {
-        if let Ok(current) = fs::read_link(target) {
-            let current_resolved = fs::canonicalize(&current).unwrap_or(current);
-            let source_resolved = fs::canonicalize(source).unwrap_or_else(|_| source.to_owned());
-            if current_resolved == source_resolved {
-                println!("Already linked: {}", target.display());
-                return Ok(());
-            }
-        }
-        // Wrong target — back up and relink
-        backup(target)?;
-    } else if target.exists() {
-        backup(target)?;
-    }
-
-    unix_fs::symlink(source, target)?;
-    println!("Linked: {} -> {}", target.display(), source.display());
-    Ok(())
-}
-
-fn backup(target: &Path) -> Result<(), InstallError> {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let backup_name = format!("{}.bak.{stamp}", target.display());
-    let backup_path = PathBuf::from(&backup_name);
-    fs::rename(target, &backup_path)?;
-    println!(
-        "Backed up: {} -> {}",
-        target.display(),
-        backup_path.display()
-    );
-    Ok(())
-}
-
-fn unlink_if_points_to(project_root: &Path, path: &Path) {
-    if fs::symlink_metadata(path).is_err() {
-        return;
-    }
-    let Ok(link_target) = fs::read_link(path) else {
-        return;
-    };
-    let resolved = fs::canonicalize(&link_target).unwrap_or(link_target);
-    let root_resolved = fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_owned());
-    if resolved.starts_with(&root_resolved) {
+/// If `path` is a symlink, remove it so we can use it as a real directory.
+fn remove_legacy_symlink(path: &Path) {
+    if let Ok(meta) = fs::symlink_metadata(path)
+        && meta.file_type().is_symlink()
+    {
         let _ = fs::remove_file(path);
-        println!("Removed: {}", path.display());
-    }
-}
-
-fn bootstrap_sandbox_settings(
-    project_root: &Path,
-    agent_dir: &Path,
-    home: &Path,
-) -> Result<(), InstallError> {
-    let target = agent_dir.join("settings.json");
-
-    // Remove legacy symlink if it points to project
-    if let Ok(link_target) = fs::read_link(&target) {
-        let resolved = fs::canonicalize(&link_target).unwrap_or(link_target);
-        if resolved.starts_with(project_root) {
-            fs::remove_file(&target)?;
-            println!("Removed legacy settings symlink: {}", target.display());
-        }
-    }
-
-    if target.exists() {
-        println!("Using existing sandbox settings: {}", target.display());
-        return Ok(());
-    }
-
-    fs::create_dir_all(agent_dir)?;
-
-    // Try host settings first
-    let host_settings = home.join(".pi/agent/settings.json");
-    if host_settings.exists() {
-        fs::copy(&host_settings, &target)?;
-        set_permissions_600(&target);
-        println!(
-            "Copied sandbox settings from host: {} -> {}",
-            host_settings.display(),
-            target.display()
-        );
-        return Ok(());
-    }
-
-    // Fall back to template
-    let template = project_root.join("agent/settings.example.json");
-    if template.exists() {
-        fs::copy(&template, &target)?;
-        set_permissions_600(&target);
-        println!(
-            "Copied sandbox settings from template: {} -> {}",
-            template.display(),
-            target.display()
-        );
-        return Ok(());
-    }
-
-    eprintln!(
-        "Missing sandbox settings source. Expected one of:\n  {}\n  {}",
-        host_settings.display(),
-        template.display()
-    );
-    Ok(())
-}
-
-fn make_executable(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = fs::metadata(path) {
-            let mode = meta.permissions().mode() | 0o111;
-            let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode));
-        }
-    }
-}
-
-fn set_permissions_600(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+        println!("Removed legacy config symlink: {}", path.display());
     }
 }

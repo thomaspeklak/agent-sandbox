@@ -107,6 +107,10 @@ impl SshRunner for FakeRunner {
     fn remove_socket(&self, _path: &Path) {
         // no-op in tests
     }
+
+    fn kill_socket_owner(&self, _path: &Path) {
+        // no-op in tests
+    }
 }
 
 #[test]

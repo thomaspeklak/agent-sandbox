@@ -1,14 +1,17 @@
 use std::fs;
 use std::path::Path;
 
+use ags::cli::Agent;
 use ags::cmd::doctor;
 use ags::config::{BrowserConfig, UpdateConfig, ValidatedConfig, ValidatedSandbox};
 
 fn minimal_config(tmp: &Path) -> ValidatedConfig {
-    let sandbox_pi_dir = tmp.join("pi-agent");
-    fs::create_dir_all(sandbox_pi_dir.join("extensions")).unwrap();
-    fs::write(sandbox_pi_dir.join("settings.json"), "{}").unwrap();
-    fs::write(sandbox_pi_dir.join("extensions/guard.ts"), "// guard").unwrap();
+    let agent_sandbox_base = tmp.join("agent-sandboxes");
+    // Pi sandbox lives at agent_sandbox_base/pi
+    let pi_sandbox = agent_sandbox_base.join("pi");
+    fs::create_dir_all(pi_sandbox.join("extensions")).unwrap();
+    fs::write(pi_sandbox.join("settings.json"), "{}").unwrap();
+    fs::write(pi_sandbox.join("extensions/guard.ts"), "// guard").unwrap();
 
     let containerfile = tmp.join("Containerfile");
     fs::write(&containerfile, "FROM scratch").unwrap();
@@ -24,9 +27,10 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
         sandbox: ValidatedSandbox {
             image: "test-image:latest".into(),
             containerfile,
-            sandbox_pi_dir,
+            sandbox_pi_dir: pi_sandbox,
             host_pi_dir: tmp.join("host-pi"),
             host_claude_dir: tmp.join("host-claude"),
+            agent_sandbox_base,
             cache_dir,
             gitconfig_path: gitconfig,
             auth_key,
@@ -52,30 +56,34 @@ fn doctor_runs_without_panic_on_minimal_config() {
 }
 
 #[test]
-fn doctor_detects_missing_containerfile() {
+fn doctor_self_heals_missing_containerfile() {
     let tmp = tempfile::tempdir().unwrap();
     let config = minimal_config(tmp.path());
-    // Remove the containerfile
+    // Remove the containerfile — doctor should recreate it from embedded asset
     fs::remove_file(&config.sandbox.containerfile).unwrap();
     let result = doctor::run(&config);
-    // Should have at least one failure (missing Containerfile)
-    assert!(!result);
+    assert!(result);
+    assert!(config.sandbox.containerfile.exists());
 }
 
 #[test]
 fn doctor_detects_missing_settings() {
     let tmp = tempfile::tempdir().unwrap();
     let config = minimal_config(tmp.path());
-    fs::remove_file(config.sandbox.sandbox_pi_dir.join("settings.json")).unwrap();
+    let pi_sandbox = config.sandbox.sandbox_dir_for(Agent::Pi);
+    fs::remove_file(pi_sandbox.join("settings.json")).unwrap();
     let result = doctor::run(&config);
     assert!(!result);
 }
 
 #[test]
-fn doctor_detects_missing_guard_extension() {
+fn doctor_self_heals_missing_guard_extension() {
     let tmp = tempfile::tempdir().unwrap();
     let config = minimal_config(tmp.path());
-    fs::remove_file(config.sandbox.sandbox_pi_dir.join("extensions/guard.ts")).unwrap();
+    let pi_sandbox = config.sandbox.sandbox_dir_for(Agent::Pi);
+    // Remove guard extension — doctor should recreate it from embedded asset
+    fs::remove_file(pi_sandbox.join("extensions/guard.ts")).unwrap();
     let result = doctor::run(&config);
-    assert!(!result);
+    assert!(result);
+    assert!(pi_sandbox.join("extensions/guard.ts").exists());
 }

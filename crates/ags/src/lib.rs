@@ -1,3 +1,5 @@
+pub mod agent;
+pub mod assets;
 pub mod browser;
 pub mod cli;
 pub mod cmd;

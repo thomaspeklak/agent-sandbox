@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+use crate::cli::Agent;
 use crate::config::{MountWhen, SecretSource, ValidatedConfig};
 
 use super::doctor_util::{
@@ -39,10 +40,16 @@ fn check_tooling(ck: &mut Checker) {
 
 fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
     ck.section("Config");
+
+    // Self-heal: write embedded assets before checking
+    let _ = crate::assets::ensure_containerfile(&config.sandbox.containerfile);
+    let pi_sandbox = config.sandbox.sandbox_dir_for(Agent::Pi);
+    let _ = crate::assets::ensure_guard_extension(&pi_sandbox);
+
     check_file_exists(ck, &config.sandbox.containerfile, "Containerfile", true);
-    let settings = config.sandbox.sandbox_pi_dir.join("settings.json");
+    let settings = pi_sandbox.join("settings.json");
     check_file_exists(ck, &settings, "sandbox settings", true);
-    let guard = config.sandbox.sandbox_pi_dir.join("extensions/guard.ts");
+    let guard = pi_sandbox.join("extensions/guard.ts");
     check_file_exists(ck, &guard, "guard extension", true);
     check_gitconfig(ck, &config.sandbox.gitconfig_path);
 }
@@ -266,7 +273,7 @@ fn check_secrets(ck: &mut Checker, config: &ValidatedConfig) {
 
 fn check_sessions(ck: &mut Checker, config: &ValidatedConfig) {
     ck.section("Sessions / resume");
-    let pi_dir = &config.sandbox.sandbox_pi_dir;
+    let pi_dir = config.sandbox.sandbox_dir_for(Agent::Pi);
     if pi_dir.is_dir() && pi_dir.metadata().is_ok_and(|m| !m.permissions().readonly()) {
         ck.ok(&format!("sandbox pi dir is writable: {}", pi_dir.display()));
     } else {

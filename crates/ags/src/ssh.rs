@@ -58,6 +58,9 @@ pub trait SshRunner {
 
     /// Remove a socket file.
     fn remove_socket(&self, path: &Path);
+
+    /// Kill any process bound to the given socket path.
+    fn kill_socket_owner(&self, path: &Path);
 }
 
 /// Real implementation that shells out to ssh-agent / ssh-add.
@@ -128,21 +131,35 @@ impl SshRunner for OsSshRunner {
     }
 
     fn add_key(&self, auth_sock: &Path, key_path: &Path) -> Result<(), String> {
-        let output = std::process::Command::new("ssh-add")
+        // Inherit stdio so ssh-add can prompt for passphrases interactively
+        let status = std::process::Command::new("ssh-add")
             .arg(key_path)
             .env("SSH_AUTH_SOCK", auth_sock)
-            .output()
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status()
             .map_err(|e| e.to_string())?;
 
-        if output.status.success() {
+        if status.success() {
             Ok(())
         } else {
-            Err(String::from_utf8_lossy(&output.stderr).into_owned())
+            Err(format!("ssh-add exited with {status}"))
         }
     }
 
     fn remove_socket(&self, path: &Path) {
         let _ = fs::remove_file(path);
+    }
+
+    fn kill_socket_owner(&self, path: &Path) {
+        // fuser -k sends SIGKILL to any process holding the socket
+        let _ = std::process::Command::new("fuser")
+            .arg("-k")
+            .arg(path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     }
 }
 
@@ -158,7 +175,9 @@ fn parse_agent_output(stdout: &str, sock_path: &Path) -> Result<AgentState, SshE
 
     for line in stdout.lines() {
         if let Some(rest) = line.strip_prefix("SSH_AGENT_PID=") {
-            let val = rest.trim_end_matches(';').trim();
+            // `ssh-agent -s` prints: `SSH_AGENT_PID=12345; export SSH_AGENT_PID;`
+            // Keep only the assignment value before the first `;`.
+            let val = rest.split(';').next().unwrap_or(rest).trim();
             pid = val.parse().ok();
         }
     }
@@ -240,7 +259,8 @@ pub fn ensure_agent(
             cached
         }
         _ => {
-            // Start fresh agent
+            // Kill any orphaned agent still bound to the socket, then start fresh
+            runner.kill_socket_owner(&sock_path);
             runner.remove_socket(&sock_path);
             let new_state = runner.start_agent(&sock_path)?;
             if let Err(e) = write_agent_env(&env_path, &new_state) {

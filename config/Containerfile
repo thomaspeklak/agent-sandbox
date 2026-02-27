@@ -53,12 +53,24 @@ RUN useradd -m -u 1000 -s /bin/bash dev && \
 ARG PNPM_MINIMUM_RELEASE_AGE=1440
 ARG PI_CODING_AGENT_SPEC=@mariozechner/pi-coding-agent
 ARG PI_REFRESH=0
-RUN mkdir -p /root/.config/pnpm /usr/local/pnpm && \
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    mkdir -p /root/.config/pnpm /usr/local/pnpm && \
     printf 'minimum-release-age=%s\n' "$PNPM_MINIMUM_RELEASE_AGE" > /root/.config/pnpm/rc && \
     PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH pnpm add -g "$PI_CODING_AGENT_SPEC" && \
     ln -sf /usr/local/pnpm/pi /usr/local/bin/pi && \
     mkdir -p /usr/local/share && \
     printf '%s\n' "$PI_REFRESH" > /usr/local/share/pi-refresh-marker
+
+ARG AGENT_REFRESH=0
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    curl -fsSL https://claude.ai/install.sh | bash && \
+    ln -sf /root/.claude/local/bin/claude /usr/local/bin/claude && \
+    PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH \
+    pnpm add -g @openai/codex @google/gemini-cli opencode-ai && \
+    ln -sf /usr/local/pnpm/codex /usr/local/bin/codex && \
+    ln -sf /usr/local/pnpm/gemini /usr/local/bin/gemini && \
+    ln -sf /usr/local/pnpm/opencode /usr/local/bin/opencode && \
+    printf '%s\n' "$AGENT_REFRESH" > /usr/local/share/agent-refresh-marker
 
 ARG RUST_TOOLCHAIN=stable
 RUN mkdir -p /usr/local/rustup /usr/local/cargo && \

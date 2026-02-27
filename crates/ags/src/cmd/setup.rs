@@ -1,11 +1,13 @@
 use std::fs;
 use std::io::{self, BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::cli::Agent;
 use crate::config::ValidatedConfig;
 
-/// Run the setup command: generate SSH keys and optionally store secrets.
+/// Run the setup command: generate SSH keys, bootstrap agent sandboxes,
+/// and optionally store secrets.
 pub fn run(config: &ValidatedConfig) -> Result<(), SetupError> {
     let auth_key = &config.sandbox.auth_key;
     let sign_key = &config.sandbox.sign_key;
@@ -16,6 +18,17 @@ pub fn run(config: &ValidatedConfig) -> Result<(), SetupError> {
     println!("\nAdd these public keys to GitHub:\n");
     print_pub_key("Auth key (SSH key for git push)", auth_key)?;
     print_pub_key("Signing key (SSH signing key)", sign_key)?;
+
+    bootstrap_agent_sandboxes(config)?;
+
+    // Write embedded assets for Pi sandbox
+    let pi_sandbox = config.sandbox.sandbox_dir_for(Agent::Pi);
+    if let Err(e) = crate::assets::ensure_guard_extension(&pi_sandbox) {
+        eprintln!("warning: could not write guard extension: {e}");
+    }
+    if let Err(e) = crate::assets::ensure_settings_template(&pi_sandbox) {
+        eprintln!("warning: could not write settings template: {e}");
+    }
 
     if !has_command("secret-tool") {
         println!(
@@ -60,6 +73,153 @@ impl From<io::Error> for SetupError {
         Self::Io(e)
     }
 }
+
+// --- agent sandbox bootstrap ---
+
+/// Per-agent host config sources. `None` means the agent has no known
+/// host config directory (sandbox will be created empty at launch time).
+struct AgentHostConfig {
+    agent: Agent,
+    /// Host directory to copy from (e.g. ~/.claude).
+    host_dir: Option<PathBuf>,
+    /// Extra files outside the host dir to copy into the sandbox.
+    /// Each entry is (host_path, filename_in_sandbox).
+    extra_files: Vec<(PathBuf, &'static str)>,
+}
+
+fn agent_host_configs(config: &ValidatedConfig) -> Vec<AgentHostConfig> {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/home"));
+    vec![
+        AgentHostConfig {
+            agent: Agent::Pi,
+            host_dir: Some(config.sandbox.host_pi_dir.clone()),
+            extra_files: vec![],
+        },
+        AgentHostConfig {
+            agent: Agent::Claude,
+            host_dir: Some(config.sandbox.host_claude_dir.clone()),
+            extra_files: vec![],
+        },
+        AgentHostConfig {
+            agent: Agent::Codex,
+            host_dir: Some(home.join(".codex")),
+            extra_files: vec![],
+        },
+        AgentHostConfig {
+            agent: Agent::Gemini,
+            host_dir: Some(home.join(".gemini")),
+            extra_files: vec![],
+        },
+        AgentHostConfig {
+            agent: Agent::Opencode,
+            host_dir: Some(home.join(".config/opencode")),
+            extra_files: vec![],
+        },
+    ]
+}
+
+/// Bootstrap per-agent sandbox directories by copying host config.
+/// Skips agents whose sandbox already exists or whose host config is missing.
+fn bootstrap_agent_sandboxes(config: &ValidatedConfig) -> Result<(), SetupError> {
+    println!("\nBootstrapping agent sandboxes...");
+
+    for ac in agent_host_configs(config) {
+        let sandbox = config.sandbox.sandbox_dir_for(ac.agent);
+
+        if sandbox.exists() {
+            println!("  {} sandbox exists: {}", ac.agent, sandbox.display());
+        } else {
+            // Copy host dir → sandbox (if host dir exists)
+            let copied_dir = if let Some(ref host_dir) = ac.host_dir {
+                if host_dir.is_dir() {
+                    fs::create_dir_all(&sandbox)?;
+                    copy_dir_contents(host_dir, &sandbox)?;
+                    println!(
+                        "  {} copied {} → {}",
+                        ac.agent,
+                        host_dir.display(),
+                        sandbox.display()
+                    );
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if !copied_dir {
+                fs::create_dir_all(&sandbox)?;
+                println!(
+                    "  {} no host config found, created empty: {}",
+                    ac.agent,
+                    sandbox.display()
+                );
+            }
+        }
+
+        // Always sync extra files from host (these are config files that
+        // should reflect the current host state on each setup run).
+        for (host_file, sandbox_name) in &ac.extra_files {
+            if host_file.is_file() {
+                let dest = sandbox.join(sandbox_name);
+                fs::copy(host_file, &dest)?;
+                println!(
+                    "  {} synced {} → {}",
+                    ac.agent,
+                    host_file.display(),
+                    dest.display()
+                );
+            }
+        }
+    }
+
+    // Sync ~/.claude.json → agent_sandbox_base/.claude.json
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/home"));
+    let host_claude_json = home.join(".claude.json");
+    let dest_claude_json = config.sandbox.agent_sandbox_base.join(".claude.json");
+    if host_claude_json.is_file() {
+        fs::copy(&host_claude_json, &dest_claude_json)?;
+        println!(
+            "  synced {} → {}",
+            host_claude_json.display(),
+            dest_claude_json.display()
+        );
+    }
+
+    Ok(())
+}
+
+/// Recursively copy directory contents from `src` to `dst`.
+/// `dst` must already exist. Skips files/dirs that can't be read (broken
+/// symlinks, permission errors) with a warning rather than failing.
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), SetupError> {
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = match entry.metadata() {
+            Ok(m) => m.file_type(),
+            Err(e) => {
+                eprintln!("    warning: skipping {}: {e}", entry.path().display());
+                continue;
+            }
+        };
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if file_type.is_dir() {
+            fs::create_dir_all(&dst_path)?;
+            copy_dir_contents(&src_path, &dst_path)?;
+        } else if file_type.is_file()
+            && let Err(e) = fs::copy(&src_path, &dst_path)
+        {
+            eprintln!("    warning: skipping {}: {e}", src_path.display());
+        }
+        // Skip symlinks and other special file types
+    }
+    Ok(())
+}
+
+// --- SSH key generation ---
 
 fn generate_key_if_missing(key_path: &Path, comment: &str) -> Result<(), SetupError> {
     if key_path.exists() {
