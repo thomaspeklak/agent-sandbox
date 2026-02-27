@@ -64,6 +64,10 @@ Built-in language/tool caches are persisted under `sandbox.cache_dir`:
 - go (`go-path`, `go-build`)
 - rust compiler cache tools (`sccache`, `cachepot`)
 
+Clipboard image paste (`Ctrl+V`) in sandbox mode is best-effort:
+- X11: passes `DISPLAY` and mounts `/tmp/.X11-unix` (read-only) when available
+- Wayland: mounts `${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}` to `/tmp/${WAYLAND_DISPLAY}` and sets `XDG_RUNTIME_DIR=/tmp` in-container
+
 Use `config/config.example.toml` as the schema/template. It contains dummy placeholders only.
 
 ### Tool + directory + secret pattern

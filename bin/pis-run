@@ -340,6 +340,17 @@ if [[ "$BROWSER_MODE" == "1" ]]; then
   NETWORK_MODE="slirp4netns:allow_host_loopback=true"
 fi
 
+HOST_X11_SOCKET_DIR="/tmp/.X11-unix"
+WAYLAND_SOCKET_HOST=""
+WAYLAND_DISPLAY_NAME=""
+if [[ -n "${XDG_RUNTIME_DIR:-}" && -n "${WAYLAND_DISPLAY:-}" ]]; then
+  candidate_wayland_socket="${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+  if [[ -S "$candidate_wayland_socket" ]]; then
+    WAYLAND_SOCKET_HOST="$candidate_wayland_socket"
+    WAYLAND_DISPLAY_NAME="$WAYLAND_DISPLAY"
+  fi
+fi
+
 PODMAN_ARGS=(
   run --rm -it
   --pull=never
@@ -375,6 +386,18 @@ PODMAN_ARGS=(
   -v "$SCCACHE_DIR_HOST:$SCCACHE_DIR_CONTAINER:rw"
   -v "$CACHEPOT_DIR_HOST:$CACHEPOT_DIR_CONTAINER:rw"
 )
+
+if [[ -n "${DISPLAY:-}" && -d "$HOST_X11_SOCKET_DIR" ]]; then
+  PODMAN_ARGS+=( -e DISPLAY -v "$HOST_X11_SOCKET_DIR:$HOST_X11_SOCKET_DIR:ro" )
+fi
+
+if [[ -n "$WAYLAND_SOCKET_HOST" && -n "$WAYLAND_DISPLAY_NAME" ]]; then
+  PODMAN_ARGS+=(
+    -e "WAYLAND_DISPLAY=$WAYLAND_DISPLAY_NAME"
+    -e XDG_RUNTIME_DIR=/tmp
+    -v "$WAYLAND_SOCKET_HOST:/tmp/$WAYLAND_DISPLAY_NAME:ro"
+  )
+fi
 
 read_roots=("$CONTAINER_WORKDIR" "/tmp" "/home/dev/.pi/agent")
 write_roots=("$CONTAINER_WORKDIR" "/tmp" "/home/dev/.pi/agent")
