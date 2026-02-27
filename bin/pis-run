@@ -378,6 +378,7 @@ PODMAN_ARGS=(
   -e GIT_CONFIG_GLOBAL=/home/dev/.config/pi-sandbox/gitconfig
   -e SSH_AUTH_SOCK=/ssh-agent
   -e PNPM_HOME="$PNPM_HOME_CONTAINER"
+  -e RUSTUP_HOME=/usr/local/rustup
   -e CARGO_HOME="$CARGO_HOME_CONTAINER"
   -e GOPATH="$GOPATH_CONTAINER"
   -e GOCACHE="$GOCACHE_CONTAINER"

@@ -5,6 +5,7 @@ RUN dnf -y update && \
       bash \
       ca-certificates \
       coreutils \
+      curl \
       diffutils \
       fd-find \
       file \
@@ -13,6 +14,7 @@ RUN dnf -y update && \
       gcc-c++ \
       gh \
       git \
+      golang \
       grep \
       ImageMagick \
       jq \
@@ -56,9 +58,20 @@ RUN mkdir -p /root/.config/pnpm /usr/local/pnpm && \
     mkdir -p /usr/local/share && \
     printf '%s\n' "$PI_REFRESH" > /usr/local/share/pi-refresh-marker
 
+ARG RUST_TOOLCHAIN=stable
+RUN mkdir -p /usr/local/rustup /usr/local/cargo && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+      env CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup \
+      sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --no-modify-path && \
+    env CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup \
+      /usr/local/cargo/bin/rustup component add rustfmt clippy && \
+    chmod -R a+rX /usr/local/rustup /usr/local/cargo
+
 USER dev
 WORKDIR /workspace
 
 ENV HOME=/home/dev
 ENV PNPM_HOME=/usr/local/pnpm
-ENV PATH=/home/dev/.local/bin:/usr/local/pnpm:/usr/local/bin:/usr/bin:/bin
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/home/dev/.cargo
+ENV PATH=/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/pnpm:/usr/local/bin:/usr/bin:/bin

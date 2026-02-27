@@ -64,6 +64,10 @@ Built-in language/tool caches are persisted under `sandbox.cache_dir`:
 - go (`go-path`, `go-build`)
 - rust compiler cache tools (`sccache`, `cachepot`)
 
+The image includes:
+- Go toolchain (`go`)
+- Rust stable toolchain installed via `rustup` (`rustc`, `cargo`, `rustup`)
+
 Clipboard image paste (`Ctrl+V`) in sandbox mode is Wayland-only:
 - mounts `${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}` to `/tmp/${WAYLAND_DISPLAY}` and sets `XDG_RUNTIME_DIR=/tmp` in-container
 - disable with `PI_SBOX_ENABLE_CLIPBOARD=0`
