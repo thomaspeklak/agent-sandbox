@@ -260,6 +260,75 @@ start_browser_if_needed() {
   sleep 1
 }
 
+path_is_within() {
+  local child="$1"
+  local parent="$2"
+  child="$(realpath -m "$child")"
+  parent="$(realpath -m "$parent")"
+  [[ "$child" == "$parent" || "$child" == "$parent/"* ]]
+}
+
+declare -a GIT_METADATA_MOUNTS=()
+
+append_unique_git_metadata_mount() {
+  local candidate="$1"
+  [[ -n "$candidate" ]] || return 0
+
+  candidate="$(realpath -m "$candidate")"
+  if [[ ! -d "$candidate" ]]; then
+    return 0
+  fi
+
+  if path_is_within "$candidate" "$WORKDIR"; then
+    return 0
+  fi
+
+  local existing
+  for existing in "${GIT_METADATA_MOUNTS[@]}"; do
+    if [[ "$existing" == "$candidate" ]]; then
+      return 0
+    fi
+  done
+
+  GIT_METADATA_MOUNTS+=("$candidate")
+}
+
+discover_git_metadata_mounts() {
+  GIT_METADATA_MOUNTS=()
+
+  if ! command -v git >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! git -C "$WORKDIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local top_level git_dir common_dir
+  top_level="$(git -C "$WORKDIR" rev-parse --show-toplevel 2>/dev/null || true)"
+
+  git_dir="$(git -C "$WORKDIR" rev-parse --path-format=absolute --absolute-git-dir 2>/dev/null || true)"
+  if [[ -z "$git_dir" ]]; then
+    git_dir="$(git -C "$WORKDIR" rev-parse --absolute-git-dir 2>/dev/null || true)"
+  fi
+
+  common_dir="$(git -C "$WORKDIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [[ -z "$common_dir" ]]; then
+    common_dir="$(git -C "$WORKDIR" rev-parse --git-common-dir 2>/dev/null || true)"
+  fi
+
+  if [[ -n "$common_dir" && "$common_dir" != /* ]]; then
+    if [[ -n "$top_level" ]]; then
+      common_dir="$(realpath -m "$top_level/$common_dir")"
+    else
+      common_dir="$(realpath -m "$WORKDIR/$common_dir")"
+    fi
+  fi
+
+  append_unique_git_metadata_mount "$git_dir"
+  append_unique_git_metadata_mount "$common_dir"
+}
+
 ensure_image
 ensure_gitconfig
 
@@ -274,6 +343,7 @@ if [[ -z "$SSH_SOCKET_TO_MOUNT" || ! -S "$SSH_SOCKET_TO_MOUNT" ]]; then
 fi
 
 start_browser_if_needed
+discover_git_metadata_mounts
 
 ENV_FILE="$(mktemp -p "${XDG_RUNTIME_DIR:-/tmp}" pi-sbox-env.XXXXXX)"
 chmod 600 "$ENV_FILE"
@@ -411,6 +481,13 @@ fi
 
 read_roots=("$CONTAINER_WORKDIR" "/tmp" "/home/dev/.pi/agent")
 write_roots=("$CONTAINER_WORKDIR" "/tmp" "/home/dev/.pi/agent")
+
+for git_mount in "${GIT_METADATA_MOUNTS[@]}"; do
+  PODMAN_ARGS+=( -v "$git_mount:$git_mount:rw" )
+  read_roots+=("$git_mount")
+  write_roots+=("$git_mount")
+  echo "Detected git metadata outside workdir; mounting: $git_mount" >&2
+done
 
 mapfile -t ACTIVE_MOUNTS < <(jq -c --arg browser "$BROWSER_MODE" '.mounts[]? | select(.when == "always" or ($browser == "1" and .when == "browser"))' <<<"$CONFIG_JSON")
 for mount_json in "${ACTIVE_MOUNTS[@]}"; do
