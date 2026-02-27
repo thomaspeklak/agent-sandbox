@@ -1,7 +1,7 @@
 # Agent Sandbox Migration Tasks
 
 ## Phase 0 — Foundation
-- [ ] Confirm language choice (Rust / Go fallback)
+- [x] Confirm language choice (Rust / Go fallback)
 - [ ] Scaffold compiled launcher project
 - [ ] Add CI build + lint + test pipeline
 - [ ] Add migration docs + ADR for language decision

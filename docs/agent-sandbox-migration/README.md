@@ -33,7 +33,7 @@ while preserving full behavior parity for today’s `pis` workflow first.
 
 ## Current Focus (Now)
 
-- [ ] Confirm implementation language (Rust preferred)
+- [x] Confirm implementation language (**Rust**; Go fallback only if blocked)
 - [ ] Define config schema v2 (scalable agent overlays)
 - [ ] Scaffold `ags` CLI (`--agent ... -- ...`)
 - [ ] Start parity test harness (old shell vs new launcher)
