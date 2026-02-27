@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use ags::cli::Agent;
 use ags::config::{MountMode, parse_toml_str};
 use ags::plan::{PlanError, build_launch_plan};
 
@@ -20,6 +21,7 @@ containerfile = "{containerfile}"
 sandbox_pi_dir = "{base}/sandbox"
 host_pi_dir = "{base}/host"
 host_claude_dir = "{base}/claude"
+agent_sandbox_base = "{base}/agent-sandboxes"
 cache_dir = "{base}/cache"
 gitconfig_path = "{base}/gitconfig"
 auth_key = "{base}/auth"
@@ -33,9 +35,13 @@ passthrough_env = ["ANTHROPIC_API_KEY"]
 }
 
 fn build_plan_from(toml: &str, workdir: &Path) -> ags::plan::LaunchPlan {
+    build_plan_from_agent(toml, workdir, Agent::Pi)
+}
+
+fn build_plan_from_agent(toml: &str, workdir: &Path, agent: Agent) -> ags::plan::LaunchPlan {
     let config = parse_toml_str(toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    build_launch_plan(&config, workdir, false, None, &secrets).unwrap()
+    build_launch_plan(&config, workdir, agent, false, None, &secrets).unwrap()
 }
 
 #[test]
@@ -66,17 +72,14 @@ fn infrastructure_mounts_present() {
     let plan = build_plan_from(&toml, workdir.path());
 
     // Should have sandbox pi dir mount
-    let pi_mount = plan
-        .mounts
-        .iter()
-        .find(|m| m.container == "/home/dev/.pi/agent");
+    let pi_mount = plan.mounts.iter().find(|m| m.container == "/home/dev/.pi");
     assert!(pi_mount.is_some());
 
     // Should have gitconfig mount
     let gc_mount = plan
         .mounts
         .iter()
-        .find(|m| m.container == "/home/dev/.config/pi-sandbox/gitconfig");
+        .find(|m| m.container == "/home/dev/.config/ags/gitconfig");
     assert!(gc_mount.is_some());
     assert_eq!(gc_mount.unwrap().mode, MountMode::Ro);
 }
@@ -118,7 +121,7 @@ fn env_has_required_inline_vars() {
     assert_eq!(find_env("HOME"), Some("/home/dev".to_owned()));
     assert_eq!(
         find_env("PI_CODING_AGENT_DIR"),
-        Some("/home/dev/.pi/agent".to_owned())
+        Some("/home/dev/.pi".to_owned())
     );
     assert_eq!(find_env("SSH_AUTH_SOCK"), Some("/ssh-agent".to_owned()));
     assert!(find_env("PNPM_HOME").is_some());
@@ -180,7 +183,7 @@ debug_port = 9222
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    let plan = build_launch_plan(&config, workdir.path(), true, None, &secrets).unwrap();
+    let plan = build_launch_plan(&config, workdir.path(), Agent::Pi, true, None, &secrets).unwrap();
     assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=true");
 }
 
@@ -207,7 +210,7 @@ fn entrypoint_has_guard_extension() {
 
     assert!(
         plan.entrypoint
-            .contains("/home/dev/.pi/agent/extensions/guard.ts")
+            .contains("/home/dev/.pi/extensions/guard.ts")
     );
     assert!(plan.entrypoint.contains("\"$@\""));
 }
@@ -247,7 +250,7 @@ mode = \"ro\"\n",
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    let result = build_launch_plan(&config, workdir.path(), false, None, &secrets);
+    let result = build_launch_plan(&config, workdir.path(), Agent::Pi, false, None, &secrets);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("required mount"), "got: {err}");
@@ -316,9 +319,9 @@ fn read_write_roots_json_valid() {
         plan.env.write_roots_json.starts_with('['),
         "write roots should be JSON array"
     );
-    // Should contain /tmp and /home/dev/.pi/agent
+    // Should contain /tmp and /home/dev/.pi
     assert!(plan.env.read_roots_json.contains("/tmp"));
-    assert!(plan.env.read_roots_json.contains("/home/dev/.pi/agent"));
+    assert!(plan.env.read_roots_json.contains("/home/dev/.pi"));
 }
 
 #[test]
@@ -328,7 +331,8 @@ fn secrets_in_env_file() {
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let mut secrets = HashMap::new();
     secrets.insert("GH_TOKEN".to_owned(), "ghp_test123".to_owned());
-    let plan = build_launch_plan(&config, workdir.path(), false, None, &secrets).unwrap();
+    let plan =
+        build_launch_plan(&config, workdir.path(), Agent::Pi, false, None, &secrets).unwrap();
 
     let found = plan
         .env
@@ -345,7 +349,15 @@ fn ssh_socket_mounted_when_provided() {
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
     let sock = Path::new("/tmp/test-ssh-agent.sock");
-    let plan = build_launch_plan(&config, workdir.path(), false, Some(sock), &secrets).unwrap();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        false,
+        Some(sock),
+        &secrets,
+    )
+    .unwrap();
 
     let found = plan.mounts.iter().any(|m| m.container == "/ssh-agent");
     assert!(found, "SSH socket should be mounted");
@@ -359,6 +371,7 @@ fn nonexistent_workdir_is_error() {
     let result = build_launch_plan(
         &config,
         Path::new("/nonexistent/workdir"),
+        Agent::Pi,
         false,
         None,
         &secrets,
@@ -383,7 +396,7 @@ pi_skill_path = "/home/dev/browser-tools"
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    let plan = build_launch_plan(&config, workdir.path(), true, None, &secrets).unwrap();
+    let plan = build_launch_plan(&config, workdir.path(), Agent::Pi, true, None, &secrets).unwrap();
 
     assert!(
         plan.entrypoint.contains("socat TCP-LISTEN:9222"),
@@ -395,4 +408,180 @@ pi_skill_path = "/home/dev/browser-tools"
         "should have --skill flag: {}",
         plan.entrypoint
     );
+}
+
+// --- Agent-specific tests ---
+
+#[test]
+fn claude_agent_entrypoint() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Claude);
+
+    assert!(
+        plan.entrypoint.contains("exec claude"),
+        "claude entrypoint should exec claude: {}",
+        plan.entrypoint
+    );
+    assert!(
+        !plan.entrypoint.contains("guard.ts"),
+        "claude should not have guard.ts: {}",
+        plan.entrypoint
+    );
+    assert!(
+        !plan.entrypoint.contains("--no-extensions"),
+        "claude should not have --no-extensions: {}",
+        plan.entrypoint
+    );
+}
+
+#[test]
+fn claude_agent_has_config_mount() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Claude);
+
+    let claude_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/home/dev/.claude");
+    assert!(claude_mount.is_some(), "claude should have .claude mount");
+    assert_eq!(claude_mount.unwrap().mode, MountMode::Rw);
+}
+
+#[test]
+fn claude_agent_has_config_env() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Claude);
+
+    let find_env = |key: &str| -> Option<String> {
+        plan.env
+            .inline
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
+
+    assert_eq!(
+        find_env("CLAUDE_CONFIG_DIR"),
+        Some("/home/dev/.claude".to_owned())
+    );
+    assert!(
+        find_env("PI_CODING_AGENT_DIR").is_none(),
+        "claude should not have PI_CODING_AGENT_DIR"
+    );
+}
+
+#[test]
+fn claude_agent_no_extra_boot_dirs() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Claude);
+
+    assert!(
+        !plan.entrypoint.contains("/home/dev/.claude"),
+        "claude should not add extra boot dirs: {}",
+        plan.entrypoint
+    );
+}
+
+#[test]
+fn codex_agent_entrypoint() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Codex);
+
+    assert!(
+        plan.entrypoint.contains("exec codex"),
+        "codex entrypoint should exec codex: {}",
+        plan.entrypoint
+    );
+    assert!(
+        !plan.entrypoint.contains("guard.ts"),
+        "codex should not have guard.ts"
+    );
+}
+
+#[test]
+fn gemini_agent_has_sandbox_mount() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Gemini);
+
+    assert!(
+        plan.entrypoint.contains("exec gemini"),
+        "gemini entrypoint: {}",
+        plan.entrypoint
+    );
+    let gemini_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/home/dev/.gemini");
+    assert!(gemini_mount.is_some(), "gemini should have .gemini mount");
+    assert_eq!(gemini_mount.unwrap().mode, MountMode::Rw);
+}
+
+#[test]
+fn opencode_agent_has_sandbox_mount() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Opencode);
+
+    assert!(
+        plan.entrypoint.contains("exec opencode"),
+        "opencode entrypoint: {}",
+        plan.entrypoint
+    );
+    let oc_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/home/dev/.config/opencode");
+    assert!(oc_mount.is_some(), "opencode should have config mount");
+    assert_eq!(oc_mount.unwrap().mode, MountMode::Rw);
+}
+
+#[test]
+fn different_agents_have_different_entrypoints() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+
+    let pi_plan = build_plan_from_agent(&toml, workdir.path(), Agent::Pi);
+    let claude_plan = build_plan_from_agent(&toml, workdir.path(), Agent::Claude);
+    let codex_plan = build_plan_from_agent(&toml, workdir.path(), Agent::Codex);
+
+    assert_ne!(pi_plan.entrypoint, claude_plan.entrypoint);
+    assert_ne!(claude_plan.entrypoint, codex_plan.entrypoint);
+    assert_ne!(pi_plan.entrypoint, codex_plan.entrypoint);
+}
+
+#[test]
+fn non_pi_agent_no_pi_mount() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Codex);
+
+    let pi_mount = plan.mounts.iter().find(|m| m.container == "/home/dev/.pi");
+    assert!(pi_mount.is_none(), "codex should not have pi agent mount");
+
+    // But codex should have its own sandbox mount
+    let codex_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/home/dev/.codex");
+    assert!(codex_mount.is_some(), "codex should have .codex mount");
+}
+
+#[test]
+fn non_pi_agent_no_pi_env() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Codex);
+
+    let has_pi_env = plan
+        .env
+        .inline
+        .iter()
+        .any(|(k, _)| k == "PI_CODING_AGENT_DIR");
+    assert!(!has_pi_env, "codex should not have PI_CODING_AGENT_DIR");
 }

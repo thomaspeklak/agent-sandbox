@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::cli::Agent;
+
 /// Validated, path-resolved configuration ready for use by the launch pipeline.
 #[derive(Debug, Clone)]
 pub struct ValidatedConfig {
@@ -25,9 +27,17 @@ pub struct ValidatedSandbox {
     pub gitconfig_path: PathBuf,
     pub auth_key: PathBuf,
     pub sign_key: PathBuf,
+    pub agent_sandbox_base: PathBuf,
     pub bootstrap_files: Vec<String>,
     pub container_boot_dirs: Vec<String>,
     pub passthrough_env: Vec<String>,
+}
+
+impl ValidatedSandbox {
+    /// Per-agent sandbox directory under `agent_sandbox_base/<name>`.
+    pub fn sandbox_dir_for(&self, agent: Agent) -> PathBuf {
+        self.agent_sandbox_base.join(agent.as_str())
+    }
 }
 
 #[derive(Debug, Clone)]

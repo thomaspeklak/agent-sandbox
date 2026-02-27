@@ -30,6 +30,8 @@ pub struct RawSandbox {
     pub gitconfig_path: String,
     pub auth_key: String,
     pub sign_key: String,
+    #[serde(default = "default_agent_sandbox_base")]
+    pub agent_sandbox_base: String,
     #[serde(default)]
     pub bootstrap_files: Vec<String>,
     #[serde(default)]
@@ -114,6 +116,10 @@ impl Default for RawUpdate {
             minimum_release_age: default_release_age(),
         }
     }
+}
+
+fn default_agent_sandbox_base() -> String {
+    "~/.config/ags".to_owned()
 }
 
 fn default_kind() -> String {

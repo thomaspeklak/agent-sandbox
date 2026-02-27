@@ -74,6 +74,7 @@ fn validate_sandbox(raw: &crate::config::raw::RawSandbox) -> Result<ValidatedSan
         gitconfig_path: expand_path(&raw.gitconfig_path, "[sandbox].gitconfig_path")?,
         auth_key: expand_path(&raw.auth_key, "[sandbox].auth_key")?,
         sign_key: expand_path(&raw.sign_key, "[sandbox].sign_key")?,
+        agent_sandbox_base: expand_path(&raw.agent_sandbox_base, "[sandbox].agent_sandbox_base")?,
         bootstrap_files: validate_string_list(&raw.bootstrap_files, "[sandbox].bootstrap_files")?,
         container_boot_dirs: validate_string_list(
             &raw.container_boot_dirs,

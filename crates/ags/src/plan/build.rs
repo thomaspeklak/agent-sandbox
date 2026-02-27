@@ -2,16 +2,17 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::agent::{self, AgentProfile};
+use crate::cli::Agent;
 use crate::config::{
     BrowserConfig, MountKind, MountMode, MountWhen, ValidatedConfig, ValidatedMount,
 };
 use crate::git;
 use crate::plan::types::*;
 
-// Container-side path constants (pi agent image layout).
+// Container-side path constants.
 const CONTAINER_HOME: &str = "/home/dev";
-const CONTAINER_PI_DIR: &str = "/home/dev/.pi/agent";
-const CONTAINER_GITCONFIG: &str = "/home/dev/.config/pi-sandbox/gitconfig";
+const CONTAINER_GITCONFIG: &str = "/home/dev/.config/ags/gitconfig";
 const CONTAINER_SSH_SOCK: &str = "/ssh-agent";
 
 /// Cache volume mappings: (host_suffix under cache_dir, container_path, env_var).
@@ -28,26 +29,26 @@ const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
 pub fn build_launch_plan(
     config: &ValidatedConfig,
     workdir: &Path,
+    agent: Agent,
     browser_mode: bool,
     ssh_auth_sock: Option<&Path>,
     resolved_secrets: &HashMap<String, String>,
 ) -> Result<LaunchPlan, PlanError> {
+    let profile = agent::profile_for(agent, config);
     let workdir_mapping = resolve_workdir(workdir)?;
     let cache_dir = &config.sandbox.cache_dir;
 
     // Ensure host directories exist
     ensure_dir(cache_dir)?;
-    ensure_dir(&config.sandbox.sandbox_pi_dir.join("extensions"))?;
+    for dir in &profile.host_setup_dirs {
+        ensure_dir(dir)?;
+    }
     for (suffix, _, _) in CACHE_MOUNTS {
         ensure_dir(&cache_dir.join(suffix))?;
     }
 
     let mut mounts = Vec::new();
-    let mut read_roots = vec![
-        workdir_mapping.container.clone(),
-        "/tmp".to_owned(),
-        CONTAINER_PI_DIR.to_owned(),
-    ];
+    let mut read_roots = vec![workdir_mapping.container.clone(), "/tmp".to_owned()];
     let mut write_roots = read_roots.clone();
 
     // Workdir mount (added first, rendered separately by podman builder as -v + -w)
@@ -83,6 +84,22 @@ pub fn build_launch_plan(
         write_roots.push(path_str);
     }
 
+    // Agent-specific mounts
+    for m in &profile.extra_mounts {
+        mounts.push(m.clone());
+        read_roots.push(m.container.clone());
+        if m.mode == MountMode::Rw {
+            write_roots.push(m.container.clone());
+        }
+    }
+
+    // Agent optional file mounts (skipped when host file doesn't exist)
+    for m in &profile.optional_file_mounts {
+        if m.host.exists() {
+            mounts.push(m.clone());
+        }
+    }
+
     // Config mounts (filtered by when, optional/create handled)
     expand_config_mounts(
         &config.mounts,
@@ -108,6 +125,7 @@ pub fn build_launch_plan(
     // Environment
     let env = build_env(
         config,
+        &profile,
         &wayland,
         &read_roots,
         &write_roots,
@@ -125,6 +143,7 @@ pub fn build_launch_plan(
     // Entrypoint bash script
     let entrypoint = build_entrypoint(
         &config.sandbox.container_boot_dirs,
+        &profile,
         &config.browser,
         browser_mode,
     );
@@ -191,13 +210,6 @@ fn add_infrastructure_mounts(
     config: &ValidatedConfig,
     cache_dir: &Path,
 ) {
-    // Sandbox pi dir
-    mounts.push(PlanMount {
-        host: config.sandbox.sandbox_pi_dir.clone(),
-        container: CONTAINER_PI_DIR.to_owned(),
-        mode: MountMode::Rw,
-    });
-
     // Gitconfig
     mounts.push(PlanMount {
         host: config.sandbox.gitconfig_path.clone(),
@@ -336,6 +348,7 @@ fn clipboard_enabled() -> Result<bool, PlanError> {
 
 fn build_env(
     config: &ValidatedConfig,
+    profile: &AgentProfile,
     wayland: &Option<WaylandInfo>,
     read_roots: &[String],
     write_roots: &[String],
@@ -344,16 +357,16 @@ fn build_env(
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
         (
-            "PI_CODING_AGENT_DIR".to_owned(),
-            CONTAINER_PI_DIR.to_owned(),
-        ),
-        (
             "GIT_CONFIG_GLOBAL".to_owned(),
             CONTAINER_GITCONFIG.to_owned(),
         ),
         ("SSH_AUTH_SOCK".to_owned(), CONTAINER_SSH_SOCK.to_owned()),
         ("RUSTUP_HOME".to_owned(), "/usr/local/rustup".to_owned()),
     ];
+
+    for (key, value) in &profile.extra_env {
+        inline.push((key.clone(), value.clone()));
+    }
 
     for (_, container_path, env_var) in CACHE_MOUNTS {
         inline.push((env_var.to_string(), container_path.to_string()));
@@ -398,12 +411,29 @@ fn build_env(
 
 // --- entrypoint ---
 
-fn build_entrypoint(boot_dirs: &[String], browser: &BrowserConfig, browser_mode: bool) -> String {
+fn build_entrypoint(
+    boot_dirs: &[String],
+    profile: &AgentProfile,
+    browser: &BrowserConfig,
+    browser_mode: bool,
+) -> String {
     let mut script = String::new();
 
-    if !boot_dirs.is_empty() {
-        let dirs: Vec<String> = boot_dirs.iter().map(|d| shell_quote(d)).collect();
+    // Combine config boot_dirs with agent-specific dirs
+    let all_dirs: Vec<&str> = boot_dirs
+        .iter()
+        .chain(profile.extra_boot_dirs.iter())
+        .map(String::as_str)
+        .collect();
+
+    if !all_dirs.is_empty() {
+        let dirs: Vec<String> = all_dirs.iter().map(|d| shell_quote(d)).collect();
         script.push_str(&format!("mkdir -p {}; ", dirs.join(" ")));
+    }
+
+    if !profile.entrypoint_setup.is_empty() {
+        script.push_str(&profile.entrypoint_setup);
+        script.push_str("; ");
     }
 
     if browser_mode && browser.enabled {
@@ -414,10 +444,21 @@ fn build_entrypoint(boot_dirs: &[String], browser: &BrowserConfig, browser_mode:
         ));
     }
 
-    script.push_str("exec pi --no-extensions -e /home/dev/.pi/agent/extensions/guard.ts");
+    script.push_str(&format!("exec {}", profile.command));
+    for arg in &profile.command_args {
+        script.push_str(&format!(" {}", shell_quote(arg)));
+    }
 
-    if browser_mode && browser.enabled && !browser.pi_skill_path.is_empty() {
-        script.push_str(&format!(" --skill {}", shell_quote(&browser.pi_skill_path)));
+    if browser_mode
+        && browser.enabled
+        && let Some(ref flag) = profile.browser_skill_flag
+        && !profile.browser_skill_path.is_empty()
+    {
+        script.push_str(&format!(
+            " {} {}",
+            flag,
+            shell_quote(&profile.browser_skill_path)
+        ));
     }
 
     script.push_str(" \"$@\"");
