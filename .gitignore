@@ -3,7 +3,6 @@ config/config.toml
 *.bak.*
 __pycache__/
 *.pyc
-scripts/__pycache__/
 agent/settings.json
 /target/
 
@@ -27,7 +26,3 @@ hooks
 objects
 refs
 
-# Obsolete migration docs
-docs/agent-sandbox-migration/archive/
-docs/agent-sandbox-migration/open-questions.md
-docs/agent-sandbox-migration/parity-checklist.md

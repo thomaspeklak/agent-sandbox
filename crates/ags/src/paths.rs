@@ -4,7 +4,7 @@ use std::path::PathBuf;
 /// Expand a config path: resolve `~` to home dir, `$VAR` to env vars,
 /// and canonicalize relative paths against the current directory.
 ///
-/// Mirrors the Python `expand_path` from `resolve-config.py`.
+/// Mirrors legacy shell resolver path-expansion behavior.
 pub fn expand_path(raw: &str) -> Result<PathBuf, PathExpandError> {
     let after_tilde = expand_tilde(raw)?;
     let after_vars = expand_env_vars(&after_tilde)?;

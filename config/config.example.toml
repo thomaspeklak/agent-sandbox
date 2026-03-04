@@ -1,14 +1,15 @@
-# Copy to config.toml and replace ALL placeholder values.
+# Copy to ~/.config/ags/config.toml and replace ALL placeholder values.
 # This file intentionally uses dummy values for open-source safety.
 
 [sandbox]
-image = "example/pi-sandbox:latest"
-containerfile = "~/.config/pi-sandbox/Containerfile"
-sandbox_pi_dir = "~/.pi/agent-sandbox"
+image = "example/ags-sandbox:latest"
+containerfile = "~/.config/ags/Containerfile"
+sandbox_pi_dir = "~/.config/ags/pi"
 host_pi_dir = "~/.pi/agent"
 host_claude_dir = "~/.claude"
-cache_dir = "~/.cache/pi-sandbox"
-gitconfig_path = "~/.config/pi-sandbox/gitconfig-agent"
+agent_sandbox_base = "~/.config/ags"
+cache_dir = "~/.cache/ags"
+gitconfig_path = "~/.config/ags/gitconfig-agent"
 auth_key = "~/.ssh/pi-agent-auth"
 sign_key = "~/.ssh/pi-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
@@ -65,7 +66,7 @@ secret_store = { service = "example-gh-service", account = "example-account" }
 [browser]
 enabled = false
 command = "your-browser-command"
-profile_dir = "~/.cache/pi-sandbox/browser-profile"
+profile_dir = "~/.cache/ags/browser-profile"
 debug_port = 9222
 pi_skill_path = "/home/dev/example-browser-skill"
 command_args = []

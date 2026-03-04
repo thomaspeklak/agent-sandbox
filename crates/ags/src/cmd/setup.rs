@@ -299,7 +299,7 @@ fn store_secrets_interactive(config: &ValidatedConfig) -> Result<(), SetupError>
                     continue;
                 }
                 let mut args: Vec<&str> = vec!["store", "--label"];
-                let label = format!("pis {env_name}");
+                let label = format!("ags {env_name}");
                 args.push(&label);
                 for (k, v) in attributes {
                     args.push(k);

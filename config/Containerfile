@@ -1,4 +1,4 @@
-FROM registry.fedoraproject.org/fedora:41
+FROM registry.fedoraproject.org/fedora:43
 
 RUN dnf -y update && \
     dnf -y install \

@@ -1,16 +1,27 @@
-.PHONY: install uninstall doctor setup update
+.PHONY: install uninstall doctor setup update update-agents run run-browser
+
+AGS := cargo run -p ags --
 
 install:
-	./scripts/install.sh
+	$(AGS) install
 
 uninstall:
-	./scripts/uninstall.sh
+	$(AGS) uninstall
 
 doctor:
-	./bin/pis-doctor
+	$(AGS) doctor
 
 setup:
-	./bin/pis-setup
+	$(AGS) setup
 
 update:
-	./bin/pis-update
+	$(AGS) update
+
+update-agents:
+	$(AGS) update-agents
+
+run:
+	$(AGS) --agent pi
+
+run-browser:
+	$(AGS) --agent pi --browser

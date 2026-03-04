@@ -209,7 +209,7 @@ fn check_agent_status(ck: &mut Checker, env_path: &Path, auth_key: &Path, sign_k
         ck.warn("dedicated ssh-agent not active yet (normal before first run)");
         return;
     }
-    ck.ok("dedicated pis ssh-agent appears active");
+    ck.ok("dedicated ags ssh-agent appears active");
     if let Some(loaded) = list_agent_keys(sock_path) {
         check_key_loaded(ck, &loaded, auth_key, "auth");
         check_key_loaded(ck, &loaded, sign_key, "signing");
