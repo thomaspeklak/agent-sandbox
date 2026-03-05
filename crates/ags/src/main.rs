@@ -24,8 +24,8 @@ fn main() -> ExitCode {
 
 fn run_subcommand(sub: SubCommand) -> ExitCode {
     match sub {
-        SubCommand::Install => {
-            if let Err(e) = ags::cmd::install::run() {
+        SubCommand::Install(opts) => {
+            if let Err(e) = ags::cmd::install::run(&opts) {
                 eprintln!("install error: {e}");
                 return ExitCode::FAILURE;
             }
@@ -84,7 +84,7 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 return ExitCode::FAILURE;
             }
         }
-        SubCommand::Install | SubCommand::Uninstall | SubCommand::CreateAliases(_) => {
+        SubCommand::Install(_) | SubCommand::Uninstall | SubCommand::CreateAliases(_) => {
             unreachable!()
         }
     }
@@ -114,7 +114,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     let resolved_secrets = secrets::resolve_secrets(&config.secrets, &OsSecretBackend);
 
     // 4. Bootstrap git config
-    let sign_key_container = "/home/dev/.ssh/pi-agent-signing.pub";
+    let sign_key_container = "/home/dev/.ssh/ags-agent-signing.pub";
     if let Err(e) = ags::git::ensure_gitconfig(&config.sandbox.gitconfig_path, sign_key_container) {
         eprintln!("warning: git config bootstrap failed: {e}");
     }
@@ -221,7 +221,7 @@ fn create_default_config(path: &Path) -> std::io::Result<()> {
 }
 
 const DEFAULT_CONFIG: &str = r#"[sandbox]
-image = "localhost/pi-sandbox:latest"
+image = "localhost/agent-sandbox:latest"
 containerfile = "~/.config/ags/Containerfile"
 sandbox_pi_dir = "~/.config/ags/pi"
 host_pi_dir = "~/.pi/agent"
@@ -229,8 +229,8 @@ host_claude_dir = "~/.claude"
 agent_sandbox_base = "~/.config/ags"
 cache_dir = "~/.cache/ags"
 gitconfig_path = "~/.config/ags/gitconfig-agent"
-auth_key = "~/.ssh/pi-agent-auth"
-sign_key = "~/.ssh/pi-agent-signing"
+auth_key = "~/.ssh/ags-agent-auth"
+sign_key = "~/.ssh/ags-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
 container_boot_dirs = [
   "/home/dev/.ssh",

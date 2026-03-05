@@ -6,7 +6,7 @@ use std::path::PathBuf;
 fn raw_config_deserializes_minimal_toml() {
     let toml_str = r#"
 [sandbox]
-image = "localhost/pi-sandbox:latest"
+image = "localhost/agent-sandbox:latest"
 containerfile = "/tmp/Containerfile"
 sandbox_pi_dir = "/tmp/sandbox"
 host_pi_dir = "/tmp/host"
@@ -17,7 +17,7 @@ auth_key = "/tmp/auth"
 sign_key = "/tmp/sign"
 "#;
     let raw: ags::config::RawConfig = toml::from_str(toml_str).unwrap();
-    assert_eq!(raw.sandbox.image, "localhost/pi-sandbox:latest");
+    assert_eq!(raw.sandbox.image, "localhost/agent-sandbox:latest");
     assert!(raw.mount.is_empty());
     assert!(raw.tool.is_empty());
     assert!(raw.secret.is_empty());

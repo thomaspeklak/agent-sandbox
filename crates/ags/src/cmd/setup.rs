@@ -12,8 +12,8 @@ pub fn run(config: &ValidatedConfig) -> Result<(), SetupError> {
     let auth_key = &config.sandbox.auth_key;
     let sign_key = &config.sandbox.sign_key;
 
-    generate_key_if_missing(auth_key, "pi-sandbox-auth")?;
-    generate_key_if_missing(sign_key, "pi-sandbox-signing")?;
+    generate_key_if_missing(auth_key, "ags-agent-auth")?;
+    generate_key_if_missing(sign_key, "ags-agent-signing")?;
 
     println!("\nAdd these public keys to GitHub:\n");
     print_pub_key("Auth key (SSH key for git push)", auth_key)?;

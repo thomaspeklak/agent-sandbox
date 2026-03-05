@@ -57,7 +57,7 @@ fn ensure_gitconfig_creates_file_when_missing() {
     let dir = tempdir();
     let gitconfig = dir.join("sandbox-gitconfig");
 
-    let result = git::ensure_gitconfig(&gitconfig, "/home/dev/.ssh/pi-agent-signing.pub");
+    let result = git::ensure_gitconfig(&gitconfig, "/home/dev/.ssh/ags-agent-signing.pub");
     assert!(result.is_ok(), "ensure_gitconfig failed: {result:?}");
     assert!(gitconfig.exists());
 
@@ -67,7 +67,7 @@ fn ensure_gitconfig_creates_file_when_missing() {
     assert!(content.contains("gpgsign = true"));
     assert!(content.contains("[gpg]"));
     assert!(content.contains("format = ssh"));
-    assert!(content.contains("signingkey = /home/dev/.ssh/pi-agent-signing.pub"));
+    assert!(content.contains("signingkey = /home/dev/.ssh/ags-agent-signing.pub"));
 }
 
 #[test]

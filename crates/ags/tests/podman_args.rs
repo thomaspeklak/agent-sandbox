@@ -6,7 +6,7 @@ use ags::podman::{build_run_args, write_env_file};
 
 fn minimal_plan() -> LaunchPlan {
     LaunchPlan {
-        image: "localhost/pi-sandbox:latest".to_owned(),
+        image: "localhost/agent-sandbox:latest".to_owned(),
         containerfile: PathBuf::from("/tmp/Containerfile"),
         container_name: "ags-project-abcd".to_owned(),
         workdir: WorkdirMapping {
@@ -106,10 +106,10 @@ fn args_include_guard_roots() {
 
     let has_read = args
         .windows(2)
-        .any(|w| w[0] == "-e" && w[1].starts_with("PI_SBOX_GUARD_READ_ROOTS_JSON="));
+        .any(|w| w[0] == "-e" && w[1].starts_with("AGS_GUARD_READ_ROOTS_JSON="));
     let has_write = args
         .windows(2)
-        .any(|w| w[0] == "-e" && w[1].starts_with("PI_SBOX_GUARD_WRITE_ROOTS_JSON="));
+        .any(|w| w[0] == "-e" && w[1].starts_with("AGS_GUARD_WRITE_ROOTS_JSON="));
     assert!(has_read, "should have read roots");
     assert!(has_write, "should have write roots");
 }
@@ -151,7 +151,7 @@ fn args_end_with_image_and_entrypoint() {
     // Image should be near the end, followed by bash -lc <entrypoint> _
     let img_idx = args
         .iter()
-        .position(|a| a == "localhost/pi-sandbox:latest")
+        .position(|a| a == "localhost/agent-sandbox:latest")
         .unwrap();
     assert_eq!(args[img_idx + 1], "bash");
     assert_eq!(args[img_idx + 2], "-lc");

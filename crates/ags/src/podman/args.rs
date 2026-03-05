@@ -41,12 +41,12 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
     // Guard roots
     args.push("-e".into());
     args.push(format!(
-        "PI_SBOX_GUARD_READ_ROOTS_JSON={}",
+        "AGS_GUARD_READ_ROOTS_JSON={}",
         plan.env.read_roots_json
     ));
     args.push("-e".into());
     args.push(format!(
-        "PI_SBOX_GUARD_WRITE_ROOTS_JSON={}",
+        "AGS_GUARD_WRITE_ROOTS_JSON={}",
         plan.env.write_roots_json
     ));
 

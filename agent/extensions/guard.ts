@@ -92,8 +92,8 @@ export default function (pi: ExtensionAPI) {
 		const cwd = ctx.cwd;
 		const workspace = normalize(cwd);
 
-		const readRootsFromEnv = parseRootsFromEnv("PI_SBOX_GUARD_READ_ROOTS_JSON");
-		const writeRootsFromEnv = parseRootsFromEnv("PI_SBOX_GUARD_WRITE_ROOTS_JSON");
+		const readRootsFromEnv = parseRootsFromEnv("AGS_GUARD_READ_ROOTS_JSON");
+		const writeRootsFromEnv = parseRootsFromEnv("AGS_GUARD_WRITE_ROOTS_JSON");
 
 		const allowedReadRoots = (readRootsFromEnv ?? [workspace, "/tmp", "/home/dev/.pi/agent"]).map((p) => asAbsolutePath(p, cwd, home));
 
@@ -155,8 +155,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("guard", {
 		description: "Show active sandbox guard roots",
 		handler: async (_args, ctx) => {
-			const readRoots = parseRootsFromEnv("PI_SBOX_GUARD_READ_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi/agent"];
-			const writeRoots = parseRootsFromEnv("PI_SBOX_GUARD_WRITE_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi/agent"];
+			const readRoots = parseRootsFromEnv("AGS_GUARD_READ_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi/agent"];
+			const writeRoots = parseRootsFromEnv("AGS_GUARD_WRITE_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi/agent"];
 
 			ctx.ui.notify(
 				[

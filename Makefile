@@ -1,9 +1,12 @@
-.PHONY: install uninstall doctor setup update update-agents run run-browser aliases
+.PHONY: install install-self uninstall doctor setup update update-agents run run-browser aliases
 
 AGS := cargo run -p ags --
 
 install:
 	$(AGS) install
+
+install-self:
+	$(AGS) install --link-self
 
 uninstall:
 	$(AGS) uninstall

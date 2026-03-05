@@ -31,7 +31,7 @@ pi_skill_path = "/home/dev/browser-skill"
     let toml = format!(
         r#"
 [sandbox]
-image = "localhost/pi-sandbox:latest"
+image = "localhost/agent-sandbox:latest"
 containerfile = "{containerfile}"
 sandbox_pi_dir = "{base}/sandbox"
 host_pi_dir = "{base}/host"

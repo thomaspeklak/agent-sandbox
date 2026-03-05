@@ -16,7 +16,7 @@ fn minimal_config_toml() -> String {
     format!(
         r#"
 [sandbox]
-image = "localhost/pi-sandbox:latest"
+image = "localhost/agent-sandbox:latest"
 containerfile = "{containerfile}"
 sandbox_pi_dir = "{base}/sandbox"
 host_pi_dir = "{base}/host"
@@ -49,7 +49,7 @@ fn minimal_plan_has_correct_image() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
-    assert_eq!(plan.image, "localhost/pi-sandbox:latest");
+    assert_eq!(plan.image, "localhost/agent-sandbox:latest");
 }
 
 #[test]

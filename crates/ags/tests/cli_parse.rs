@@ -1,5 +1,6 @@
 use ags::cli::{
-    Agent, AliasMode, CliError, Command, CreateAliasesOptions, Shell, SubCommand, parse_args,
+    Agent, AliasMode, CliError, Command, CreateAliasesOptions, InstallOptions, Shell, SubCommand,
+    parse_args,
 };
 
 fn args(items: &[&str]) -> Vec<String> {
@@ -55,12 +56,35 @@ fn parses_subcommands() {
         ("doctor", SubCommand::Doctor),
         ("update", SubCommand::Update),
         ("update-agents", SubCommand::UpdateAgents),
-        ("install", SubCommand::Install),
         ("uninstall", SubCommand::Uninstall),
     ] {
         let cmd = parse_args(args(&["ags", arg])).unwrap();
         assert_eq!(cmd, Command::Sub(expected));
     }
+}
+
+#[test]
+fn parses_install_defaults() {
+    let cmd = parse_args(args(&["ags", "install"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::Install(InstallOptions {
+            link_self: false,
+            force: false,
+        }))
+    );
+}
+
+#[test]
+fn parses_install_flags() {
+    let cmd = parse_args(args(&["ags", "install", "--link-self", "--force"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::Install(InstallOptions {
+            link_self: true,
+            force: true,
+        }))
+    );
 }
 
 #[test]

@@ -124,8 +124,8 @@ pub fn build_launch_plan(
     }
 
     // Public key files
-    add_pub_key_mount(&mut mounts, &config.sandbox.auth_key, "pi-agent-auth");
-    add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "pi-agent-signing");
+    add_pub_key_mount(&mut mounts, &config.sandbox.auth_key, "ags-agent-auth");
+    add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
 
     // Environment
     let env = build_env(
@@ -414,12 +414,12 @@ fn detect_wayland() -> Result<Option<WaylandInfo>, PlanError> {
 }
 
 fn clipboard_enabled() -> Result<bool, PlanError> {
-    let raw = std::env::var("PI_SBOX_ENABLE_CLIPBOARD").unwrap_or_else(|_| "1".to_owned());
+    let raw = std::env::var("AGS_ENABLE_CLIPBOARD").unwrap_or_else(|_| "1".to_owned());
     match raw.to_lowercase().as_str() {
         "1" | "true" | "yes" | "on" => Ok(true),
         "0" | "false" | "no" | "off" => Ok(false),
         _ => Err(PlanError::InvalidEnv {
-            var: "PI_SBOX_ENABLE_CLIPBOARD".to_owned(),
+            var: "AGS_ENABLE_CLIPBOARD".to_owned(),
             value: raw,
         }),
     }
@@ -522,7 +522,7 @@ fn build_entrypoint(
     if browser_mode && browser.enabled {
         script.push_str(&format!(
             "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-             TCP:10.0.2.2:{port} >/tmp/pi-sbox-socat.log 2>&1 & ",
+             TCP:10.0.2.2:{port} >/tmp/ags-socat.log 2>&1 & ",
             port = browser.debug_port
         ));
     }

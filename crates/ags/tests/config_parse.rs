@@ -5,7 +5,7 @@ use ags::config::{MountKind, MountMode, MountWhen, SecretSource, ValidatedConfig
 fn minimal_sandbox_toml() -> &'static str {
     r#"
 [sandbox]
-image = "localhost/pi-sandbox:latest"
+image = "localhost/agent-sandbox:latest"
 containerfile = "/tmp/Containerfile"
 sandbox_pi_dir = "/tmp/sandbox"
 host_pi_dir = "/tmp/host"
@@ -32,7 +32,7 @@ fn parse_err(extra: &str) -> String {
 #[test]
 fn minimal_config_parses() {
     let cfg = parse_minimal("");
-    assert_eq!(cfg.sandbox.image, "localhost/pi-sandbox:latest");
+    assert_eq!(cfg.sandbox.image, "localhost/agent-sandbox:latest");
     assert!(cfg.mounts.is_empty());
     assert!(cfg.tools.is_empty());
     assert!(cfg.secrets.is_empty());

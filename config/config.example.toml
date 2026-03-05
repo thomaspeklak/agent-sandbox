@@ -2,7 +2,7 @@
 # This file intentionally uses dummy values for open-source safety.
 
 [sandbox]
-image = "example/ags-sandbox:latest"
+image = "example/agent-sandbox:latest"
 containerfile = "~/.config/ags/Containerfile"
 sandbox_pi_dir = "~/.config/ags/pi"
 host_pi_dir = "~/.pi/agent"
@@ -10,8 +10,8 @@ host_claude_dir = "~/.claude"
 agent_sandbox_base = "~/.config/ags"
 cache_dir = "~/.cache/ags"
 gitconfig_path = "~/.config/ags/gitconfig-agent"
-auth_key = "~/.ssh/pi-agent-auth"
-sign_key = "~/.ssh/pi-agent-signing"
+auth_key = "~/.ssh/ags-agent-auth"
+sign_key = "~/.ssh/ags-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
 container_boot_dirs = ["/home/dev/.ssh", "/home/dev/.config/example-tool"]
 passthrough_env = ["EXAMPLE_API_KEY"]

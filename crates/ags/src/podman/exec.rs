@@ -70,7 +70,7 @@ pub fn write_env_file(
 ) -> Result<std::path::PathBuf, PodmanError> {
     fs::create_dir_all(dir).map_err(PodmanError::EnvFileCreate)?;
 
-    let path = dir.join(format!("pi-sbox-env.{}", std::process::id()));
+    let path = dir.join(format!("ags-env.{}", std::process::id()));
 
     let content: String = entries.iter().map(|(k, v)| format!("{k}={v}\n")).collect();
 

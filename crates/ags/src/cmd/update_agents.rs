@@ -37,10 +37,7 @@ impl fmt::Display for UpdateAgentsError {
 impl std::error::Error for UpdateAgentsError {}
 
 /// Install or update all agents in persistent volumes via a throwaway container.
-pub fn run(
-    config: &ValidatedConfig,
-    opts: &UpdateAgentsOptions,
-) -> Result<(), UpdateAgentsError> {
+pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), UpdateAgentsError> {
     let cache_dir = &config.sandbox.cache_dir;
     let image = &config.sandbox.image;
 
@@ -49,15 +46,11 @@ pub fn run(
 
     // 1. Ensure host dirs exist
     for dir in [&pnpm_home, &claude_install] {
-        fs::create_dir_all(dir).map_err(|e| {
-            UpdateAgentsError::HostDirCreate(format!("{}: {e}", dir.display()))
-        })?;
+        fs::create_dir_all(dir)
+            .map_err(|e| UpdateAgentsError::HostDirCreate(format!("{}: {e}", dir.display())))?;
     }
 
-    let pi_spec = opts
-        .pi_spec
-        .as_deref()
-        .unwrap_or(&config.update.pi_spec);
+    let pi_spec = opts.pi_spec.as_deref().unwrap_or(&config.update.pi_spec);
     let release_age = opts
         .minimum_release_age
         .unwrap_or(config.update.minimum_release_age);

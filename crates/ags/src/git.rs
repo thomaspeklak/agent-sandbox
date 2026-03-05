@@ -41,9 +41,9 @@ pub fn ensure_gitconfig(gitconfig_path: &Path, sign_key_container: &str) -> Resu
         fs::create_dir_all(parent)?;
     }
 
-    let name = git_global_config("user.name").unwrap_or_else(|| "Pi Sandbox Agent".to_owned());
+    let name = git_global_config("user.name").unwrap_or_else(|| "Agent Sandbox Agent".to_owned());
     let email =
-        git_global_config("user.email").unwrap_or_else(|| "pi-sandbox@example.invalid".to_owned());
+        git_global_config("user.email").unwrap_or_else(|| "agent-sandbox@example.invalid".to_owned());
 
     let content = format!(
         "[user]\n\

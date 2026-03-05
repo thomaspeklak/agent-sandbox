@@ -80,7 +80,7 @@ impl BrowserSidecar {
     pub fn socat_command(&self) -> String {
         format!(
             "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-             TCP:10.0.2.2:{port} >/tmp/pi-sbox-socat.log 2>&1 &",
+             TCP:10.0.2.2:{port} >/tmp/ags-socat.log 2>&1 &",
             port = self.port
         )
     }

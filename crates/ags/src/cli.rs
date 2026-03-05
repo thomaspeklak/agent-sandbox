@@ -103,12 +103,18 @@ pub struct CreateAliasesOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallOptions {
+    pub link_self: bool,
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubCommand {
     Setup,
     Doctor,
     Update,
     UpdateAgents,
-    Install,
+    Install(InstallOptions),
     Uninstall,
     CreateAliases(CreateAliasesOptions),
 }
@@ -174,7 +180,10 @@ where
         "doctor" => return Ok(Command::Sub(SubCommand::Doctor)),
         "update" => return Ok(Command::Sub(SubCommand::Update)),
         "update-agents" => return Ok(Command::Sub(SubCommand::UpdateAgents)),
-        "install" => return Ok(Command::Sub(SubCommand::Install)),
+        "install" => {
+            let opts = parse_install_args(iter)?;
+            return Ok(Command::Sub(SubCommand::Install(opts)));
+        }
         "uninstall" => return Ok(Command::Sub(SubCommand::Uninstall)),
         "create-aliases" => {
             let opts = parse_create_aliases_args(iter)?;
@@ -271,6 +280,34 @@ fn parse_run_arg<I: Iterator<Item = String>>(
     Err(CliError::UnexpectedPositional(arg.to_owned()))
 }
 
+fn parse_install_args<I>(mut iter: I) -> Result<InstallOptions, CliError>
+where
+    I: Iterator<Item = String>,
+{
+    let mut link_self = false;
+    let mut force = false;
+
+    while let Some(arg) = iter.next() {
+        if arg == "-h" || arg == "--help" {
+            return Err(CliError::HelpRequested);
+        }
+        if arg == "--link-self" {
+            link_self = true;
+            continue;
+        }
+        if arg == "--force" {
+            force = true;
+            continue;
+        }
+        if arg.starts_with('-') {
+            return Err(CliError::UnexpectedFlag(arg));
+        }
+        return Err(CliError::UnexpectedPositional(arg));
+    }
+
+    Ok(InstallOptions { link_self, force })
+}
+
 fn parse_create_aliases_args<I>(mut iter: I) -> Result<CreateAliasesOptions, CliError>
 where
     I: Iterator<Item = String>,
@@ -334,9 +371,13 @@ pub fn help_text() -> &'static str {
      \x20 doctor         Run health checks on sandbox configuration\n\
      \x20 update         Rebuild the container image (deps only)\n\
      \x20 update-agents  Install/update agents in persistent volumes\n\
-     \x20 install        Install symlinks and bootstrap config\n\
-     \x20 uninstall       Remove installed symlinks\n\
+     \x20 install         Install config/assets (optional self-link)\n\
+     \x20 uninstall       Reserved (currently no-op)\n\
      \x20 create-aliases  Create managed wrapper scripts and/or shell aliases\n\
+     \n\
+     install flags:\n\
+     \x20 --link-self      Link current ags executable to ~/.local/bin/ags\n\
+     \x20 --force          Replace existing ~/.local/bin/ags when used with --link-self\n\
      \n\
      create-aliases flags:\n\
      \x20 --shell <name>    Target shell for alias blocks (fish|zsh|bash; autodetect if omitted)\n\
