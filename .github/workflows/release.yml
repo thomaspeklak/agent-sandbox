@@ -2,139 +2,100 @@ name: Release
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "crates/ags/Cargo.toml"
-      - ".github/workflows/release.yml"
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
   contents: write
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  detect-version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.detect.outputs.version }}
-      previous_version: ${{ steps.detect.outputs.previous_version }}
-      should_release: ${{ steps.detect.outputs.should_release }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Detect version change
-        id: detect
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-
-          CARGO_FILE="crates/ags/Cargo.toml"
-
-          VERSION=$(python - <<'PY'
-          import tomllib
-          with open("crates/ags/Cargo.toml", "rb") as f:
-              print(tomllib.load(f)["package"]["version"])
-          PY
-          )
-
-          PREVIOUS_VERSION=""
-
-          if [[ "$EVENT_NAME" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && [[ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
-            if git cat-file -e "$BEFORE_SHA:$CARGO_FILE" 2>/dev/null; then
-              PREVIOUS_VERSION=$(git show "$BEFORE_SHA:$CARGO_FILE" | python - <<'PY'
-          import tomllib, sys
-          print(tomllib.loads(sys.stdin.read())["package"]["version"])
-          PY
-              )
-            fi
-          fi
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            SHOULD_RELEASE="true"
-          elif [[ -z "$PREVIOUS_VERSION" ]]; then
-            SHOULD_RELEASE="true"
-          elif [[ "$PREVIOUS_VERSION" != "$VERSION" ]]; then
-            SHOULD_RELEASE="true"
-          else
-            SHOULD_RELEASE="false"
-          fi
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "previous_version=$PREVIOUS_VERSION" >> "$GITHUB_OUTPUT"
-          echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
-
-          echo "Detected version: $VERSION"
-          if [[ -n "$PREVIOUS_VERSION" ]]; then
-            echo "Previous version: $PREVIOUS_VERSION"
-          fi
-          echo "should_release=$SHOULD_RELEASE"
-
   build:
-    runs-on: ubuntu-latest
-    needs: detect-version
-    if: needs.detect-version.outputs.should_release == 'true'
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: ags
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: ags
+
+    runs-on: ${{ matrix.os }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build -p ags --release
+        run: cargo build --release -p ags --bin ags --target ${{ matrix.target }}
 
-      - name: Package artifacts
-        env:
-          VERSION: ${{ needs.detect-version.outputs.version }}
+      - name: Sign macOS binary (ad-hoc)
+        if: runner.os == 'macOS'
+        run: codesign --sign - --force --timestamp target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/${{ matrix.artifact }} dist/ags-${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ags-${{ matrix.target }}
+          path: dist/ags-${{ matrix.target }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        shell: bash
         run: |
           set -euo pipefail
 
-          mkdir -p dist
-          cp target/release/ags dist/ags
-          cp README.md LICENSE dist/
+          if [ ! -f CHANGELOG.md ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          tar -C dist -czf "dist/ags-${VERSION}-linux-x86_64.tar.gz" ags README.md LICENSE
-          (cd dist && sha256sum "ags-${VERSION}-linux-x86_64.tar.gz" > "ags-${VERSION}-linux-x86_64.tar.gz.sha256")
+          TAG="${GITHUB_REF_NAME#v}"
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-assets-v${{ needs.detect-version.outputs.version }}
-          path: |
-            dist/*.tar.gz
-            dist/*.sha256
+          awk "/^## \[v${TAG}\]|^## \[${TAG}\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md > release-notes.txt
 
-  release:
-    runs-on: ubuntu-latest
-    needs: [detect-version, build]
-    if: needs.detect-version.outputs.should_release == 'true'
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: release-assets-v${{ needs.detect-version.outputs.version }}
-          path: dist
+          if [ -s release-notes.txt ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Publish GitHub release
+      - name: Create GitHub Release (with changelog notes)
+        if: steps.notes.outputs.found == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.detect-version.outputs.version }}
-          name: ags v${{ needs.detect-version.outputs.version }}
-          target_commitish: ${{ github.sha }}
+          files: artifacts/*
+          body_path: release-notes.txt
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release (auto notes)
+        if: steps.notes.outputs.found != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
           generate_release_notes: true
-          overwrite_files: true
-          files: |
-            dist/*.tar.gz
-            dist/*.sha256
+          token: ${{ secrets.GITHUB_TOKEN }}
