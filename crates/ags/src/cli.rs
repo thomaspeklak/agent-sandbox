@@ -47,7 +47,7 @@ impl fmt::Display for Agent {
 pub enum Command {
     /// Run an agent inside the sandbox.
     Run(RunOptions),
-    /// Subcommands: setup, doctor, update, install, uninstall.
+    /// Subcommands: setup, doctor, update, update-agents, install, uninstall, create-aliases, completions.
     Sub(SubCommand),
 }
 
@@ -109,6 +109,11 @@ pub struct InstallOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionsOptions {
+    pub shell: Shell,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubCommand {
     Setup,
     Doctor,
@@ -117,6 +122,7 @@ pub enum SubCommand {
     Install(InstallOptions),
     Uninstall,
     CreateAliases(CreateAliasesOptions),
+    Completions(CompletionsOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,6 +194,10 @@ where
         "create-aliases" => {
             let opts = parse_create_aliases_args(iter)?;
             return Ok(Command::Sub(SubCommand::CreateAliases(opts)));
+        }
+        "completions" => {
+            let opts = parse_completions_args(iter)?;
+            return Ok(Command::Sub(SubCommand::Completions(opts)));
         }
         _ => {}
     }
@@ -363,6 +373,41 @@ where
     Ok(CreateAliasesOptions { shell, mode, force })
 }
 
+fn parse_completions_args<I>(mut iter: I) -> Result<CompletionsOptions, CliError>
+where
+    I: Iterator<Item = String>,
+{
+    let mut shell = None;
+
+    while let Some(arg) = iter.next() {
+        if arg == "-h" || arg == "--help" {
+            return Err(CliError::HelpRequested);
+        }
+
+        if arg == "--shell" {
+            let value = iter.next().ok_or(CliError::MissingShellValue)?;
+            shell = Some(Shell::parse(&value)?);
+            continue;
+        }
+
+        if let Some(value) = arg.strip_prefix("--shell=") {
+            if value.is_empty() {
+                return Err(CliError::MissingShellValue);
+            }
+            shell = Some(Shell::parse(value)?);
+            continue;
+        }
+
+        if arg.starts_with('-') {
+            return Err(CliError::UnexpectedFlag(arg));
+        }
+        return Err(CliError::UnexpectedPositional(arg));
+    }
+
+    let shell = shell.ok_or(CliError::MissingShellValue)?;
+    Ok(CompletionsOptions { shell })
+}
+
 pub fn help_text() -> &'static str {
     "Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|shell> [flags] -- [args...]\n\
      \n\
@@ -374,6 +419,7 @@ pub fn help_text() -> &'static str {
      \x20 install         Install config/assets (optional self-link)\n\
      \x20 uninstall       Reserved (currently no-op)\n\
      \x20 create-aliases  Create managed wrapper scripts and/or shell aliases\n\
+     \x20 completions     Print shell completion script to stdout\n\
      \n\
      install flags:\n\
      \x20 --link-self      Link current ags executable to ~/.local/bin/ags\n\
@@ -383,6 +429,9 @@ pub fn help_text() -> &'static str {
      \x20 --shell <name>    Target shell for alias blocks (fish|zsh|bash; autodetect if omitted)\n\
      \x20 --mode <kind>     wrappers|aliases|both (default: wrappers)\n\
      \x20 --force           Replace existing non-managed targets\n\
+     \n\
+     completions flags:\n\
+     \x20 --shell <name>    Shell to generate completion script for (fish|zsh|bash)\n\
      \n\
      Run flags:\n\
      \x20 --agent <name>   Agent to run (required), or 'shell' for interactive bash\n\

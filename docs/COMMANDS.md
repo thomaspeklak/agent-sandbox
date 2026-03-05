@@ -20,6 +20,7 @@ Subcommands:
 - `install`
 - `uninstall`
 - `create-aliases`
+- `completions`
 
 Use `ags --help` for built-in help text.
 
@@ -195,6 +196,31 @@ ags create-aliases --mode wrappers --force
   - bash: `~/.bashrc`
 
 Managed alias blocks are clearly delimited so future runs can update them safely.
+
+---
+
+## `ags completions`
+
+Prints shell completion scripts to stdout.
+
+```bash
+ags completions --shell bash
+ags completions --shell zsh
+ags completions --shell fish
+```
+
+### Typical install paths
+
+```bash
+# bash
+ags completions --shell bash > ~/.local/share/bash-completion/completions/ags
+
+# zsh
+ags completions --shell zsh > ~/.zfunc/_ags
+
+# fish
+ags completions --shell fish > ~/.config/fish/completions/ags.fish
+```
 
 ---
 

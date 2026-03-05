@@ -48,6 +48,8 @@
 
 - `setup`/`doctor`/`update`/`update-agents` operate as host-side utilities.
 - `install` writes embedded assets and optional self-link.
+- `create-aliases` manages shell alias blocks and wrapper scripts.
+- `completions` prints shell completion scripts (bash/zsh/fish).
 
 ---
 

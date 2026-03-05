@@ -45,6 +45,13 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
             }
             return ExitCode::SUCCESS;
         }
+        SubCommand::Completions(opts) => {
+            if let Err(e) = ags::cmd::completions::run(&opts) {
+                eprintln!("completions error: {e}");
+                return ExitCode::FAILURE;
+            }
+            return ExitCode::SUCCESS;
+        }
         SubCommand::Setup | SubCommand::Doctor | SubCommand::Update | SubCommand::UpdateAgents => {}
     }
 
@@ -84,7 +91,10 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 return ExitCode::FAILURE;
             }
         }
-        SubCommand::Install(_) | SubCommand::Uninstall | SubCommand::CreateAliases(_) => {
+        SubCommand::Install(_)
+        | SubCommand::Uninstall
+        | SubCommand::CreateAliases(_)
+        | SubCommand::Completions(_) => {
             unreachable!()
         }
     }

@@ -1,6 +1,6 @@
 use ags::cli::{
-    Agent, AliasMode, CliError, Command, CreateAliasesOptions, InstallOptions, Shell, SubCommand,
-    parse_args,
+    Agent, AliasMode, CliError, Command, CompletionsOptions, CreateAliasesOptions, InstallOptions,
+    Shell, SubCommand, parse_args,
 };
 
 fn args(items: &[&str]) -> Vec<String> {
@@ -130,6 +130,24 @@ fn parses_agent_equals_form() {
         Command::Run(opts) => assert_eq!(opts.agent, Agent::Claude),
         _ => panic!("expected Run command"),
     }
+}
+
+#[test]
+fn parses_completions_flags() {
+    let cmd = parse_args(args(&["ags", "completions", "--shell", "zsh"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::Completions(CompletionsOptions {
+            shell: Shell::Zsh,
+        }))
+    );
+}
+
+#[test]
+fn completions_requires_shell() {
+    let err = parse_args(args(&["ags", "completions"]))
+        .expect_err("expected missing shell value for completions");
+    assert_eq!(err, CliError::MissingShellValue);
 }
 
 #[test]

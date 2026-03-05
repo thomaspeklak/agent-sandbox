@@ -1,3 +1,4 @@
+pub mod completions;
 pub mod create_aliases;
 pub mod doctor;
 mod doctor_util;

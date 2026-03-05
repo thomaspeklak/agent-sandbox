@@ -221,6 +221,7 @@ ags --agent pi --config /path/to/config.toml
 - `ags install [--link-self] [--force]` — install assets/config layout, optional self-link
 - `ags uninstall` — currently reserved/no-op cleanup
 - `ags create-aliases` — create managed wrappers and/or shell alias blocks
+- `ags completions --shell <bash|zsh|fish>` — print shell completion script
 
 ### `create-aliases` options
 
@@ -230,6 +231,19 @@ ags create-aliases --mode wrappers|aliases|both --shell fish|zsh|bash --force
 
 - default mode: `wrappers`
 - if `--shell` omitted, shell is autodetected from `$SHELL`
+
+### Shell completions
+
+```bash
+# bash
+ags completions --shell bash > ~/.local/share/bash-completion/completions/ags
+
+# zsh
+ags completions --shell zsh > ~/.zfunc/_ags
+
+# fish
+ags completions --shell fish > ~/.config/fish/completions/ags.fish
+```
 
 ### Global run flags
 
