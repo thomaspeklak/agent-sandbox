@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.1] — 2026-03-05
+
+### Bug Fixes
+
+- Made `ags update-agents` robust for Claude updates by forcing persistent Claude home/path (`/opt/claude-home`) during update/install.
+- Added fallback reinstall via `install.sh` when `claude update` fails.
+- Replaced Claude shim in `/usr/local/pnpm/claude` with a wrapper that always exports persistent `HOME` and `PATH`, so `claude` in `--agent shell` uses the updated persistent installation.
+
 ## [v0.1.0] — 2026-03-05
 
 ### Features

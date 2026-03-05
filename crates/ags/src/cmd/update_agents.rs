@@ -93,12 +93,19 @@ pnpm self-update && \
 PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH \
   pnpm add -g --store-dir /usr/local/pnpm/.store \
     {pi_spec} @openai/codex @google/gemini-cli opencode-ai && \
-if [ -x /opt/claude-home/.local/bin/claude ]; then
-  /opt/claude-home/.local/bin/claude update
-else
-  export HOME=/opt/claude-home && curl -fsSL https://claude.ai/install.sh | bash
+CLAUDE_HOME=/opt/claude-home && \
+CLAUDE_BIN="$CLAUDE_HOME/.local/bin/claude" && \
+if [ -x "$CLAUDE_BIN" ]; then \
+  HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" "$CLAUDE_BIN" update || \
+  (echo 'claude update failed; reinstalling via install.sh' >&2 && \
+   HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" curl -fsSL https://claude.ai/install.sh | bash); \
+else \
+  HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" curl -fsSL https://claude.ai/install.sh | bash; \
 fi && \
-ln -sf /opt/claude-home/.local/bin/claude /usr/local/pnpm/claude"#,
+[ -x "$CLAUDE_BIN" ] && \
+rm -f /usr/local/pnpm/claude && \
+printf '%s\n' '#!/usr/bin/env bash' 'export HOME=/opt/claude-home' 'export PATH=/opt/claude-home/.local/bin:$PATH' 'exec /opt/claude-home/.local/bin/claude "$@"' > /usr/local/pnpm/claude && \
+chmod +x /usr/local/pnpm/claude"#,
         release_age = release_age,
         pi_spec = pi_spec,
     )
