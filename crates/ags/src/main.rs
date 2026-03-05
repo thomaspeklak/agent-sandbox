@@ -29,53 +29,63 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 eprintln!("install error: {e}");
                 return ExitCode::FAILURE;
             }
+            return ExitCode::SUCCESS;
         }
         SubCommand::Uninstall => {
             if let Err(e) = ags::cmd::install::uninstall() {
                 eprintln!("uninstall error: {e}");
                 return ExitCode::FAILURE;
             }
+            return ExitCode::SUCCESS;
         }
-        _ => {
-            let config = match load_config(None) {
-                Ok(c) => c,
-                Err(code) => return code,
-            };
-            match sub {
-                SubCommand::Setup => {
-                    if let Err(e) = ags::cmd::setup::run(&config) {
-                        eprintln!("setup error: {e}");
-                        return ExitCode::FAILURE;
-                    }
-                }
-                SubCommand::Doctor => {
-                    let ok = ags::cmd::doctor::run(&config);
-                    if !ok {
-                        return ExitCode::FAILURE;
-                    }
-                }
-                SubCommand::Update => {
-                    if let Err(e) =
-                        ags::assets::ensure_containerfile(&config.sandbox.containerfile)
-                    {
-                        eprintln!("update error: could not write Containerfile: {e}");
-                        return ExitCode::FAILURE;
-                    }
-                    let opts = ags::cmd::update::UpdateOptions::default();
-                    if let Err(e) = ags::cmd::update::run(&config, &opts) {
-                        eprintln!("update error: {e}");
-                        return ExitCode::FAILURE;
-                    }
-                }
-                SubCommand::UpdateAgents => {
-                    let opts = ags::cmd::update_agents::UpdateAgentsOptions::default();
-                    if let Err(e) = ags::cmd::update_agents::run(&config, &opts) {
-                        eprintln!("update-agents error: {e}");
-                        return ExitCode::FAILURE;
-                    }
-                }
-                SubCommand::Install | SubCommand::Uninstall => unreachable!(),
+        SubCommand::CreateAliases(opts) => {
+            if let Err(e) = ags::cmd::create_aliases::run(&opts) {
+                eprintln!("create-aliases error: {e}");
+                return ExitCode::FAILURE;
             }
+            return ExitCode::SUCCESS;
+        }
+        SubCommand::Setup | SubCommand::Doctor | SubCommand::Update | SubCommand::UpdateAgents => {}
+    }
+
+    let config = match load_config(None) {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+
+    match sub {
+        SubCommand::Setup => {
+            if let Err(e) = ags::cmd::setup::run(&config) {
+                eprintln!("setup error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+        SubCommand::Doctor => {
+            let ok = ags::cmd::doctor::run(&config);
+            if !ok {
+                return ExitCode::FAILURE;
+            }
+        }
+        SubCommand::Update => {
+            if let Err(e) = ags::assets::ensure_containerfile(&config.sandbox.containerfile) {
+                eprintln!("update error: could not write Containerfile: {e}");
+                return ExitCode::FAILURE;
+            }
+            let opts = ags::cmd::update::UpdateOptions::default();
+            if let Err(e) = ags::cmd::update::run(&config, &opts) {
+                eprintln!("update error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+        SubCommand::UpdateAgents => {
+            let opts = ags::cmd::update_agents::UpdateAgentsOptions::default();
+            if let Err(e) = ags::cmd::update_agents::run(&config, &opts) {
+                eprintln!("update-agents error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+        SubCommand::Install | SubCommand::Uninstall | SubCommand::CreateAliases(_) => {
+            unreachable!()
         }
     }
 

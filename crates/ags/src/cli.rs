@@ -59,6 +59,49 @@ pub struct RunOptions {
     pub passthrough_args: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AliasMode {
+    Wrappers,
+    Aliases,
+    Both,
+}
+
+impl AliasMode {
+    fn parse(value: &str) -> Result<Self, CliError> {
+        match value {
+            "wrappers" => Ok(Self::Wrappers),
+            "aliases" => Ok(Self::Aliases),
+            "both" => Ok(Self::Both),
+            _ => Err(CliError::InvalidAliasMode(value.to_owned())),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shell {
+    Fish,
+    Zsh,
+    Bash,
+}
+
+impl Shell {
+    fn parse(value: &str) -> Result<Self, CliError> {
+        match value {
+            "fish" => Ok(Self::Fish),
+            "zsh" => Ok(Self::Zsh),
+            "bash" => Ok(Self::Bash),
+            _ => Err(CliError::InvalidShell(value.to_owned())),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateAliasesOptions {
+    pub shell: Option<Shell>,
+    pub mode: AliasMode,
+    pub force: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubCommand {
     Setup,
@@ -67,6 +110,7 @@ pub enum SubCommand {
     UpdateAgents,
     Install,
     Uninstall,
+    CreateAliases(CreateAliasesOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,7 +119,11 @@ pub enum CliError {
     MissingAgent,
     MissingAgentValue,
     MissingConfigValue,
+    MissingShellValue,
+    MissingAliasModeValue,
     InvalidAgent(String),
+    InvalidShell(String),
+    InvalidAliasMode(String),
     UnexpectedFlag(String),
     UnexpectedPositional(String),
 }
@@ -84,12 +132,20 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::HelpRequested => f.write_str("help requested"),
-            Self::MissingAgent => {
-                f.write_str("missing required argument: --agent <pi|claude|codex|gemini|opencode|shell>")
-            }
+            Self::MissingAgent => f.write_str(
+                "missing required argument: --agent <pi|claude|codex|gemini|opencode|shell>",
+            ),
             Self::MissingAgentValue => f.write_str("missing value for --agent"),
             Self::MissingConfigValue => f.write_str("missing value for --config"),
+            Self::MissingShellValue => f.write_str("missing value for --shell"),
+            Self::MissingAliasModeValue => f.write_str("missing value for --mode"),
             Self::InvalidAgent(agent) => write!(f, "invalid agent '{agent}'"),
+            Self::InvalidShell(shell) => {
+                write!(f, "invalid shell '{shell}' (expected fish|zsh|bash)")
+            }
+            Self::InvalidAliasMode(mode) => {
+                write!(f, "invalid mode '{mode}' (expected wrappers|aliases|both)")
+            }
             Self::UnexpectedFlag(flag) => write!(f, "unexpected flag '{flag}'"),
             Self::UnexpectedPositional(arg) => write!(
                 f,
@@ -120,6 +176,10 @@ where
         "update-agents" => return Ok(Command::Sub(SubCommand::UpdateAgents)),
         "install" => return Ok(Command::Sub(SubCommand::Install)),
         "uninstall" => return Ok(Command::Sub(SubCommand::Uninstall)),
+        "create-aliases" => {
+            let opts = parse_create_aliases_args(iter)?;
+            return Ok(Command::Sub(SubCommand::CreateAliases(opts)));
+        }
         _ => {}
     }
 
@@ -211,6 +271,61 @@ fn parse_run_arg<I: Iterator<Item = String>>(
     Err(CliError::UnexpectedPositional(arg.to_owned()))
 }
 
+fn parse_create_aliases_args<I>(mut iter: I) -> Result<CreateAliasesOptions, CliError>
+where
+    I: Iterator<Item = String>,
+{
+    let mut shell = None;
+    let mut mode = AliasMode::Wrappers;
+    let mut force = false;
+
+    while let Some(arg) = iter.next() {
+        if arg == "-h" || arg == "--help" {
+            return Err(CliError::HelpRequested);
+        }
+
+        if arg == "--force" {
+            force = true;
+            continue;
+        }
+
+        if arg == "--shell" {
+            let value = iter.next().ok_or(CliError::MissingShellValue)?;
+            shell = Some(Shell::parse(&value)?);
+            continue;
+        }
+
+        if let Some(value) = arg.strip_prefix("--shell=") {
+            if value.is_empty() {
+                return Err(CliError::MissingShellValue);
+            }
+            shell = Some(Shell::parse(value)?);
+            continue;
+        }
+
+        if arg == "--mode" {
+            let value = iter.next().ok_or(CliError::MissingAliasModeValue)?;
+            mode = AliasMode::parse(&value)?;
+            continue;
+        }
+
+        if let Some(value) = arg.strip_prefix("--mode=") {
+            if value.is_empty() {
+                return Err(CliError::MissingAliasModeValue);
+            }
+            mode = AliasMode::parse(value)?;
+            continue;
+        }
+
+        if arg.starts_with('-') {
+            return Err(CliError::UnexpectedFlag(arg));
+        }
+        return Err(CliError::UnexpectedPositional(arg));
+    }
+
+    Ok(CreateAliasesOptions { shell, mode, force })
+}
+
 pub fn help_text() -> &'static str {
     "Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|shell> [flags] -- [args...]\n\
      \n\
@@ -220,7 +335,13 @@ pub fn help_text() -> &'static str {
      \x20 update         Rebuild the container image (deps only)\n\
      \x20 update-agents  Install/update agents in persistent volumes\n\
      \x20 install        Install symlinks and bootstrap config\n\
-     \x20 uninstall      Remove installed symlinks\n\
+     \x20 uninstall       Remove installed symlinks\n\
+     \x20 create-aliases  Create managed wrapper scripts and/or shell aliases\n\
+     \n\
+     create-aliases flags:\n\
+     \x20 --shell <name>    Target shell for alias blocks (fish|zsh|bash; autodetect if omitted)\n\
+     \x20 --mode <kind>     wrappers|aliases|both (default: wrappers)\n\
+     \x20 --force           Replace existing non-managed targets\n\
      \n\
      Run flags:\n\
      \x20 --agent <name>   Agent to run (required), or 'shell' for interactive bash\n\

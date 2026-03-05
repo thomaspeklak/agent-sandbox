@@ -1,4 +1,4 @@
-.PHONY: install uninstall doctor setup update update-agents run run-browser
+.PHONY: install uninstall doctor setup update update-agents run run-browser aliases
 
 AGS := cargo run -p ags --
 
@@ -25,3 +25,6 @@ run:
 
 run-browser:
 	$(AGS) --agent pi --browser
+
+aliases:
+	$(AGS) create-aliases --mode both

@@ -1,4 +1,6 @@
-use ags::cli::{Agent, CliError, Command, SubCommand, parse_args};
+use ags::cli::{
+    Agent, AliasMode, CliError, Command, CreateAliasesOptions, Shell, SubCommand, parse_args,
+};
 
 fn args(items: &[&str]) -> Vec<String> {
     items.iter().map(|item| (*item).to_owned()).collect()
@@ -62,10 +64,53 @@ fn parses_subcommands() {
 }
 
 #[test]
+fn parses_create_aliases_defaults() {
+    let cmd = parse_args(args(&["ags", "create-aliases"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::CreateAliases(CreateAliasesOptions {
+            shell: None,
+            mode: AliasMode::Wrappers,
+            force: false,
+        }))
+    );
+}
+
+#[test]
+fn parses_create_aliases_flags() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "create-aliases",
+        "--shell",
+        "fish",
+        "--mode",
+        "both",
+        "--force",
+    ]))
+    .unwrap();
+
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::CreateAliases(CreateAliasesOptions {
+            shell: Some(Shell::Fish),
+            mode: AliasMode::Both,
+            force: true,
+        }))
+    );
+}
+
+#[test]
 fn parses_agent_equals_form() {
     let cmd = parse_args(args(&["ags", "--agent=claude"])).unwrap();
     match cmd {
         Command::Run(opts) => assert_eq!(opts.agent, Agent::Claude),
         _ => panic!("expected Run command"),
     }
+}
+
+#[test]
+fn rejects_invalid_alias_mode() {
+    let err = parse_args(args(&["ags", "create-aliases", "--mode", "weird"]))
+        .expect_err("expected parse failure");
+    assert_eq!(err, CliError::InvalidAliasMode("weird".to_owned()));
 }

@@ -43,6 +43,7 @@ Using `make` convenience targets:
 - `make run-browser`
 - `make install`
 - `make uninstall`
+- `cargo run -p ags -- create-aliases --mode both`
 
 Or directly via CLI:
 
@@ -54,6 +55,7 @@ cargo run -p ags -- update-agents
 cargo run -p ags -- --agent pi
 cargo run -p ags -- --agent claude
 cargo run -p ags -- --agent shell
+cargo run -p ags -- create-aliases --mode both --shell fish
 ```
 
 Pass args through with `--`:
