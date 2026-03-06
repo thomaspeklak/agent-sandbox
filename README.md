@@ -126,7 +126,7 @@ cargo run -p ags -- setup
   - `~/.ssh/ags-agent-auth`
   - `~/.ssh/ags-agent-signing`
 - Print public keys so you can add them to GitHub
-- Bootstrap per-agent sandbox directories
+- Ensure Pi guard/settings assets exist in the host path mounted to `/home/dev/.pi`
 - Optionally prompt to store configured secrets via `secret-tool`
 
 ### 4) Build/update sandbox image and agent installs
@@ -270,8 +270,10 @@ Use `config/config.example.toml` for full schema examples.
   - SSH key paths
   - bootstrap files
   - base env passthrough allowlist
+- `[[agent_mount]]`
+  - Dedicated required mounts for agent home-state paths (explicit, no implicit agent mounts)
 - `[[mount]]`
-  - Bind mounts from host to container
+  - Additional bind mounts from host to container
   - supports `mode`, `kind`, `when`, `create`, `optional`
 - `[[tool]]`
   - Tool binary mount

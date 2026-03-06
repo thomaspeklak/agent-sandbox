@@ -51,7 +51,7 @@ ags --agent pi --browser
 
 - Args after `--` are passed directly to agent CLI.
 - Container runs with rootless user namespace (`keep-id`), dropped capabilities, and `no-new-privileges`.
-- Per-agent host state is persisted under your configured sandbox base/cache paths.
+- Agent host state comes from explicit `[[agent_mount]]` / `[[mount]]` entries.
 
 ---
 
@@ -65,8 +65,7 @@ Initial bootstrap.
   - auth key
   - signing key
 - Prints public keys (for GitHub SSH + signing setup).
-- Bootstraps per-agent sandbox directories from host config when available.
-- Writes Pi guard/settings assets into Pi sandbox.
+- Ensures Pi guard/settings assets exist in the host path mounted to `/home/dev/.pi`.
 - If `secret-tool` exists, prompts for optional interactive secret storage.
 
 ### Typical usage
