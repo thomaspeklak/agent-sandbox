@@ -70,7 +70,7 @@ const BASH: &str = r#"_ags_completion() {
       return 0
       ;;
     install)
-      COMPREPLY=( $(compgen -W "--link-self --force -h --help" -- "$cur") )
+      COMPREPLY=( $(compgen -W "--link-self --force --add-agent-mounts -h --help" -- "$cur") )
       return 0
       ;;
     create-aliases)
@@ -177,6 +177,7 @@ case "$words[2]" in
     _arguments \
       '--link-self[Link current ags executable to ~/.local/bin/ags]' \
       '--force[Replace existing ~/.local/bin/ags when used with --link-self]' \
+      '--add-agent-mounts[Append default [[agent_mount]] entries to ~/.config/ags/config.toml]' \
       '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
@@ -228,6 +229,7 @@ complete -c ags -n "__fish_use_subcommand" -s h -l help -d "Show help"
 # install
 complete -c ags -n "__fish_seen_subcommand_from install" -l link-self -d "Link ags to ~/.local/bin/ags"
 complete -c ags -n "__fish_seen_subcommand_from install" -l force -d "Replace existing target"
+complete -c ags -n "__fish_seen_subcommand_from install" -l add-agent-mounts -d "Append default [[agent_mount]] entries"
 complete -c ags -n "__fish_seen_subcommand_from install" -s h -l help -d "Show help"
 
 # create-aliases
@@ -258,6 +260,7 @@ mod tests {
         assert!(script.contains("--browser"));
         assert!(script.contains("create-aliases"));
         assert!(script.contains("completions"));
+        assert!(script.contains("--add-agent-mounts"));
     }
 
     #[test]

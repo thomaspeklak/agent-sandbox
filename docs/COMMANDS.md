@@ -157,6 +157,7 @@ It can be overridden with `AGS_AGENT_DIR`.
 
 - `--link-self` : create `~/.local/bin/ags` symlink to current executable
 - `--force` : replace existing link/file where applicable
+- `--add-agent-mounts` : append default required `[[agent_mount]]` entries to `~/.config/ags/config.toml`
 
 ---
 

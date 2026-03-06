@@ -64,6 +64,11 @@ pub fn run(opts: &InstallOptions) -> Result<(), InstallError> {
     // Remove legacy config-dir symlink if it points elsewhere
     remove_legacy_symlink(&config_dir);
 
+    if opts.add_agent_mounts {
+        let config_path = config_dir.join("config.toml");
+        ensure_agent_mounts_block(&config_path)?;
+    }
+
     if opts.link_self {
         fs::create_dir_all(&bin_dir)?;
         let link_path = bin_dir.join("ags");
@@ -87,6 +92,67 @@ pub fn run(opts: &InstallOptions) -> Result<(), InstallError> {
 pub fn uninstall() -> Result<(), InstallError> {
     let _ = dirs::home_dir().ok_or(InstallError::HomeDir)?;
     println!("Uninstall complete.");
+    Ok(())
+}
+
+fn ensure_agent_mounts_block(config_path: &Path) -> Result<(), InstallError> {
+    if !config_path.exists() {
+        eprintln!(
+            "warning: {} does not exist; skipped --add-agent-mounts",
+            config_path.display()
+        );
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(config_path)?;
+    if content.contains("container = \"/home/dev/.pi\"")
+        && content.contains("container = \"/home/dev/.claude\"")
+        && content.contains("container = \"/home/dev/.claude.json\"")
+        && content.contains("container = \"/home/dev/.codex\"")
+        && content.contains("container = \"/home/dev/.gemini\"")
+        && content.contains("container = \"/home/dev/.config/opencode\"")
+    {
+        println!("Agent mounts already present in {}", config_path.display());
+        return Ok(());
+    }
+
+    let block = r#"
+# Added by `ags install --add-agent-mounts`
+[[agent_mount]]
+host = "~/.claude.json"
+container = "/home/dev/.claude.json"
+kind = "file"
+
+[[agent_mount]]
+host = "~/.claude"
+container = "/home/dev/.claude"
+
+[[agent_mount]]
+host = "~/.codex"
+container = "/home/dev/.codex"
+
+[[agent_mount]]
+host = "~/.pi"
+container = "/home/dev/.pi"
+
+[[agent_mount]]
+host = "~/.config/opencode"
+container = "/home/dev/.config/opencode"
+
+[[agent_mount]]
+host = "~/.gemini"
+container = "/home/dev/.gemini"
+"#;
+
+    let mut updated = content;
+    if !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str(block);
+
+    fs::write(config_path, updated)?;
+    println!("Appended default agent mounts to {}", config_path.display());
+
     Ok(())
 }
 

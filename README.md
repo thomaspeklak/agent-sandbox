@@ -214,11 +214,11 @@ ags --agent pi --config /path/to/config.toml
 
 ### Core commands
 
-- `ags setup` — generate keys, bootstrap agent sandboxes, optional keyring secret setup
+- `ags setup` — generate keys, ensure Pi assets in mounted host path, optional keyring secret setup
 - `ags doctor` — run environment + config health checks
 - `ags update` — rebuild container image from `Containerfile`
 - `ags update-agents` — install/update agent CLIs in persistent volumes
-- `ags install [--link-self] [--force]` — install assets/config layout, optional self-link
+- `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
 - `ags uninstall` — currently reserved/no-op cleanup
 - `ags create-aliases` — create managed wrappers and/or shell alias blocks
 - `ags completions --shell <bash|zsh|fish>` — print shell completion script

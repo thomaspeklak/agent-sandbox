@@ -106,6 +106,7 @@ pub struct CreateAliasesOptions {
 pub struct InstallOptions {
     pub link_self: bool,
     pub force: bool,
+    pub add_agent_mounts: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,6 +297,7 @@ where
 {
     let mut link_self = false;
     let mut force = false;
+    let mut add_agent_mounts = false;
 
     for arg in iter {
         if arg == "-h" || arg == "--help" {
@@ -309,13 +311,21 @@ where
             force = true;
             continue;
         }
+        if arg == "--add-agent-mounts" {
+            add_agent_mounts = true;
+            continue;
+        }
         if arg.starts_with('-') {
             return Err(CliError::UnexpectedFlag(arg));
         }
         return Err(CliError::UnexpectedPositional(arg));
     }
 
-    Ok(InstallOptions { link_self, force })
+    Ok(InstallOptions {
+        link_self,
+        force,
+        add_agent_mounts,
+    })
 }
 
 fn parse_create_aliases_args<I>(mut iter: I) -> Result<CreateAliasesOptions, CliError>
@@ -422,8 +432,9 @@ pub fn help_text() -> &'static str {
      \x20 completions     Print shell completion script to stdout\n\
      \n\
      install flags:\n\
-     \x20 --link-self      Link current ags executable to ~/.local/bin/ags\n\
-     \x20 --force          Replace existing ~/.local/bin/ags when used with --link-self\n\
+     \x20 --link-self        Link current ags executable to ~/.local/bin/ags\n\
+     \x20 --force            Replace existing ~/.local/bin/ags when used with --link-self\n\
+     \x20 --add-agent-mounts Append default [[agent_mount]] entries to ~/.config/ags/config.toml\n\
      \n\
      create-aliases flags:\n\
      \x20 --shell <name>    Target shell for alias blocks (fish|zsh|bash; autodetect if omitted)\n\

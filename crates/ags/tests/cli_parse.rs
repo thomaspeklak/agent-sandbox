@@ -71,6 +71,7 @@ fn parses_install_defaults() {
         Command::Sub(SubCommand::Install(InstallOptions {
             link_self: false,
             force: false,
+            add_agent_mounts: false,
         }))
     );
 }
@@ -83,6 +84,20 @@ fn parses_install_flags() {
         Command::Sub(SubCommand::Install(InstallOptions {
             link_self: true,
             force: true,
+            add_agent_mounts: false,
+        }))
+    );
+}
+
+#[test]
+fn parses_install_add_agent_mounts_flag() {
+    let cmd = parse_args(args(&["ags", "install", "--add-agent-mounts"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::Install(InstallOptions {
+            link_self: false,
+            force: false,
+            add_agent_mounts: true,
         }))
     );
 }
