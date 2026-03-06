@@ -132,6 +132,10 @@ ags update-agents
 
 Settings come from `[update]` in config.
 
+Security hardening:
+
+- pnpm installs run with `ignore-scripts=true`.
+
 ---
 
 ## `ags install`

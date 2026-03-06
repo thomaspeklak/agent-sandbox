@@ -88,7 +88,7 @@ fn build_install_script(pi_spec: &str, release_age: u32) -> String {
     format!(
         r#"set -e && \
 mkdir -p "$HOME/.config/pnpm" && \
-printf 'minimum-release-age=%s\n' '{release_age}' > "$HOME/.config/pnpm/rc" && \
+printf 'minimum-release-age=%s\nignore-scripts=true\n' '{release_age}' > "$HOME/.config/pnpm/rc" && \
 pnpm self-update && \
 PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH \
   pnpm add -g --store-dir /usr/local/pnpm/.store \

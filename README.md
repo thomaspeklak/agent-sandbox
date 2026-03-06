@@ -294,6 +294,7 @@ Use `config/config.example.toml` for full schema examples.
 - Only mount what the agent needs.
 - Prefer read-only (`ro`) mounts unless write access is required.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
+- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
 - Rotate/revoke credentials quickly if compromise is suspected.
 
 ---
