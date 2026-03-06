@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.2.0] — 2026-03-06
+
+### Features
+
+- feat(guard): surface sandbox mode and add AGS_SANDBOX marker (35fecae)
+- feat(install): add --add-agent-mounts bootstrap option (338f8c3)
+- add shell completion generation for bash zsh and fish (d6d2ebf)
+
+### Bug Fixes
+
+- ags: stop forcing PI_CODING_AGENT_DIR for pi (48f2be6)
+
+### Chores / Other
+
+- refactor(config): replace implicit agent sandboxes with explicit agent_mounts (c81bd0e)
+- chore(security): disable npm/pnpm lifecycle scripts in sandbox (2f63cd8)
+- docs: describe explicit agent_mount-based state and setup (2b98eab)
+
 ## [v0.1.2] — 2026-03-05
 
 ### Bug Fixes
