@@ -12,22 +12,49 @@ fn minimal_config_toml() -> String {
     // Create required paths that the plan builder will canonicalize/check
     let containerfile = base.join("Containerfile");
     fs::write(&containerfile, "FROM scratch\n").unwrap();
+    fs::create_dir_all(base.join("pi")).unwrap();
+    fs::create_dir_all(base.join("claude")).unwrap();
+    fs::write(base.join(".claude.json"), "{}\n").unwrap();
+    fs::create_dir_all(base.join("codex")).unwrap();
+    fs::create_dir_all(base.join("gemini")).unwrap();
+    fs::create_dir_all(base.join("opencode")).unwrap();
 
     format!(
         r#"
 [sandbox]
 image = "localhost/agent-sandbox:latest"
 containerfile = "{containerfile}"
-sandbox_pi_dir = "{base}/sandbox"
-host_pi_dir = "{base}/host"
-host_claude_dir = "{base}/claude"
-agent_sandbox_base = "{base}/agent-sandboxes"
 cache_dir = "{base}/cache"
 gitconfig_path = "{base}/gitconfig"
 auth_key = "{base}/auth"
 sign_key = "{base}/sign"
 container_boot_dirs = ["/home/dev/.ssh", "/home/dev/.cache/kno"]
 passthrough_env = ["ANTHROPIC_API_KEY"]
+
+[[agent_mount]]
+host = "{base}/.claude.json"
+container = "/home/dev/.claude.json"
+kind = "file"
+
+[[agent_mount]]
+host = "{base}/claude"
+container = "/home/dev/.claude"
+
+[[agent_mount]]
+host = "{base}/codex"
+container = "/home/dev/.codex"
+
+[[agent_mount]]
+host = "{base}/pi"
+container = "/home/dev/.pi"
+
+[[agent_mount]]
+host = "{base}/opencode"
+container = "/home/dev/.config/opencode"
+
+[[agent_mount]]
+host = "{base}/gemini"
+container = "/home/dev/.gemini"
 "#,
         containerfile = containerfile.display(),
         base = base.display(),
@@ -134,9 +161,9 @@ fn env_has_required_inline_vars() {
     };
 
     assert_eq!(find_env("HOME"), Some("/home/dev".to_owned()));
-    assert_eq!(
-        find_env("PI_CODING_AGENT_DIR"),
-        Some("/home/dev/.pi".to_owned())
+    assert!(
+        find_env("PI_CODING_AGENT_DIR").is_none(),
+        "pi should not set PI_CODING_AGENT_DIR (uses $HOME/.pi/agent by default)"
     );
     assert_eq!(find_env("SSH_AUTH_SOCK"), Some("/ssh-agent".to_owned()));
     assert!(find_env("PNPM_HOME").is_some());
@@ -235,7 +262,7 @@ fn entrypoint_has_guard_extension() {
 
     assert!(
         plan.entrypoint
-            .contains("/home/dev/.pi/extensions/guard.ts")
+            .contains("/home/dev/.pi/agent/extensions/guard.ts")
     );
     assert!(plan.entrypoint.contains("\"$@\""));
 }
@@ -591,15 +618,17 @@ fn different_agents_have_different_entrypoints() {
 }
 
 #[test]
-fn non_pi_agent_no_pi_mount() {
+fn non_pi_agent_still_has_explicit_agent_mounts() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Codex);
 
     let pi_mount = plan.mounts.iter().find(|m| m.container == "/home/dev/.pi");
-    assert!(pi_mount.is_none(), "codex should not have pi agent mount");
+    assert!(
+        pi_mount.is_some(),
+        "explicit config mounts should be present for all agents"
+    );
 
-    // But codex should have its own sandbox mount
     let codex_mount = plan
         .mounts
         .iter()
