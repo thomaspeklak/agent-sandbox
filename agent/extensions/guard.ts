@@ -120,11 +120,16 @@ export default function (pi: ExtensionAPI) {
 		const status = SANDBOX_DETECTION.enabled
 			? `${theme.fg("success", "sandbox:on")}`
 			: `${theme.fg("warning", "sandbox:off")}`;
-		ctx.ui.setStatus("ags-sandbox", status);
+		ctx.ui.setWidget("ags-sandbox", [status], { placement: "aboveEditor" });
 		ctx.ui.notify(
 			`Sandbox ${SANDBOX_DETECTION.enabled ? "ON" : "OFF"} (${SANDBOX_DETECTION.source})`,
 			SANDBOX_DETECTION.enabled ? "info" : "warning",
 		);
+	});
+
+	pi.on("session_shutdown", async (_event, ctx) => {
+		if (!ctx.hasUI) return;
+		ctx.ui.setWidget("ags-sandbox", undefined, { placement: "aboveEditor" });
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
