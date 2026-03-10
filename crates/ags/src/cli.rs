@@ -424,7 +424,7 @@ pub fn help_text() -> &'static str {
      Commands:\n\
      \x20 setup          Generate SSH keys and configure secrets\n\
      \x20 doctor         Run health checks on sandbox configuration\n\
-     \x20 update         Rebuild the container image (deps only)\n\
+     \x20 update         Rebuild container image and refresh bundled br/bv\n\
      \x20 update-agents  Install/update agents in persistent volumes\n\
      \x20 install         Install config/assets (optional self-link)\n\
      \x20 uninstall       Reserved (currently no-op)\n\

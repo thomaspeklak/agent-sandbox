@@ -140,6 +140,7 @@ cargo run -p ags -- update-agents
 
 ```bash
 cargo run -p ags -- doctor
+cargo run -p ags -- --agent shell -- -lc 'br --version && bv --version'
 ```
 
 ---
@@ -216,7 +217,7 @@ ags --agent pi --config /path/to/config.toml
 
 - `ags setup` — generate keys, ensure Pi assets in mounted host path, optional keyring secret setup
 - `ags doctor` — run environment + config health checks
-- `ags update` — rebuild container image from `Containerfile`
+- `ags update` — rebuild container image from `Containerfile` and refresh bundled `br`/`bv` binaries
 - `ags update-agents` — install/update agent CLIs in persistent volumes
 - `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
 - `ags uninstall` — currently reserved/no-op cleanup

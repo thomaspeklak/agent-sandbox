@@ -43,6 +43,24 @@ ags update-agents
 
 ---
 
+## `br` / `bv` missing inside container
+
+If Beads commands are missing or stale in sandbox.
+
+### Fix
+
+```bash
+ags update
+ags --agent shell -- -lc 'br --version && bv --version'
+```
+
+`ags update` refreshes from upstream releases:
+
+- `beads_rust` (`br`): https://github.com/Dicklesworthstone/beads_rust/releases
+- `beads_viewer` (`bv`): https://github.com/Dicklesworthstone/beads_viewer/releases
+
+---
+
 ## Agent CLI missing inside container
 
 If command like `pi`, `codex`, `gemini`, `opencode`, or `claude` is missing/old.

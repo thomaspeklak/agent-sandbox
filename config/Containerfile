@@ -61,6 +61,52 @@ RUN mkdir -p /usr/local/rustup /usr/local/cargo && \
       /usr/local/cargo/bin/rustup component add rustfmt clippy && \
     chmod -R a+rX /usr/local/rustup /usr/local/cargo
 
+ARG BR_VERSION=latest
+ARG BV_VERSION=latest
+RUN set -eu && \
+    arch="$(uname -m)" && \
+    case "$arch" in \
+      x86_64) arch="amd64" ;; \
+      aarch64|arm64) arch="arm64" ;; \
+      *) echo "unsupported architecture for beads binaries: $arch" >&2; exit 1 ;; \
+    esac && \
+    br_tag="$BR_VERSION" && \
+    if [ "$br_tag" = "latest" ]; then \
+      curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
+        https://api.github.com/repos/Dicklesworthstone/beads_rust/releases/latest \
+        -o /tmp/br-release.json && \
+      br_tag="$(jq -r '.tag_name' /tmp/br-release.json)"; \
+    fi && \
+    [ -n "$br_tag" ] && [ "$br_tag" != "null" ] && \
+    br_asset="br-${br_tag}-linux_${arch}.tar.gz" && \
+    br_base_url="https://github.com/Dicklesworthstone/beads_rust/releases/download/${br_tag}" && \
+    curl -fsSL "${br_base_url}/${br_asset}" -o "/tmp/${br_asset}" && \
+    curl -fsSL "${br_base_url}/${br_asset}.sha256" -o "/tmp/${br_asset}.sha256" && \
+    (cd /tmp && sha256sum -c "${br_asset}.sha256") && \
+    tar -xzf "/tmp/${br_asset}" -C /tmp br && \
+    install -m 0755 /tmp/br /usr/local/bin/br && \
+    bv_tag="$BV_VERSION" && \
+    if [ "$bv_tag" = "latest" ]; then \
+      curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
+        https://api.github.com/repos/Dicklesworthstone/beads_viewer/releases/latest \
+        -o /tmp/bv-release.json && \
+      bv_tag="$(jq -r '.tag_name' /tmp/bv-release.json)"; \
+    fi && \
+    [ -n "$bv_tag" ] && [ "$bv_tag" != "null" ] && \
+    bv_version="${bv_tag#v}" && \
+    bv_asset="bv_${bv_version}_linux_${arch}.tar.gz" && \
+    bv_base_url="https://github.com/Dicklesworthstone/beads_viewer/releases/download/${bv_tag}" && \
+    curl -fsSL "${bv_base_url}/${bv_asset}" -o "/tmp/${bv_asset}" && \
+    curl -fsSL "${bv_base_url}/checksums.txt" -o /tmp/bv-checksums.txt && \
+    awk -v asset="$bv_asset" '$2 == asset { print $1 "  " $2 }' /tmp/bv-checksums.txt > /tmp/bv.sha256 && \
+    [ -s /tmp/bv.sha256 ] && \
+    (cd /tmp && sha256sum -c bv.sha256) && \
+    tar -xzf "/tmp/${bv_asset}" -C /tmp bv && \
+    install -m 0755 /tmp/bv /usr/local/bin/bv && \
+    rm -f /tmp/br /tmp/bv /tmp/br-release.json /tmp/bv-release.json /tmp/bv-checksums.txt /tmp/bv.sha256 \
+          /tmp/br-*.tar.gz /tmp/br-*.tar.gz.sha256 /tmp/bv_*.tar.gz && \
+    br --version && bv --version
+
 USER dev
 WORKDIR /workspace
 

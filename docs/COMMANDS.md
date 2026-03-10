@@ -101,14 +101,24 @@ ags doctor
 
 ## `ags update`
 
-Rebuilds sandbox image from configured `Containerfile`.
+Rebuilds sandbox image from configured `Containerfile` and refreshes bundled Beads tools:
+
+- `br` from `beads_rust` releases
+- `bv` from `beads_viewer` releases
 
 ```bash
 ags update
 ```
 
-- Rebuilds dependencies/image layer
+- Resolves latest release tags from GitHub and passes them into the image build
+- Verifies release checksums during image build
 - Does **not** update agent CLIs installed in persistent volumes
+
+Version check (inside sandbox):
+
+```bash
+ags --agent shell -- -lc 'br --version && bv --version'
+```
 
 Use `ags update-agents` next if needed.
 
