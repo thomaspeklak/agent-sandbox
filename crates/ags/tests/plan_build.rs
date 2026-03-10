@@ -68,7 +68,7 @@ fn build_plan_from(toml: &str, workdir: &Path) -> ags::plan::LaunchPlan {
 fn build_plan_from_agent(toml: &str, workdir: &Path, agent: Agent) -> ags::plan::LaunchPlan {
     let config = parse_toml_str(toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    build_launch_plan(&config, workdir, agent, false, None, &secrets).unwrap()
+    build_launch_plan(&config, workdir, agent, false, false, None, &secrets).unwrap()
 }
 
 #[test]
@@ -244,7 +244,16 @@ debug_port = 9222
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    let plan = build_launch_plan(&config, workdir.path(), Agent::Pi, true, None, &secrets).unwrap();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        true,
+        false,
+        None,
+        &secrets,
+    )
+    .unwrap();
     assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=true");
 }
 
@@ -284,6 +293,30 @@ fn entrypoint_has_guard_extension() {
         plan.entrypoint
     );
     assert!(plan.entrypoint.contains("\"$@\""));
+}
+
+#[test]
+fn tmux_mode_wraps_agent_command() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        false,
+        true,
+        None,
+        &secrets,
+    )
+    .unwrap();
+
+    assert!(plan.entrypoint.contains("command -v tmux"));
+    assert!(plan.entrypoint.contains("Run `ags update`"));
+    assert!(plan.entrypoint.contains("/tmp/ags-run-in-tmux.sh"));
+    assert!(plan.entrypoint.contains("exec tmux new-session -A -s ags"));
+    assert!(plan.entrypoint.contains("exec pi --no-extensions"));
 }
 
 #[test]
@@ -336,7 +369,15 @@ mode = \"ro\"\n",
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    let result = build_launch_plan(&config, workdir.path(), Agent::Pi, false, None, &secrets);
+    let result = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        false,
+        false,
+        None,
+        &secrets,
+    );
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("required mount"), "got: {err}");
@@ -417,8 +458,16 @@ fn secrets_in_env_file() {
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let mut secrets = HashMap::new();
     secrets.insert("GH_TOKEN".to_owned(), "ghp_test123".to_owned());
-    let plan =
-        build_launch_plan(&config, workdir.path(), Agent::Pi, false, None, &secrets).unwrap();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        false,
+        false,
+        None,
+        &secrets,
+    )
+    .unwrap();
 
     let found = plan
         .env
@@ -440,6 +489,7 @@ fn ssh_socket_mounted_when_provided() {
         workdir.path(),
         Agent::Pi,
         false,
+        false,
         Some(sock),
         &secrets,
     )
@@ -458,6 +508,7 @@ fn nonexistent_workdir_is_error() {
         &config,
         Path::new("/nonexistent/workdir"),
         Agent::Pi,
+        false,
         false,
         None,
         &secrets,
@@ -482,7 +533,16 @@ pi_skill_path = "/home/dev/browser-tools"
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    let plan = build_launch_plan(&config, workdir.path(), Agent::Pi, true, None, &secrets).unwrap();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        true,
+        false,
+        None,
+        &secrets,
+    )
+    .unwrap();
 
     assert!(
         plan.entrypoint.contains("socat TCP-LISTEN:9222"),

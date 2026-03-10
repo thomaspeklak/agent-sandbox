@@ -100,6 +100,7 @@ cargo run -p ags -- install
 This writes:
 
 - `~/.config/ags/Containerfile`
+- `~/.config/ags/tmux.conf`
 - `~/.config/ags/pi/extensions/guard.ts`
 - `~/.config/ags/pi/settings.json` (if missing)
 
@@ -140,7 +141,7 @@ cargo run -p ags -- update-agents
 
 ```bash
 cargo run -p ags -- doctor
-cargo run -p ags -- --agent shell -- -lc 'br --version && bv --version'
+cargo run -p ags -- --agent shell -- -lc 'br --version && bv --version && tmux -V && test -f ~/.tmux.conf'
 ```
 
 ---
@@ -180,6 +181,12 @@ Run Pi agent:
 ags --agent pi
 ```
 
+Run inside a tmux session (opt-in):
+
+```bash
+ags --agent pi --tmux
+```
+
 Run with browser sidecar:
 
 ```bash
@@ -201,6 +208,37 @@ Pass arguments through to the underlying agent CLI using `--`:
 ```bash
 ags --agent pi -- --continue
 ags --agent claude -- --model sonnet
+```
+
+### tmux inside the sandbox
+
+The sandbox image includes `tmux` with a minimal version-controlled config for team-pane workflows.
+Defaults include:
+
+- default prefix remains `Ctrl-b`
+- mouse support enabled
+- pane/window creation starts in the current pane directory
+- `xterm-kitty` terminal support via `kitty-terminfo`
+- no plugin manager dependency
+
+If you want the agent itself to start inside tmux, pass `--tmux`:
+
+```bash
+ags --agent pi --tmux
+ags --agent shell --tmux
+```
+
+This is intentionally **not** the default.
+If `tmux` is reported as missing when using `--tmux`, rebuild the sandbox image first:
+
+```bash
+ags update
+```
+
+Quick check:
+
+```bash
+ags --agent shell -- -lc 'tmux -V && test -f ~/.tmux.conf && tmux new-session -d -s smoke && tmux kill-session -t smoke'
 ```
 
 Use a non-default config file:
@@ -331,6 +369,7 @@ Use `config/config.example.toml` for full schema examples.
 
 - `crates/ags/` — Rust CLI implementation
 - `config/Containerfile` — base sandbox image definition
+- `config/tmux.conf` — minimal tmux defaults copied into the sandbox image
 - `config/config.example.toml` — full config template
 - `agent/extensions/guard.ts` — runtime guard extension mounted for Pi
 - `agent/settings.example.json` — example Pi settings template

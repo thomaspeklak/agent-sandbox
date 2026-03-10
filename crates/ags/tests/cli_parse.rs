@@ -17,6 +17,7 @@ fn parses_agent_and_passthrough_args() {
             assert_eq!(opts.agent, Agent::Pi);
             assert_eq!(opts.passthrough_args, vec!["--continue"]);
             assert!(!opts.browser);
+            assert!(!opts.tmux);
             assert!(opts.config_path.is_none());
         }
         _ => panic!("expected Run command"),
@@ -34,6 +35,15 @@ fn parses_browser_flag() {
     let cmd = parse_args(args(&["ags", "--agent", "pi", "--browser"])).unwrap();
     match cmd {
         Command::Run(opts) => assert!(opts.browser),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn parses_tmux_flag() {
+    let cmd = parse_args(args(&["ags", "--agent", "pi", "--tmux"])).unwrap();
+    match cmd {
+        Command::Run(opts) => assert!(opts.tmux),
         _ => panic!("expected Run command"),
     }
 }

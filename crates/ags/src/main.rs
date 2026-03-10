@@ -78,6 +78,11 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 eprintln!("update error: could not write Containerfile: {e}");
                 return ExitCode::FAILURE;
             }
+            let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
+            if let Err(e) = ags::assets::ensure_tmux_conf(&tmux_conf) {
+                eprintln!("update error: could not write tmux config: {e}");
+                return ExitCode::FAILURE;
+            }
             let opts = ags::cmd::update::UpdateOptions::default();
             if let Err(e) = ags::cmd::update::run(&config, &opts) {
                 eprintln!("update error: {e}");
@@ -112,6 +117,10 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     // 2. Ensure embedded assets are on disk
     if let Err(e) = ags::assets::ensure_containerfile(&config.sandbox.containerfile) {
         eprintln!("warning: could not write Containerfile: {e}");
+    }
+    let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
+    if let Err(e) = ags::assets::ensure_tmux_conf(&tmux_conf) {
+        eprintln!("warning: could not write tmux config: {e}");
     }
     if matches!(opts.agent, Agent::Pi | Agent::Shell) {
         if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {
@@ -193,6 +202,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         &workdir,
         opts.agent,
         opts.browser,
+        opts.tmux,
         ssh_sock.as_deref(),
         &resolved_secrets,
     ) {

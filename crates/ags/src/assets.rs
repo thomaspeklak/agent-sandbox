@@ -3,6 +3,7 @@ use std::io;
 use std::path::Path;
 
 pub const CONTAINERFILE: &str = include_str!("../../../config/Containerfile");
+pub const TMUX_CONF: &str = include_str!("../../../config/tmux.conf");
 pub const GUARD_TS: &str = include_str!("../../../agent/extensions/guard.ts");
 pub const SETTINGS_EXAMPLE: &str = include_str!("../../../agent/settings.example.json");
 
@@ -12,6 +13,14 @@ pub fn ensure_containerfile(path: &Path) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     fs::write(path, CONTAINERFILE)
+}
+
+/// Write the embedded tmux config alongside the configured Containerfile.
+pub fn ensure_tmux_conf(path: &Path) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, TMUX_CONF)
 }
 
 /// Write the embedded guard.ts to `<pi_sandbox>/extensions/guard.ts`, always overwriting.

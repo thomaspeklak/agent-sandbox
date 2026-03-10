@@ -40,10 +40,14 @@ pub fn run(opts: &InstallOptions) -> Result<(), InstallError> {
     fs::create_dir_all(&config_dir)?;
     fs::create_dir_all(agent_dir.join("extensions"))?;
 
-    // Write embedded Containerfile
+    // Write embedded Containerfile + tmux config
     let containerfile = config_dir.join("Containerfile");
     assets::ensure_containerfile(&containerfile)?;
     println!("Wrote Containerfile: {}", containerfile.display());
+
+    let tmux_conf = config_dir.join("tmux.conf");
+    assets::ensure_tmux_conf(&tmux_conf)?;
+    println!("Wrote tmux config: {}", tmux_conf.display());
 
     // Write guard extension
     assets::ensure_guard_extension(&agent_dir)?;

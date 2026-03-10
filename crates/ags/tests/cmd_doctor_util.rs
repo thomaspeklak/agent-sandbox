@@ -86,6 +86,16 @@ fn doctor_detects_missing_settings() {
 }
 
 #[test]
+fn doctor_self_heals_missing_tmux_conf() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = minimal_config(tmp.path());
+    let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
+    let result = doctor::run(&config);
+    assert!(result);
+    assert!(tmux_conf.exists());
+}
+
+#[test]
 fn doctor_self_heals_missing_guard_extension() {
     let tmp = tempfile::tempdir().unwrap();
     let config = minimal_config(tmp.path());

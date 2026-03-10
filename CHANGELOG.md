@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- add tmux to the sandbox image with a minimal version-controlled `tmux.conf` for team pane workflows
+- add an opt-in `--tmux` run flag to launch the selected agent inside a tmux session
+- include `kitty-terminfo` so tmux works when the host terminal uses `TERM=xterm-kitty`
+
+
 ## [v0.2.0] — 2026-03-06
 
 ### Features

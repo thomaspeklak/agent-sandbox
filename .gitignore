@@ -26,3 +26,6 @@ hooks
 objects
 refs
 
+
+# bv (beads viewer) local config and caches
+.bv/

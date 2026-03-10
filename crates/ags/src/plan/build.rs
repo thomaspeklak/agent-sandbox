@@ -38,6 +38,7 @@ pub fn build_launch_plan(
     workdir: &Path,
     agent: Agent,
     browser_mode: bool,
+    tmux_mode: bool,
     ssh_auth_sock: Option<&Path>,
     resolved_secrets: &HashMap<String, String>,
 ) -> Result<LaunchPlan, PlanError> {
@@ -135,6 +136,7 @@ pub fn build_launch_plan(
         &profile,
         &config.browser,
         browser_mode,
+        tmux_mode,
     );
 
     Ok(LaunchPlan {
@@ -492,6 +494,7 @@ fn build_entrypoint(
     profile: &AgentProfile,
     browser: &BrowserConfig,
     browser_mode: bool,
+    tmux_mode: bool,
 ) -> String {
     let mut script = String::new();
 
@@ -525,9 +528,28 @@ fn build_entrypoint(
         shell_quote(HOST_SERVICES_HINT)
     ));
 
-    script.push_str(&format!("exec {}", profile.command));
+    let agent_exec = build_agent_exec(profile, browser, browser_mode);
+
+    if tmux_mode {
+        script.push_str(
+            "if ! command -v tmux >/dev/null 2>&1; then echo '[ags] tmux is not available in the sandbox image. Run `ags update` to rebuild the image with tmux support.' >&2; exit 127; fi; ",
+        );
+        script.push_str("cat > /tmp/ags-run-in-tmux.sh <<'EOF'\n#!/usr/bin/env bash\n");
+        script.push_str(&agent_exec);
+        script.push_str("\nEOF\n");
+        script.push_str("chmod +x /tmp/ags-run-in-tmux.sh; ");
+        script.push_str("exec tmux new-session -A -s ags /tmp/ags-run-in-tmux.sh \"$@\"");
+    } else {
+        script.push_str(&agent_exec);
+    }
+
+    script
+}
+
+fn build_agent_exec(profile: &AgentProfile, browser: &BrowserConfig, browser_mode: bool) -> String {
+    let mut command = format!("exec {}", profile.command);
     for arg in &profile.command_args {
-        script.push_str(&format!(" {}", shell_quote(arg)));
+        command.push_str(&format!(" {}", shell_quote(arg)));
     }
 
     if browser_mode
@@ -535,15 +557,15 @@ fn build_entrypoint(
         && let Some(ref flag) = profile.browser_skill_flag
         && !profile.browser_skill_path.is_empty()
     {
-        script.push_str(&format!(
+        command.push_str(&format!(
             " {} {}",
             flag,
             shell_quote(&profile.browser_skill_path)
         ));
     }
 
-    script.push_str(" \"$@\"");
-    script
+    command.push_str(" \"$@\"");
+    command
 }
 
 fn shell_quote(s: &str) -> String {

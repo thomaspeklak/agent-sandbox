@@ -42,11 +42,14 @@ fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
 
     // Self-heal: write embedded assets before checking
     let _ = crate::assets::ensure_containerfile(&config.sandbox.containerfile);
+    let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
+    let _ = crate::assets::ensure_tmux_conf(&tmux_conf);
     if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {
         let _ = crate::assets::ensure_guard_extension(&pi_host.join("agent"));
     }
 
     check_file_exists(ck, &config.sandbox.containerfile, "Containerfile", true);
+    check_file_exists(ck, &tmux_conf, "tmux config", true);
     if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {
         let pi_agent_dir = pi_host.join("agent");
         let settings = pi_agent_dir.join("settings.json");

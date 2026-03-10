@@ -55,6 +55,7 @@ pub enum Command {
 pub struct RunOptions {
     pub agent: Agent,
     pub browser: bool,
+    pub tmux: bool,
     pub config_path: Option<PathBuf>,
     pub passthrough_args: Vec<String>,
 }
@@ -206,6 +207,7 @@ where
     // Parse run command flags
     let mut agent: Option<Agent> = None;
     let mut browser = false;
+    let mut tmux = false;
     let mut config_path: Option<PathBuf> = None;
     let mut passthrough_args = Vec::new();
 
@@ -218,6 +220,7 @@ where
             &mut iter,
             &mut agent,
             &mut browser,
+            &mut tmux,
             &mut config_path,
         )?;
 
@@ -226,7 +229,14 @@ where
                 passthrough_args.extend(iter);
                 break;
             }
-            parse_run_arg(&arg, &mut iter, &mut agent, &mut browser, &mut config_path)?;
+            parse_run_arg(
+                &arg,
+                &mut iter,
+                &mut agent,
+                &mut browser,
+                &mut tmux,
+                &mut config_path,
+            )?;
         }
     }
 
@@ -235,6 +245,7 @@ where
     Ok(Command::Run(RunOptions {
         agent,
         browser,
+        tmux,
         config_path,
         passthrough_args,
     }))
@@ -245,6 +256,7 @@ fn parse_run_arg<I: Iterator<Item = String>>(
     iter: &mut I,
     agent: &mut Option<Agent>,
     browser: &mut bool,
+    tmux: &mut bool,
     config_path: &mut Option<PathBuf>,
 ) -> Result<(), CliError> {
     if arg == "-h" || arg == "--help" {
@@ -267,6 +279,11 @@ fn parse_run_arg<I: Iterator<Item = String>>(
 
     if arg == "--browser" {
         *browser = true;
+        return Ok(());
+    }
+
+    if arg == "--tmux" {
+        *tmux = true;
         return Ok(());
     }
 
@@ -447,5 +464,6 @@ pub fn help_text() -> &'static str {
      Run flags:\n\
      \x20 --agent <name>   Agent to run (required), or 'shell' for interactive bash\n\
      \x20 --browser        Enable browser sidecar\n\
+     \x20 --tmux           Launch the agent inside a tmux session (opt-in)\n\
      \x20 --config <path>  Override config file path\n"
 }

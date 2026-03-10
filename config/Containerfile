@@ -19,6 +19,7 @@ RUN dnf -y update && \
       grep \
       ImageMagick \
       jq \
+      kitty-terminfo \
       less \
       make \
       nodejs \
@@ -38,6 +39,7 @@ RUN dnf -y update && \
       socat \
       tar \
       tree \
+      tmux \
       unzip \
       util-linux \
       wget \
@@ -52,6 +54,8 @@ RUN useradd -m -u 1000 -s /bin/bash dev && \
     printf 'ignore-scripts=true\n' > /etc/npmrc && \
     printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
     chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home
+
+COPY --chown=dev:dev tmux.conf /home/dev/.tmux.conf
 
 ARG RUST_TOOLCHAIN=stable
 RUN mkdir -p /usr/local/rustup /usr/local/cargo && \

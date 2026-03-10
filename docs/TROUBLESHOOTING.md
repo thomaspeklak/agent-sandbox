@@ -74,6 +74,54 @@ ags --agent shell -- -lc 'psql --version'
 
 ---
 
+## `tmux` missing when using `--tmux`
+
+Symptoms:
+
+- `ags --agent <name> --tmux` fails with `tmux: not found`
+- or AGS prints a message telling you to rebuild the sandbox image
+
+Cause:
+
+- your existing sandbox image was built before tmux support was added
+
+### Fix
+
+```bash
+ags update
+ags --agent shell -- -lc 'tmux -V && test -f ~/.tmux.conf'
+```
+
+---
+
+## `missing or unsuitable terminal: xterm-kitty` in tmux
+
+Symptoms:
+
+- running `tmux` inside the sandbox fails with `missing or unsuitable terminal: xterm-kitty`
+
+Cause:
+
+- your host terminal exports `TERM=xterm-kitty`
+- the sandbox image needs kitty terminfo entries available for tmux to start cleanly
+
+### Fix
+
+Rebuild the image so the sandbox includes `kitty-terminfo`:
+
+```bash
+ags update
+ags --agent shell -- -lc 'echo "$TERM" && tmux -V'
+```
+
+Temporary workaround if you need it before rebuilding:
+
+```bash
+TERM=xterm-256color ags --agent shell
+```
+
+---
+
 ## Cannot reach host service from agent (`localhost` confusion)
 
 Symptoms:

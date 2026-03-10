@@ -60,7 +60,7 @@ const BASH: &str = r#"_ags_completion() {
   done
 
   if (( COMP_CWORD == 1 )); then
-    COMPREPLY=( $(compgen -W "$commands --agent --browser --config -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --config -h --help" -- "$cur") )
     return 0
   fi
 
@@ -147,7 +147,7 @@ const BASH: &str = r#"_ags_completion() {
     return 0
   fi
 
-  COMPREPLY=( $(compgen -W "--agent --browser --config -h --help" -- "$cur") )
+  COMPREPLY=( $(compgen -W "--agent --browser --tmux --config -h --help" -- "$cur") )
 }
 
 complete -F _ags_completion ags
@@ -164,7 +164,7 @@ modes=(wrappers aliases both)
 if (( CURRENT == 2 )); then
   _alternative \
     'subcommand:subcommand:(setup doctor update update-agents install uninstall create-aliases completions)' \
-    'run-flag:run flag:(--agent --browser --config -h --help)'
+    'run-flag:run flag:(--agent --browser --tmux --config -h --help)'
   return
 fi
 
@@ -200,6 +200,7 @@ esac
 _arguments -S \
   '--agent[Agent to run]:agent:(pi claude codex gemini opencode shell)' \
   '--browser[Enable browser sidecar]' \
+  '--tmux[Launch the agent inside a tmux session]' \
   '--config[Override config file path]:config file:_files' \
   '(-h --help)'{-h,--help}'[Show help]'
 "#;
@@ -223,6 +224,7 @@ complete -c ags -n "__fish_use_subcommand" -a completions -d "Print completion s
 
 complete -c ags -n "__fish_use_subcommand" -l agent -r -a "$__ags_agents" -d "Agent to run"
 complete -c ags -n "__fish_use_subcommand" -l browser -d "Enable browser sidecar"
+complete -c ags -n "__fish_use_subcommand" -l tmux -d "Launch the agent inside a tmux session"
 complete -c ags -n "__fish_use_subcommand" -l config -r -d "Override config file path"
 complete -c ags -n "__fish_use_subcommand" -s h -l help -d "Show help"
 
@@ -258,6 +260,7 @@ mod tests {
         let script = render(Shell::Bash);
         assert!(script.contains("--agent"));
         assert!(script.contains("--browser"));
+        assert!(script.contains("--tmux"));
         assert!(script.contains("create-aliases"));
         assert!(script.contains("completions"));
         assert!(script.contains("--add-agent-mounts"));

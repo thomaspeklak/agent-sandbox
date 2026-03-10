@@ -8,7 +8,7 @@ This document explains what each `ags` command does and what side effects to exp
 
 ```bash
 ags [command]
-ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--config PATH] -- [agent args...]
+ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--config PATH] -- [agent args...]
 ```
 
 Subcommands:
@@ -34,12 +34,13 @@ Example:
 ags --agent pi
 ags --agent claude -- --model sonnet
 ags --agent pi --browser
+ags --agent pi --tmux
 ```
 
 ### What happens on run
 
 1. Load and validate config.
-2. Ensure embedded assets exist on disk (`Containerfile`, guard extension).
+2. Ensure embedded assets exist on disk (`Containerfile`, `tmux.conf`, guard extension).
 3. Resolve secrets from configured sources.
 4. Ensure sandbox git config exists.
 5. Ensure dedicated SSH agent is running and keys are loaded.
@@ -56,6 +57,7 @@ ags --agent pi --browser
 - Runtime env vars are injected for discoverability: `AGS_HOST_SERVICES_HOST` and `AGS_HOST_SERVICES_HINT`.
 - `pi`/`claude`/`codex` runs also inject a short host-service hint into prompt context.
 - Interactive launches print a one-line host-service reminder before the agent CLI starts.
+- `--tmux` wraps the agent command in a tmux session inside the container; this is opt-in and does not change the default launch behavior.
 - Postgres quick-connect from host into sandbox shell:
   - `ags --agent shell -- -lc 'PGPASSWORD="${PGPASSWORD:-postgres}" psql -h "${AGS_HOST_SERVICES_HOST}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" "${PGDATABASE:-postgres}"'`
 
@@ -167,6 +169,7 @@ ags install --link-self --force
 ### What it writes
 
 - `~/.config/ags/Containerfile`
+- `~/.config/ags/tmux.conf`
 - `<agent-dir>/extensions/guard.ts`
 - `<agent-dir>/settings.json` (if missing)
 
