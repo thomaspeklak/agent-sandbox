@@ -19,6 +19,7 @@ pub fn run(config: &ValidatedConfig) -> Result<(), SetupError> {
     print_pub_key("Signing key (SSH signing key)", sign_key)?;
 
     ensure_pi_assets(config)?;
+    ensure_claude_assets(config)?;
 
     if !has_command("secret-tool") {
         println!(
@@ -82,6 +83,17 @@ fn ensure_pi_assets(config: &ValidatedConfig) -> Result<(), SetupError> {
         eprintln!("warning: could not write settings template: {e}");
     }
 
+    Ok(())
+}
+
+fn ensure_claude_assets(config: &ValidatedConfig) -> Result<(), SetupError> {
+    let hooks_dir = config.sandbox.cache_dir.join("ags-hooks");
+    if let Err(e) = crate::assets::ensure_claude_guard_hook(&hooks_dir) {
+        eprintln!("warning: could not write Claude guard hook: {e}");
+    }
+    if let Err(e) = crate::assets::ensure_claude_guard_skill(&hooks_dir) {
+        eprintln!("warning: could not write Claude guard skill: {e}");
+    }
     Ok(())
 }
 

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Write|Edit|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/dev/.config/ags/hooks/guard.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "ags-guard",
+  "description": "Sandbox guard: filesystem and command restrictions for the agent sandbox",
+  "version": "0.1.0"
+}

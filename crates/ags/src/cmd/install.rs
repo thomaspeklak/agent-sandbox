@@ -49,11 +49,24 @@ pub fn run(opts: &InstallOptions) -> Result<(), InstallError> {
     assets::ensure_tmux_conf(&tmux_conf)?;
     println!("Wrote tmux config: {}", tmux_conf.display());
 
-    // Write guard extension
+    // Write Pi guard extension
     assets::ensure_guard_extension(&agent_dir)?;
     println!(
         "Wrote guard extension: {}",
         agent_dir.join("extensions/guard.ts").display()
+    );
+
+    // Write Claude guard hook
+    let hooks_dir = config_dir.join("ags-hooks");
+    assets::ensure_claude_guard_hook(&hooks_dir)?;
+    println!(
+        "Wrote Claude guard hook: {}",
+        hooks_dir.join("guard.sh").display()
+    );
+    assets::ensure_claude_guard_skill(&hooks_dir)?;
+    println!(
+        "Wrote Claude guard skill: {}",
+        hooks_dir.join("skills/guard/SKILL.md").display()
     );
 
     // Write settings template (only if missing)

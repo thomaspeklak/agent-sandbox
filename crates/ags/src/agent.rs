@@ -50,12 +50,20 @@ fn pi_profile(config: &ValidatedConfig) -> AgentProfile {
 }
 
 fn claude_profile() -> AgentProfile {
+    const GUARD_HOOK_PATH: &str = "/home/dev/.config/ags/hooks/guard.sh";
+    const GUARD_PLUGIN_DIR: &str = "/home/dev/.config/ags/hooks";
+    let settings_json = format!(
+        r#"{{"sandbox":{{"enabled":false}},"hooks":{{"PreToolUse":[{{"matcher":"Bash|Read|Write|Edit|Grep|Glob","hooks":[{{"type":"command","command":"{GUARD_HOOK_PATH}","timeout":5}}]}}]}}}}"#,
+    );
+
     AgentProfile {
         command: "claude".to_owned(),
         command_args: vec![
             "--dangerously-skip-permissions".to_owned(),
             "--settings".to_owned(),
-            "{\"sandbox\":{\"enabled\":false}}".to_owned(),
+            settings_json.to_owned(),
+            "--plugin-dir".to_owned(),
+            GUARD_PLUGIN_DIR.to_owned(),
             "--append-system-prompt".to_owned(),
             HOST_SERVICE_PROMPT_HINT.to_owned(),
         ],

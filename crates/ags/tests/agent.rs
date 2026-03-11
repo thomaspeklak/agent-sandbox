@@ -111,15 +111,34 @@ fn claude_profile_command() {
     let config = minimal_config();
     let profile = profile_for(Agent::Claude, &config);
     assert_eq!(profile.command, "claude");
+    assert!(profile.command_args.contains(&"--dangerously-skip-permissions".to_owned()));
+    assert!(profile.command_args.contains(&"--append-system-prompt".to_owned()));
+
+    // Settings should include both sandbox disable and guard hook
+    let settings_idx = profile
+        .command_args
+        .iter()
+        .position(|a| a == "--settings")
+        .expect("--settings flag present");
+    let settings_json = &profile.command_args[settings_idx + 1];
+    let parsed: serde_json::Value = serde_json::from_str(settings_json)
+        .expect("settings arg is valid JSON");
+    assert_eq!(parsed["sandbox"]["enabled"], false);
+    assert_eq!(parsed["hooks"]["PreToolUse"][0]["matcher"], "Bash|Read|Write|Edit|Grep|Glob");
     assert_eq!(
-        profile.command_args,
-        vec![
-            "--dangerously-skip-permissions",
-            "--settings",
-            "{\"sandbox\":{\"enabled\":false}}",
-            "--append-system-prompt",
-            "Sandbox: use host.containers.internal (localhost is container-local)."
-        ]
+        parsed["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+        "/home/dev/.config/ags/hooks/guard.sh"
+    );
+
+    // Guard skill loaded via --plugin-dir
+    let plugin_idx = profile
+        .command_args
+        .iter()
+        .position(|a| a == "--plugin-dir")
+        .expect("--plugin-dir flag present");
+    assert_eq!(
+        profile.command_args[plugin_idx + 1],
+        "/home/dev/.config/ags/hooks"
     );
 }
 
@@ -148,6 +167,10 @@ fn claude_profile_no_extra_boot_dirs() {
     let config = minimal_config();
     let profile = profile_for(Agent::Claude, &config);
     assert!(profile.extra_boot_dirs.is_empty());
+    assert!(
+        profile.entrypoint_setup.is_empty(),
+        "skill loaded via --plugin-dir, no entrypoint setup needed"
+    );
 }
 
 #[test]

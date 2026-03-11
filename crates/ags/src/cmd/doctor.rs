@@ -47,6 +47,9 @@ fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
     if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {
         let _ = crate::assets::ensure_guard_extension(&pi_host.join("agent"));
     }
+    let hooks_dir = config.sandbox.cache_dir.join("ags-hooks");
+    let _ = crate::assets::ensure_claude_guard_hook(&hooks_dir);
+    let _ = crate::assets::ensure_claude_guard_skill(&hooks_dir);
 
     check_file_exists(ck, &config.sandbox.containerfile, "Containerfile", true);
     check_file_exists(ck, &tmux_conf, "tmux config", true);
@@ -55,10 +58,16 @@ fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
         let settings = pi_agent_dir.join("settings.json");
         check_file_exists(ck, &settings, "sandbox settings", true);
         let guard = pi_agent_dir.join("extensions/guard.ts");
-        check_file_exists(ck, &guard, "guard extension", true);
+        check_file_exists(ck, &guard, "Pi guard extension", true);
     } else {
         ck.fail("required mount missing for container path /home/dev/.pi");
     }
+    let claude_guard = hooks_dir.join("guard.sh");
+    check_file_exists(ck, &claude_guard, "Claude guard hook", true);
+    let claude_plugin = hooks_dir.join(".claude-plugin/plugin.json");
+    check_file_exists(ck, &claude_plugin, "Claude guard plugin manifest", true);
+    let claude_skill = hooks_dir.join("skills/guard/SKILL.md");
+    check_file_exists(ck, &claude_skill, "Claude guard skill", true);
     check_gitconfig(ck, &config.sandbox.gitconfig_path);
 }
 

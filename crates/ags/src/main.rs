@@ -137,6 +137,15 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             );
         }
     }
+    if matches!(opts.agent, Agent::Claude) {
+        let hooks_dir = config.sandbox.cache_dir.join("ags-hooks");
+        if let Err(e) = ags::assets::ensure_claude_guard_hook(&hooks_dir) {
+            eprintln!("warning: could not write Claude guard hook: {e}");
+        }
+        if let Err(e) = ags::assets::ensure_claude_guard_skill(&hooks_dir) {
+            eprintln!("warning: could not write Claude guard skill: {e}");
+        }
+    }
 
     // 3. Resolve secrets
     let resolved_secrets = secrets::resolve_secrets(&config.secrets, &OsSecretBackend);

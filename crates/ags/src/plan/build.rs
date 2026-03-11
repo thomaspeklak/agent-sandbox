@@ -30,6 +30,7 @@ const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
     ("go-build", "/home/dev/.cache/go-build", "GOCACHE"),
     ("sccache", "/home/dev/.cache/sccache", "SCCACHE_DIR"),
     ("cachepot", "/home/dev/.cache/cachepot", "CACHEPOT_DIR"),
+    ("ags-hooks", "/home/dev/.config/ags/hooks", ""),
 ];
 
 /// Build a complete launch plan from validated config and runtime context.

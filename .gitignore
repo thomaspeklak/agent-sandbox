@@ -21,10 +21,10 @@ agent/settings.json
 .vscode
 
 # Bare git objects (container mount artifacts)
-HEAD
-hooks
-objects
-refs
+/HEAD
+/hooks
+/objects
+/refs
 
 
 # bv (beads viewer) local config and caches

@@ -599,6 +599,11 @@ fn claude_agent_entrypoint() {
         "claude should not have --no-extensions: {}",
         plan.entrypoint
     );
+    assert!(
+        plan.entrypoint.contains("--plugin-dir /home/dev/.config/ags/hooks"),
+        "claude should load guard skill via --plugin-dir: {}",
+        plan.entrypoint
+    );
 }
 
 #[test]
@@ -645,9 +650,16 @@ fn claude_agent_no_extra_boot_dirs() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Claude);
 
+    // Claude should not add extra_boot_dirs. Guard skill is loaded via --plugin-dir,
+    // not via symlink in the entrypoint.
     assert!(
-        !plan.entrypoint.contains("/home/dev/.claude"),
-        "claude should not add extra boot dirs: {}",
+        plan.entrypoint.contains("--plugin-dir"),
+        "claude entrypoint should have --plugin-dir for guard skill: {}",
+        plan.entrypoint
+    );
+    assert!(
+        !plan.entrypoint.contains("ln -sf"),
+        "claude should not have symlink setup (uses --plugin-dir): {}",
         plan.entrypoint
     );
 }
