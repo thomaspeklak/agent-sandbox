@@ -195,6 +195,32 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     }
 
+    // 6b. Auth proxy
+    let _auth_proxy_guard;
+    let auth_proxy_runtime_dir;
+    {
+        let runtime_base = std::env::var("XDG_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+        let dir = runtime_base.join(format!("ags-auth-proxy-{}", std::process::id()));
+
+        match ags::auth_proxy::start(&dir, config.auth_proxy.auto_allow_domains.clone()) {
+            Ok(guard) => {
+                // Write the shim script into the runtime dir so it can be mounted
+                if let Err(e) = ags::assets::ensure_auth_proxy_shim(&guard.runtime_dir) {
+                    eprintln!("warning: auth proxy shim write failed: {e}");
+                }
+                auth_proxy_runtime_dir = Some(guard.runtime_dir.clone());
+                _auth_proxy_guard = Some(guard);
+            }
+            Err(e) => {
+                eprintln!("warning: auth proxy: {e}");
+                auth_proxy_runtime_dir = None;
+                _auth_proxy_guard = None;
+            }
+        }
+    }
+
     // 7. Discover external git mounts
     let workdir = match std::env::current_dir() {
         Ok(d) => d,
@@ -214,6 +240,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         opts.tmux,
         ssh_sock.as_deref(),
         &resolved_secrets,
+        auth_proxy_runtime_dir.as_deref(),
     ) {
         Ok(p) => p,
         Err(e) => {

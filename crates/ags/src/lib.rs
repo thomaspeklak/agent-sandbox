@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod assets;
+pub mod auth_proxy;
 pub mod browser;
 pub mod cli;
 pub mod cmd;

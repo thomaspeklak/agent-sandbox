@@ -10,6 +10,7 @@ pub const GUARD_SKILL_MD: &str = include_str!("../../../agent/hooks/skills/guard
 pub const GUARD_PLUGIN_JSON: &str =
     include_str!("../../../agent/hooks/.claude-plugin/plugin.json");
 pub const SETTINGS_EXAMPLE: &str = include_str!("../../../agent/settings.example.json");
+pub const AUTH_PROXY_SHIM: &str = include_str!("../../../agent/auth-proxy-shim");
 
 /// Write the embedded Containerfile to `path`, always overwriting.
 pub fn ensure_containerfile(path: &Path) -> io::Result<()> {
@@ -43,7 +44,7 @@ pub fn ensure_settings_template(pi_sandbox: &Path) -> io::Result<()> {
     }
     fs::create_dir_all(pi_sandbox)?;
     fs::write(&target, SETTINGS_EXAMPLE)?;
-    set_permissions_600(&target);
+    set_permissions(&target, 0o600);
     Ok(())
 }
 
@@ -52,7 +53,7 @@ pub fn ensure_claude_guard_hook(hooks_dir: &Path) -> io::Result<()> {
     fs::create_dir_all(hooks_dir)?;
     let path = hooks_dir.join("guard.sh");
     fs::write(&path, GUARD_SH)?;
-    set_permissions_755(&path);
+    set_permissions(&path, 0o755);
     Ok(())
 }
 
@@ -73,18 +74,26 @@ pub fn ensure_claude_guard_skill(hooks_dir: &Path) -> io::Result<()> {
     fs::write(skill_dir.join("SKILL.md"), GUARD_SKILL_MD)
 }
 
-fn set_permissions_600(path: &Path) {
+/// Write the embedded auth proxy shim to `<dir>/auth-proxy-shim`, always overwriting.
+///
+/// The shim is made executable (mode 0755).
+pub fn ensure_auth_proxy_shim(dir: &Path) -> io::Result<()> {
+    fs::create_dir_all(dir)?;
+    let target = dir.join("auth-proxy-shim");
+    fs::write(&target, AUTH_PROXY_SHIM)?;
+    set_permissions(&target, 0o755);
+    Ok(())
+}
+
+fn set_permissions(path: &Path, mode: u32) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
     }
 }
 
-fn set_permissions_755(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o755));
-    }
-}

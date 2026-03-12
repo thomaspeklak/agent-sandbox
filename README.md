@@ -29,6 +29,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - Persistent per-agent host volumes (sessions/config survive container restarts)
 - Configurable mounts, tool binaries, and secret sources
 - Optional browser sidecar support for browser-enabled workflows
+- Auth proxy for secure sandbox browser opens and OAuth loopback callbacks
 - Health checks via `ags doctor`
 - Convenience alias/wrapper generation via `ags create-aliases`
 
@@ -50,6 +51,7 @@ Optional but useful:
 - `make` (for convenience targets)
 - `secret-tool` (GNOME keyring/libsecret integration)
 - Browser executable (for `--browser` mode)
+- `zenity` or `kdialog` (for auth proxy allow/deny prompts; auto-denied if neither is available)
 
 > Tip: run `ags doctor` after setup to verify your environment.
 
@@ -247,6 +249,26 @@ Use a non-default config file:
 ags --agent pi --config /path/to/config.toml
 ```
 
+### MCP auth persistence
+
+MCP servers that use OAuth (e.g. Linear) store auth tokens in `~/.mcp-auth` inside the container. Without a persistent mount, tokens are lost on every session restart. Add this to your config:
+
+```toml
+[[mount]]
+host = "$HOME/.mcp-auth"
+container = "/home/dev/.mcp-auth"
+mode = "rw"
+kind = "dir"
+create = true
+```
+
+To skip the allow/deny dialog for known OAuth providers:
+
+```toml
+[auth_proxy]
+auto_allow_domains = ["mcp.linear.app"]
+```
+
 ### Host service access from inside sandbox
 
 `ags` runs agent CLIs **inside the container**, so `localhost` refers to the container itself.
@@ -347,6 +369,8 @@ Use `config/config.example.toml` for full schema examples.
   - optional nested `[[tool.secret]]` sources
 - `[[secret]]`
   - Map env var names to source(s): `from_env` and/or `secret_store`
+- `[auth_proxy]`
+  - `auto_allow_domains`: list of domains to skip the allow/deny prompt for (e.g. `["mcp.linear.app"]`)
 - `[browser]`
   - Enables browser sidecar integration used with `--browser`
 - `[update]`
@@ -362,6 +386,8 @@ Use `config/config.example.toml` for full schema examples.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
 - npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
 - Rotate/revoke credentials quickly if compromise is suspected.
+- The auth proxy requires explicit user approval (via desktop dialog) before opening any URL requested by the sandbox agent. URLs are never opened silently.
+- OAuth loopback callbacks are relayed through the host proxy — the container never listens on host network ports directly.
 
 ---
 
@@ -373,6 +399,7 @@ Use `config/config.example.toml` for full schema examples.
 - `config/config.example.toml` — full config template
 - `agent/extensions/guard.ts` — runtime guard extension mounted for Pi
 - `agent/settings.example.json` — example Pi settings template
+- `agent/auth-proxy-shim` — container-side `$BROWSER` replacement for auth proxy
 - `Makefile` — convenience command wrappers
 
 ---
@@ -386,6 +413,7 @@ Use `config/config.example.toml` for full schema examples.
   - ensure `[browser].enabled = true`
   - verify `[browser].command` is valid
   - verify debug port is available
+- If auth proxy prompts are auto-denied: install `zenity` or `kdialog`
 - If secrets are not found:
   - verify env vars exist and are non-empty
   - or verify `secret-tool` entries match configured attributes

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::agent::{self, AgentProfile};
+use crate::auth_proxy::host::AuthProxyGuard;
 use crate::cli::Agent;
 use crate::config::{
     BrowserConfig, MountKind, MountMode, MountWhen, ValidatedConfig, ValidatedMount,
@@ -42,6 +43,7 @@ pub fn build_launch_plan(
     tmux_mode: bool,
     ssh_auth_sock: Option<&Path>,
     resolved_secrets: &HashMap<String, String>,
+    auth_proxy_runtime_dir: Option<&Path>,
 ) -> Result<LaunchPlan, PlanError> {
     let profile = agent::profile_for(agent, config);
     let workdir_mapping = resolve_workdir(workdir)?;
@@ -109,6 +111,24 @@ pub fn build_launch_plan(
         });
     }
 
+    // Auth proxy runtime dir + shim
+    if let Some(runtime_dir) = auth_proxy_runtime_dir {
+        mounts.push(PlanMount {
+            host: runtime_dir.to_owned(),
+            container: AuthProxyGuard::container_runtime_dir().to_owned(),
+            mode: MountMode::Rw,
+        });
+
+        // Mount the shim script into the container
+        let shim_host = runtime_dir.join("auth-proxy-shim");
+        let shim_container = format!("{CONTAINER_HOME}/.local/bin/auth-proxy-shim");
+        mounts.push(PlanMount {
+            host: shim_host,
+            container: shim_container,
+            mode: MountMode::Ro,
+        });
+    }
+
     // Public key files
     add_pub_key_mount(&mut mounts, &config.sandbox.auth_key, "ags-agent-auth");
     add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
@@ -121,6 +141,7 @@ pub fn build_launch_plan(
         &read_roots,
         &write_roots,
         resolved_secrets,
+        auth_proxy_runtime_dir.is_some(),
     );
 
     // Network mode
@@ -421,6 +442,7 @@ fn build_env(
     read_roots: &[String],
     write_roots: &[String],
     resolved_secrets: &HashMap<String, String>,
+    auth_proxy_enabled: bool,
 ) -> PlanEnv {
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
@@ -454,6 +476,17 @@ fn build_env(
     if let Some(w) = wayland {
         inline.push(("WAYLAND_DISPLAY".to_owned(), w.display_name.clone()));
         inline.push(("XDG_RUNTIME_DIR".to_owned(), "/tmp".to_owned()));
+    }
+
+    if auth_proxy_enabled {
+        inline.push((
+            "AGS_AUTH_PROXY_SOCK".to_owned(),
+            AuthProxyGuard::container_socket_path().to_owned(),
+        ));
+        inline.push((
+            "BROWSER".to_owned(),
+            format!("{CONTAINER_HOME}/.local/bin/auth-proxy-shim"),
+        ));
     }
 
     let passthrough_names = vec![

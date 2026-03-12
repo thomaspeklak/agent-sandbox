@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use crate::config::error::ConfigError;
 use crate::config::raw::{RawAgentMount, RawBrowser, RawConfig, RawMount, RawSecret, RawTool};
 use crate::config::types::{
-    BrowserConfig, MountKind, MountMode, MountWhen, SecretSource, UpdateConfig, ValidatedConfig,
-    ValidatedMount, ValidatedSandbox, ValidatedSecret, ValidatedTool,
+    AuthProxyConfig, BrowserConfig, MountKind, MountMode, MountWhen, SecretSource, UpdateConfig,
+    ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret, ValidatedTool,
 };
 
 /// Read, parse, and validate a config TOML file from disk.
@@ -62,6 +62,9 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
         update: UpdateConfig {
             pi_spec: raw.update.pi_spec,
             minimum_release_age: raw.update.minimum_release_age,
+        },
+        auth_proxy: AuthProxyConfig {
+            auto_allow_domains: raw.auth_proxy.auto_allow_domains,
         },
     })
 }

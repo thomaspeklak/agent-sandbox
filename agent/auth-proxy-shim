@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""AGS auth proxy shim — replaces xdg-open/BROWSER inside the sandbox.
+
+Connects to the host auth proxy over a Unix socket to request browser opens
+and relay OAuth callback flows. Designed to be set as BROWSER= in the
+container environment.
+"""
+
+import http.client
+import json
+import os
+import socket
+import sys
+import time
+import urllib.parse
+
+SOCK_PATH = os.environ.get(
+    "AGS_AUTH_PROXY_SOCK", "/run/ags-auth-proxy/auth-proxy.sock"
+)
+RETRY_ATTEMPTS = 10
+RETRY_DELAY = 0.3
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: ags-auth-proxy-shim <url>", file=sys.stderr)
+        sys.exit(1)
+
+    url = sys.argv[1]
+
+    # Skip non-http URLs — pass through to best-effort fallback
+    if not url.startswith(("http://", "https://")):
+        print(f"[ags] auth proxy: non-HTTP URL, cannot open: {url}", file=sys.stderr)
+        sys.exit(1)
+
+    callback_port = detect_callback_port(url)
+    session_id = f"{os.getpid()}-{int(time.time() * 1000)}"
+
+    sock = connect_with_retry()
+    if sock is None:
+        sys.exit(1)
+
+    try:
+        run_session(sock, session_id, url, callback_port)
+    except (ConnectionError, BrokenPipeError) as e:
+        print(f"[ags] auth proxy disconnected: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"[ags] auth proxy error: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        sock.close()
+
+
+def run_session(sock, session_id, url, callback_port):
+    """Drive a single auth proxy session."""
+
+    # 1. Request URL open
+    send(sock, {
+        "type": "open_url",
+        "session_id": session_id,
+        "url": url,
+        "callback_port": callback_port,
+    })
+
+    # 2. Wait for prompt result
+    msg = recv(sock)
+
+    if msg.get("type") == "error":
+        print(f"[ags] auth proxy error: {msg.get('message', '?')}", file=sys.stderr)
+        sys.exit(1)
+
+    if msg.get("type") != "prompt_result":
+        print(f"[ags] unexpected message: {msg.get('type')}", file=sys.stderr)
+        sys.exit(1)
+
+    if not msg.get("allowed", False):
+        print("[ags] URL open denied by user", file=sys.stderr)
+        sys.exit(1)
+
+    if callback_port:
+        # 3a. Callback flow: wait for callback_request, replay, return response
+        msg = recv(sock)
+
+        if msg.get("type") == "session_complete":
+            return  # host handled it without callback somehow
+        if msg.get("type") == "error":
+            print(f"[ags] callback error: {msg.get('message', '?')}", file=sys.stderr)
+            sys.exit(1)
+        if msg.get("type") != "callback_request":
+            print(f"[ags] unexpected: {msg.get('type')}", file=sys.stderr)
+            sys.exit(1)
+
+        # Replay the callback to the container-local server
+        response = replay_callback(callback_port, msg)
+        send(sock, response)
+
+        # Wait for session_complete
+        msg = recv(sock)
+    else:
+        # 3b. Simple open: just wait for session_complete
+        msg = recv(sock)
+
+    if msg.get("type") == "error":
+        print(f"[ags] session error: {msg.get('message', '?')}", file=sys.stderr)
+        sys.exit(1)
+
+
+def detect_callback_port(url):
+    """Extract localhost callback port from URL query parameters."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+    except Exception:
+        return None
+
+    callback_keys = (
+        "redirect_uri",
+        "callback_url",
+        "return_url",
+        "redirect_url",
+    )
+
+    for key in callback_keys:
+        for value in params.get(key, []):
+            try:
+                cb = urllib.parse.urlparse(value)
+                if cb.hostname in ("localhost", "127.0.0.1", "::1", "[::1]"):
+                    return cb.port or 80
+            except Exception:
+                continue
+
+    return None
+
+
+def connect_with_retry():
+    """Connect to the auth proxy socket, retrying briefly."""
+    for i in range(RETRY_ATTEMPTS):
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.connect(SOCK_PATH)
+            return sock
+        except (ConnectionRefusedError, FileNotFoundError, OSError):
+            if i < RETRY_ATTEMPTS - 1:
+                time.sleep(RETRY_DELAY)
+            sock.close()
+
+    print(
+        f"[ags] auth proxy unavailable at {SOCK_PATH} "
+        f"after {RETRY_ATTEMPTS} attempts",
+        file=sys.stderr,
+    )
+    return None
+
+
+def send(sock, msg):
+    """Send a newline-delimited JSON message."""
+    data = json.dumps(msg, separators=(",", ":")) + "\n"
+    sock.sendall(data.encode("utf-8"))
+
+
+def recv(sock):
+    """Receive a newline-delimited JSON message."""
+    buf = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise ConnectionError("auth proxy closed the connection")
+        buf += chunk
+        if b"\n" in buf:
+            line, _ = buf.split(b"\n", 1)
+            return json.loads(line)
+
+
+def replay_callback(port, msg):
+    """Replay a captured HTTP callback to the container-local server."""
+    method = msg.get("method", "GET")
+    path = msg.get("path", "/")
+    req_headers = dict(msg.get("headers", []))
+    req_body = msg.get("body", "") or None
+
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        conn.request(method, path, body=req_body, headers=req_headers)
+        resp = conn.getresponse()
+        resp_headers = list(resp.getheaders())
+        resp_body = resp.read().decode("utf-8", errors="replace")
+        conn.close()
+
+        return {
+            "type": "callback_response",
+            "session_id": msg["session_id"],
+            "request_id": msg["request_id"],
+            "status": resp.status,
+            "headers": resp_headers,
+            "body": resp_body,
+        }
+    except Exception as e:
+        # Return a 502 so the browser gets something
+        return {
+            "type": "callback_response",
+            "session_id": msg["session_id"],
+            "request_id": msg["request_id"],
+            "status": 502,
+            "headers": [("Content-Type", "text/plain")],
+            "body": f"auth proxy: callback replay failed: {e}",
+        }
+
+
+if __name__ == "__main__":
+    main()

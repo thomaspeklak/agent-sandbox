@@ -103,8 +103,8 @@ if [ -x "$CLAUDE_BIN" ]; then \
    export HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" && \
    curl -fsSL https://claude.ai/install.sh | bash); \
 else \
-  (export HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" && \
-   curl -fsSL https://claude.ai/install.sh | bash); \
+  export HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" && \
+  curl -fsSL https://claude.ai/install.sh | bash; \
 fi && \
 [ -x "$CLAUDE_BIN" ] && \
 rm -f /usr/local/pnpm/claude && \

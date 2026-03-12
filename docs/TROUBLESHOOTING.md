@@ -238,6 +238,115 @@ If needed, try a different debug port.
 
 ---
 
+## Auth proxy: URL opens are auto-denied
+
+Symptoms:
+
+- Agent tries to open a URL (e.g. OAuth login) but nothing happens
+- Shim logs show `prompt denied`
+
+Cause:
+
+- Neither `zenity` nor `kdialog` is installed on the host, so the proxy cannot show the allow/deny dialog and defaults to deny.
+
+### Fix
+
+Install a dialog tool:
+
+```bash
+# Debian/Ubuntu (GNOME)
+sudo apt install zenity
+
+# Fedora (GNOME)
+sudo dnf install zenity
+
+# KDE
+sudo apt install kdialog   # or: sudo dnf install kdialog
+```
+
+---
+
+## Auth proxy: socket connection failures
+
+Symptoms:
+
+- Shim prints `failed to connect to auth proxy socket` or times out
+- OAuth flows hang
+
+Cause:
+
+- The per-run runtime directory or socket was not created (e.g. `$XDG_RUNTIME_DIR` is missing or not writable).
+
+### Fix
+
+Verify your runtime dir:
+
+```bash
+echo "$XDG_RUNTIME_DIR"
+ls -la "$XDG_RUNTIME_DIR"
+```
+
+If unset/missing, set it before running `ags`:
+
+```bash
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+```
+
+---
+
+## MCP server re-authenticates every session
+
+Symptoms:
+
+- MCP servers (e.g. Linear) ask to re-authenticate on every `ags` run
+- OAuth tokens are not persisted
+
+Cause:
+
+- MCP auth tokens are stored in `~/.mcp-auth` inside the container, which is ephemeral by default.
+
+### Fix
+
+Mount the token directory from your host:
+
+```toml
+[[mount]]
+host = "$HOME/.mcp-auth"
+container = "/home/dev/.mcp-auth"
+mode = "rw"
+kind = "dir"
+create = true
+```
+
+To also skip the allow/deny dialog for known providers:
+
+```toml
+[auth_proxy]
+auto_allow_domains = ["mcp.linear.app"]
+```
+
+---
+
+## Auth proxy: OAuth callback not received
+
+Symptoms:
+
+- Browser opens the OAuth provider page and redirects to `localhost:<port>/callback`
+- But the agent inside the container never receives the auth code
+
+Cause:
+
+- The callback port was already in use on the host when the proxy tried to bind it.
+- Or the OAuth provider uses a non-standard callback parameter name that the shim does not detect.
+
+### Fix
+
+- Retry the flow — the proxy binds the callback port dynamically per session.
+- If persistent, check for port conflicts: `ss -tlnp | grep <port>`.
+- The shim detects `redirect_uri`, `callback_url`, `return_url`, and `redirect_url` query parameters. Other parameter names are not recognized and will fall back to a simple (non-callback) URL open.
+
+---
+
 ## Config parse/validation errors
 
 Symptoms:

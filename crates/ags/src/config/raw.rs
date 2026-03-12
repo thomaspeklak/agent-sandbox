@@ -19,6 +19,8 @@ pub struct RawConfig {
     pub browser: RawBrowser,
     #[serde(default)]
     pub update: RawUpdate,
+    #[serde(default)]
+    pub auth_proxy: RawAuthProxy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,6 +123,12 @@ impl Default for RawUpdate {
             minimum_release_age: default_release_age(),
         }
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RawAuthProxy {
+    #[serde(default)]
+    pub auto_allow_domains: Vec<String>,
 }
 
 fn default_kind() -> String {

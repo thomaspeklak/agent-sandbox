@@ -29,8 +29,12 @@
   - Dedicated ssh-agent lifecycle + key loading.
 - `secrets.rs`
   - Multi-source secret resolution.
+- `auth_proxy/*`
+  - Ephemeral auth proxy for sandbox browser opens and OAuth loopback callbacks.
+  - `protocol.rs`: JSON-over-Unix-socket message types (`ShimMessage`, `HostMessage`).
+  - `host.rs`: host-side proxy — Unix socket listener, user prompt via zenity/kdialog, callback relay.
 - `assets.rs`
-  - Writes embedded Containerfile/guard/settings.
+  - Writes embedded Containerfile/guard/settings/auth-proxy-shim.
 
 ---
 

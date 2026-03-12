@@ -12,6 +12,7 @@ pub struct ValidatedConfig {
     pub secrets: Vec<ValidatedSecret>,
     pub browser: BrowserConfig,
     pub update: UpdateConfig,
+    pub auth_proxy: AuthProxyConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +150,11 @@ impl Default for BrowserConfig {
 pub struct UpdateConfig {
     pub pi_spec: String,
     pub minimum_release_age: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AuthProxyConfig {
+    pub auto_allow_domains: Vec<String>,
 }
 
 impl Default for UpdateConfig {

@@ -52,6 +52,10 @@ function detectSandboxAtStartup(): SandboxDetection {
 
 const SANDBOX_DETECTION = detectSandboxAtStartup();
 
+function dim(text: string): string {
+	return `\x1b[2m${text}\x1b[22m`;
+}
+
 function expandHome(inputPath: string, home: string): string {
 	if (inputPath === "~") return home;
 	if (inputPath.startsWith("~/")) return `${home}/${inputPath.slice(2)}`;
@@ -118,8 +122,8 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 		const theme = ctx.ui.theme;
 		const status = SANDBOX_DETECTION.enabled
-			? `${theme.fg("success", "sandbox:on")}`
-			: `${theme.fg("warning", "sandbox:off")}`;
+			? dim(theme.fg("success", "sandbox:on"))
+			: theme.fg("error", "sandbox:off");
 		ctx.ui.setWidget("ags-sandbox", [status], { placement: "aboveEditor" });
 		ctx.ui.notify(
 			`Sandbox ${SANDBOX_DETECTION.enabled ? "ON" : "OFF"} (${SANDBOX_DETECTION.source})`,

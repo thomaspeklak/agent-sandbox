@@ -85,6 +85,17 @@ from_env = "EXAMPLE_GH_TOKEN"
 env = "EXAMPLE_GH_TOKEN"
 secret_store = { service = "example-gh-service", account = "example-account" }
 
+# MCP auth token persistence (so MCP servers don't re-auth every session)
+[[mount]]
+host = "$HOME/.mcp-auth"
+container = "/home/dev/.mcp-auth"
+mode = "rw"
+kind = "dir"
+create = true
+
+[auth_proxy]
+auto_allow_domains = []  # e.g. ["mcp.linear.app", "github.com"]
+
 [browser]
 enabled = false
 command = "your-browser-command"

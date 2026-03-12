@@ -45,8 +45,9 @@ ags --agent pi --tmux
 4. Ensure sandbox git config exists.
 5. Ensure dedicated SSH agent is running and keys are loaded.
 6. Optionally start browser sidecar (`--browser`).
-7. Build launch plan (mounts/env/security/network/entrypoint).
-8. Ensure image exists (builds if missing), then run `podman run`.
+7. Start auth proxy (Unix socket + shim in per-run temp dir).
+8. Build launch plan (mounts/env/security/network/entrypoint).
+9. Ensure image exists (builds if missing), then run `podman run`.
 
 ### Notes
 
@@ -58,6 +59,7 @@ ags --agent pi --tmux
 - `pi`/`claude`/`codex` runs also inject a short host-service hint into prompt context.
 - Interactive launches print a one-line host-service reminder before the agent CLI starts.
 - `--tmux` wraps the agent command in a tmux session inside the container; this is opt-in and does not change the default launch behavior.
+- The auth proxy starts automatically on every run. Inside the container, `$BROWSER` points to the auth-proxy-shim. When agent code opens a URL (e.g. OAuth login), the shim sends it to the host proxy over a Unix socket. The host prompts the user via a zenity/kdialog dialog; if allowed, the URL opens in the host browser. For OAuth flows with a `localhost` callback, the host proxy captures the browser redirect and relays it back into the container. If neither `zenity` nor `kdialog` is installed, all URL-open requests are auto-denied. The proxy shuts down and cleans up its temp directory when the container exits. Domains listed in `[auth_proxy].auto_allow_domains` skip the dialog.
 - Postgres quick-connect from host into sandbox shell:
   - `ags --agent shell -- -lc 'PGPASSWORD="${PGPASSWORD:-postgres}" psql -h "${AGS_HOST_SERVICES_HOST}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" "${PGDATABASE:-postgres}"'`
 

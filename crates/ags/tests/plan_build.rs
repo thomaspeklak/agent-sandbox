@@ -68,7 +68,7 @@ fn build_plan_from(toml: &str, workdir: &Path) -> ags::plan::LaunchPlan {
 fn build_plan_from_agent(toml: &str, workdir: &Path, agent: Agent) -> ags::plan::LaunchPlan {
     let config = parse_toml_str(toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    build_launch_plan(&config, workdir, agent, false, false, None, &secrets).unwrap()
+    build_launch_plan(&config, workdir, agent, false, false, None, &secrets, None).unwrap()
 }
 
 #[test]
@@ -252,6 +252,7 @@ debug_port = 9222
         false,
         None,
         &secrets,
+        None,
     )
     .unwrap();
     assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=true");
@@ -309,6 +310,7 @@ fn tmux_mode_wraps_agent_command() {
         true,
         None,
         &secrets,
+        None,
     )
     .unwrap();
 
@@ -377,6 +379,7 @@ mode = \"ro\"\n",
         false,
         None,
         &secrets,
+        None,
     );
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -466,6 +469,7 @@ fn secrets_in_env_file() {
         false,
         None,
         &secrets,
+        None,
     )
     .unwrap();
 
@@ -492,6 +496,7 @@ fn ssh_socket_mounted_when_provided() {
         false,
         Some(sock),
         &secrets,
+        None,
     )
     .unwrap();
 
@@ -512,6 +517,7 @@ fn nonexistent_workdir_is_error() {
         false,
         None,
         &secrets,
+        None,
     );
     assert!(matches!(result, Err(PlanError::WorkdirResolve(_))));
 }
@@ -541,6 +547,7 @@ pi_skill_path = "/home/dev/browser-tools"
         false,
         None,
         &secrets,
+        None,
     )
     .unwrap();
 
@@ -774,4 +781,90 @@ fn non_pi_agent_no_pi_env() {
         .iter()
         .any(|(k, _)| k == "PI_CODING_AGENT_DIR");
     assert!(!has_pi_env, "codex should not have PI_CODING_AGENT_DIR");
+}
+
+// --- Auth proxy integration ---
+
+#[test]
+fn auth_proxy_mounts_and_env_when_enabled() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let auth_dir = tempfile::tempdir().unwrap();
+
+    // Write a dummy shim so the mount source exists
+    let shim_path = auth_dir.path().join("auth-proxy-shim");
+    fs::write(&shim_path, "#!/bin/sh\n").unwrap();
+
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Claude,
+        false,
+        false,
+        None,
+        &secrets,
+        Some(auth_dir.path()),
+    )
+    .unwrap();
+
+    // Should have runtime dir mount
+    let runtime_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/run/ags-auth-proxy");
+    assert!(
+        runtime_mount.is_some(),
+        "auth proxy runtime dir should be mounted"
+    );
+    assert_eq!(runtime_mount.unwrap().mode, MountMode::Rw);
+
+    // Should have shim mount
+    let shim_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/home/dev/.local/bin/auth-proxy-shim");
+    assert!(shim_mount.is_some(), "auth proxy shim should be mounted");
+    assert_eq!(shim_mount.unwrap().mode, MountMode::Ro);
+
+    // Should have BROWSER and AGS_AUTH_PROXY_SOCK env vars
+    let find_env = |key: &str| -> Option<String> {
+        plan.env
+            .inline
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(
+        find_env("AGS_AUTH_PROXY_SOCK"),
+        Some("/run/ags-auth-proxy/auth-proxy.sock".to_owned())
+    );
+    assert_eq!(
+        find_env("BROWSER"),
+        Some("/home/dev/.local/bin/auth-proxy-shim".to_owned())
+    );
+}
+
+#[test]
+fn no_auth_proxy_env_when_disabled() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from(&toml, workdir.path());
+
+    let find_env = |key: &str| -> Option<String> {
+        plan.env
+            .inline
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
+    assert!(
+        find_env("AGS_AUTH_PROXY_SOCK").is_none(),
+        "no auth proxy env when disabled"
+    );
+    assert!(
+        find_env("BROWSER").is_none(),
+        "BROWSER should not be set without auth proxy"
+    );
 }
