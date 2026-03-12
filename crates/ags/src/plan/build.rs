@@ -21,6 +21,14 @@ const HOST_SERVICES_HOST: &str = "host.containers.internal";
 const HOST_SERVICES_HINT: &str =
     "[ags] Host services: use host.containers.internal (localhost is container-local)";
 
+pub struct BuildLaunchPlanOptions<'a> {
+    pub browser_mode: bool,
+    pub tmux_mode: bool,
+    pub ssh_auth_sock: Option<&'a Path>,
+    pub resolved_secrets: &'a HashMap<String, String>,
+    pub auth_proxy_runtime_dir: Option<&'a Path>,
+}
+
 /// Cache volume mappings: (host_suffix under cache_dir, container_path, env_var).
 /// An empty env_var means no environment variable is emitted for that mount.
 const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
@@ -39,12 +47,15 @@ pub fn build_launch_plan(
     config: &ValidatedConfig,
     workdir: &Path,
     agent: Agent,
-    browser_mode: bool,
-    tmux_mode: bool,
-    ssh_auth_sock: Option<&Path>,
-    resolved_secrets: &HashMap<String, String>,
-    auth_proxy_runtime_dir: Option<&Path>,
+    options: BuildLaunchPlanOptions<'_>,
 ) -> Result<LaunchPlan, PlanError> {
+    let BuildLaunchPlanOptions {
+        browser_mode,
+        tmux_mode,
+        ssh_auth_sock,
+        resolved_secrets,
+        auth_proxy_runtime_dir,
+    } = options;
     let profile = agent::profile_for(agent, config);
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);

@@ -111,8 +111,16 @@ fn claude_profile_command() {
     let config = minimal_config();
     let profile = profile_for(Agent::Claude, &config);
     assert_eq!(profile.command, "claude");
-    assert!(profile.command_args.contains(&"--dangerously-skip-permissions".to_owned()));
-    assert!(profile.command_args.contains(&"--append-system-prompt".to_owned()));
+    assert!(
+        profile
+            .command_args
+            .contains(&"--dangerously-skip-permissions".to_owned())
+    );
+    assert!(
+        profile
+            .command_args
+            .contains(&"--append-system-prompt".to_owned())
+    );
 
     // Settings should include both sandbox disable and guard hook
     let settings_idx = profile
@@ -121,10 +129,13 @@ fn claude_profile_command() {
         .position(|a| a == "--settings")
         .expect("--settings flag present");
     let settings_json = &profile.command_args[settings_idx + 1];
-    let parsed: serde_json::Value = serde_json::from_str(settings_json)
-        .expect("settings arg is valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(settings_json).expect("settings arg is valid JSON");
     assert_eq!(parsed["sandbox"]["enabled"], false);
-    assert_eq!(parsed["hooks"]["PreToolUse"][0]["matcher"], "Bash|Read|Write|Edit|Grep|Glob");
+    assert_eq!(
+        parsed["hooks"]["PreToolUse"][0]["matcher"],
+        "Bash|Read|Write|Edit|Grep|Glob"
+    );
     assert_eq!(
         parsed["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
         "/home/dev/.config/ags/hooks/guard.sh"

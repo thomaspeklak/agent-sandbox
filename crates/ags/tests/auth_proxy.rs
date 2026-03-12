@@ -150,7 +150,10 @@ fn host_message_callback_request_roundtrips() {
     let parsed: HostMessage = serde_json::from_str(&json).unwrap();
     match parsed {
         HostMessage::CallbackRequest {
-            method, path, headers, ..
+            method,
+            path,
+            headers,
+            ..
         } => {
             assert_eq!(method, "GET");
             assert_eq!(path, "/callback?code=abc123");
@@ -287,27 +290,45 @@ fn callback_flow_end_to_end() {
         thread::sleep(Duration::from_millis(100));
         let mut tcp = std::net::TcpStream::connect(format!("127.0.0.1:{cb_port}")).unwrap();
         tcp.set_read_timeout(Some(Duration::from_secs(5))).ok();
-        tcp.write_all(
-            b"GET /callback?code=test_auth_code HTTP/1.1\r\nHost: localhost\r\n\r\n",
-        )
-        .unwrap();
+        tcp.write_all(b"GET /callback?code=test_auth_code HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
 
-        // Read HTTP response
+        // Read headers first, then the full body based on Content-Length.
         let mut response = Vec::new();
         let mut buf = [0u8; 4096];
-        loop {
+        let header_end = loop {
+            match tcp.read(&mut buf) {
+                Ok(0) => panic!("connection closed before complete HTTP response"),
+                Ok(n) => response.extend_from_slice(&buf[..n]),
+                Err(e) => panic!("read error: {e}"),
+            }
+            if let Some(pos) = response.windows(4).position(|w| w == b"\r\n\r\n") {
+                break pos + 4;
+            }
+        };
+
+        let headers = String::from_utf8_lossy(&response[..header_end]);
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                if name.eq_ignore_ascii_case("content-length") {
+                    value.trim().parse::<usize>().ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+
+        let expected_len = header_end + content_length;
+        while response.len() < expected_len {
             match tcp.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => response.extend_from_slice(&buf[..n]),
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset => break,
                 Err(e) => panic!("read error: {e}"),
             }
-            // Check if we got a complete response
-            if response.windows(4).any(|w| w == b"\r\n\r\n") {
-                break;
-            }
         }
+
         String::from_utf8_lossy(&response).to_string()
     });
 
@@ -372,9 +393,7 @@ fn multiple_concurrent_sessions() {
             let sock_path = guard.runtime_dir.join(host::SOCKET_NAME);
             thread::spawn(move || {
                 let stream = UnixStream::connect(&sock_path).unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(5)))
-                    .ok();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
                 let mut writer = stream.try_clone().unwrap();
                 let mut reader = BufReader::new(stream);
 

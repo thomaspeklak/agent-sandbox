@@ -7,8 +7,7 @@ pub const TMUX_CONF: &str = include_str!("../../../config/tmux.conf");
 pub const GUARD_TS: &str = include_str!("../../../agent/extensions/guard.ts");
 pub const GUARD_SH: &str = include_str!("../../../agent/hooks/guard.sh");
 pub const GUARD_SKILL_MD: &str = include_str!("../../../agent/hooks/skills/guard/SKILL.md");
-pub const GUARD_PLUGIN_JSON: &str =
-    include_str!("../../../agent/hooks/.claude-plugin/plugin.json");
+pub const GUARD_PLUGIN_JSON: &str = include_str!("../../../agent/hooks/.claude-plugin/plugin.json");
 pub const SETTINGS_EXAMPLE: &str = include_str!("../../../agent/settings.example.json");
 pub const AUTH_PROXY_SHIM: &str = include_str!("../../../agent/auth-proxy-shim");
 
@@ -74,7 +73,6 @@ pub fn ensure_claude_guard_skill(hooks_dir: &Path) -> io::Result<()> {
     fs::write(skill_dir.join("SKILL.md"), GUARD_SKILL_MD)
 }
 
-
 /// Write the embedded auth proxy shim to `<dir>/auth-proxy-shim`, always overwriting.
 ///
 /// The shim is made executable (mode 0755).
@@ -97,4 +95,3 @@ fn set_permissions(path: &Path, mode: u32) {
         let _ = (path, mode);
     }
 }
-

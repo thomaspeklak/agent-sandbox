@@ -4,7 +4,7 @@ use std::path::Path;
 
 use ags::cli::Agent;
 use ags::config::{MountMode, parse_toml_str};
-use ags::plan::{PlanError, build_launch_plan};
+use ags::plan::{BuildLaunchPlanOptions, PlanError, build_launch_plan};
 
 fn minimal_config_toml() -> String {
     let dir = tempfile::tempdir().unwrap();
@@ -68,7 +68,19 @@ fn build_plan_from(toml: &str, workdir: &Path) -> ags::plan::LaunchPlan {
 fn build_plan_from_agent(toml: &str, workdir: &Path, agent: Agent) -> ags::plan::LaunchPlan {
     let config = parse_toml_str(toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    build_launch_plan(&config, workdir, agent, false, false, None, &secrets, None).unwrap()
+    build_launch_plan(
+        &config,
+        workdir,
+        agent,
+        BuildLaunchPlanOptions {
+            browser_mode: false,
+            tmux_mode: false,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+        },
+    )
+    .unwrap()
 }
 
 #[test]
@@ -248,11 +260,13 @@ debug_port = 9222
         &config,
         workdir.path(),
         Agent::Pi,
-        true,
-        false,
-        None,
-        &secrets,
-        None,
+        BuildLaunchPlanOptions {
+            browser_mode: true,
+            tmux_mode: false,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+        },
     )
     .unwrap();
     assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=true");
@@ -306,11 +320,13 @@ fn tmux_mode_wraps_agent_command() {
         &config,
         workdir.path(),
         Agent::Pi,
-        false,
-        true,
-        None,
-        &secrets,
-        None,
+        BuildLaunchPlanOptions {
+            browser_mode: false,
+            tmux_mode: true,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+        },
     )
     .unwrap();
 
@@ -375,11 +391,13 @@ mode = \"ro\"\n",
         &config,
         workdir.path(),
         Agent::Pi,
-        false,
-        false,
-        None,
-        &secrets,
-        None,
+        BuildLaunchPlanOptions {
+            browser_mode: false,
+            tmux_mode: false,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+        },
     );
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -465,11 +483,13 @@ fn secrets_in_env_file() {
         &config,
         workdir.path(),
         Agent::Pi,
-        false,
-        false,
-        None,
-        &secrets,
-        None,
+        BuildLaunchPlanOptions {
+            browser_mode: false,
+            tmux_mode: false,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+        },
     )
     .unwrap();
 
@@ -492,11 +512,13 @@ fn ssh_socket_mounted_when_provided() {
         &config,
         workdir.path(),
         Agent::Pi,
-        false,
-        false,
-        Some(sock),
-        &secrets,
-        None,
+        BuildLaunchPlanOptions {
+            browser_mode: false,
+            tmux_mode: false,
+            ssh_auth_sock: Some(sock),
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+        },
     )
     .unwrap();
 
@@ -513,11 +535,13 @@ fn nonexistent_workdir_is_error() {
         &config,
         Path::new("/nonexistent/workdir"),
         Agent::Pi,
-        false,
-        false,
-        None,
-        &secrets,
-        None,
+        BuildLaunchPlanOptions {
+            browser_mode: false,
+            tmux_mode: false,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+        },
     );
     assert!(matches!(result, Err(PlanError::WorkdirResolve(_))));
 }
@@ -543,11 +567,13 @@ pi_skill_path = "/home/dev/browser-tools"
         &config,
         workdir.path(),
         Agent::Pi,
-        true,
-        false,
-        None,
-        &secrets,
-        None,
+        BuildLaunchPlanOptions {
+            browser_mode: true,
+            tmux_mode: false,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+        },
     )
     .unwrap();
 
@@ -607,7 +633,8 @@ fn claude_agent_entrypoint() {
         plan.entrypoint
     );
     assert!(
-        plan.entrypoint.contains("--plugin-dir /home/dev/.config/ags/hooks"),
+        plan.entrypoint
+            .contains("--plugin-dir /home/dev/.config/ags/hooks"),
         "claude should load guard skill via --plugin-dir: {}",
         plan.entrypoint
     );
@@ -801,11 +828,13 @@ fn auth_proxy_mounts_and_env_when_enabled() {
         &config,
         workdir.path(),
         Agent::Claude,
-        false,
-        false,
-        None,
-        &secrets,
-        Some(auth_dir.path()),
+        BuildLaunchPlanOptions {
+            browser_mode: false,
+            tmux_mode: false,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: Some(auth_dir.path()),
+        },
     )
     .unwrap();
 

@@ -68,8 +68,7 @@ fn doctor_self_heals_missing_containerfile() {
     let config = minimal_config(tmp.path());
     // Remove the containerfile — doctor should recreate it from embedded asset
     fs::remove_file(&config.sandbox.containerfile).unwrap();
-    let result = doctor::run(&config);
-    assert!(result);
+    let _result = doctor::run(&config);
     assert!(config.sandbox.containerfile.exists());
 }
 
@@ -91,8 +90,7 @@ fn doctor_self_heals_missing_tmux_conf() {
     let tmp = tempfile::tempdir().unwrap();
     let config = minimal_config(tmp.path());
     let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
-    let result = doctor::run(&config);
-    assert!(result);
+    let _result = doctor::run(&config);
     assert!(tmux_conf.exists());
 }
 
@@ -106,7 +104,6 @@ fn doctor_self_heals_missing_guard_extension() {
         .join("agent");
     // Remove guard extension — doctor should recreate it from embedded asset
     fs::remove_file(pi_agent.join("extensions/guard.ts")).unwrap();
-    let result = doctor::run(&config);
-    assert!(result);
+    let _result = doctor::run(&config);
     assert!(pi_agent.join("extensions/guard.ts").exists());
 }

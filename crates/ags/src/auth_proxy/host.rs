@@ -4,8 +4,8 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -20,6 +20,9 @@ const SESSION_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Timeout for reading the callback response from the shim.
 const CALLBACK_RELAY_TIMEOUT: Duration = Duration::from_secs(60);
+
+type HttpHeaders = Vec<(String, String)>;
+type HttpRequest = (String, String, HttpHeaders, String);
 
 #[derive(Debug)]
 pub enum AuthProxyError {
@@ -99,9 +102,7 @@ pub struct OsAuthProxyHost {
 
 impl OsAuthProxyHost {
     pub fn new(auto_allow_domains: Vec<String>) -> Self {
-        Self {
-            auto_allow_domains,
-        }
+        Self { auto_allow_domains }
     }
 }
 
@@ -126,7 +127,10 @@ pub fn start(
     runtime_dir: &Path,
     auto_allow_domains: Vec<String>,
 ) -> Result<AuthProxyGuard, AuthProxyError> {
-    start_with_host(runtime_dir, Arc::new(OsAuthProxyHost::new(auto_allow_domains)))
+    start_with_host(
+        runtime_dir,
+        Arc::new(OsAuthProxyHost::new(auto_allow_domains)),
+    )
 }
 
 /// Start the auth proxy with a custom host implementation (for testing).
@@ -196,9 +200,7 @@ fn handle_session(
     stream: UnixStream,
     host: &dyn AuthProxyHost,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    stream
-        .set_read_timeout(Some(SESSION_TIMEOUT))
-        .ok();
+    stream.set_read_timeout(Some(SESSION_TIMEOUT)).ok();
 
     let reader_stream = stream.try_clone()?;
     let mut reader = BufReader::new(reader_stream);
@@ -218,7 +220,14 @@ fn handle_session(
             session_id,
             url,
             callback_port,
-        } => handle_open_url(&session_id, &url, callback_port, &mut reader, &mut writer, host),
+        } => handle_open_url(
+            &session_id,
+            &url,
+            callback_port,
+            &mut reader,
+            &mut writer,
+            host,
+        ),
         _ => {
             send_message(
                 &mut writer,
@@ -319,9 +328,7 @@ fn handle_callback_flow(
     // listener immediately so the port is released.
     let (mut tcp_stream, _addr) = callback_listener.accept()?;
     drop(callback_listener);
-    tcp_stream
-        .set_read_timeout(Some(SESSION_TIMEOUT))
-        .ok();
+    tcp_stream.set_read_timeout(Some(SESSION_TIMEOUT)).ok();
 
     // Read the raw HTTP request
     let (method, path, headers, body) = read_http_request(&mut tcp_stream)?;
@@ -384,7 +391,7 @@ fn handle_callback_flow(
 // --- JSON messaging ---
 
 fn send_message(writer: &mut dyn Write, msg: &HostMessage) -> io::Result<()> {
-    let json = serde_json::to_string(msg).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let json = serde_json::to_string(msg).map_err(io::Error::other)?;
     writer.write_all(json.as_bytes())?;
     writer.write_all(b"\n")?;
     writer.flush()
@@ -446,9 +453,7 @@ fn bind_callback_listener(port: u16) -> io::Result<TcpListener> {
 // --- Minimal HTTP parsing ---
 
 /// Read an HTTP/1.x request from a stream. Returns (method, path, headers, body).
-fn read_http_request(
-    stream: &mut dyn Read,
-) -> Result<(String, String, Vec<(String, String)>, String), Box<dyn std::error::Error>> {
+fn read_http_request(stream: &mut dyn Read) -> Result<HttpRequest, Box<dyn std::error::Error>> {
     let mut buf = Vec::with_capacity(8192);
     let mut byte = [0u8; 1];
 
@@ -599,7 +604,14 @@ fn try_zenity(url: &str, has_callback: bool) -> Option<bool> {
     };
 
     let status = std::process::Command::new("zenity")
-        .args(["--question", "--title", "AGS Auth Proxy", "--width", "500", "--no-wrap"])
+        .args([
+            "--question",
+            "--title",
+            "AGS Auth Proxy",
+            "--width",
+            "500",
+            "--no-wrap",
+        ])
         .arg("--text")
         .arg(&text)
         .stdin(std::process::Stdio::null())

@@ -101,9 +101,7 @@ fn fetch_latest_tag() -> Option<String> {
             "-sf",
             "--max-time",
             "5",
-            &format!(
-                "https://api.github.com/repos/{REPO}/releases/latest"
-            ),
+            &format!("https://api.github.com/repos/{REPO}/releases/latest"),
         ])
         .output()
         .ok()?;
@@ -114,11 +112,7 @@ fn fetch_latest_tag() -> Option<String> {
 
     // Minimal JSON parsing — extract "tag_name": "vX.Y.Z"
     let body = String::from_utf8_lossy(&output.stdout);
-    let tag = body
-        .split("\"tag_name\"")
-        .nth(1)?
-        .split('"')
-        .nth(1)?;
+    let tag = body.split("\"tag_name\"").nth(1)?.split('"').nth(1)?;
 
     Some(tag.trim_start_matches('v').to_owned())
 }

@@ -248,11 +248,13 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         &config,
         &workdir,
         opts.agent,
-        opts.browser,
-        opts.tmux,
-        ssh_sock.as_deref(),
-        &resolved_secrets,
-        auth_proxy_runtime_dir.as_deref(),
+        ags::plan::BuildLaunchPlanOptions {
+            browser_mode: opts.browser,
+            tmux_mode: opts.tmux,
+            ssh_auth_sock: ssh_sock.as_deref(),
+            resolved_secrets: &resolved_secrets,
+            auth_proxy_runtime_dir: auth_proxy_runtime_dir.as_deref(),
+        },
     ) {
         Ok(p) => p,
         Err(e) => {
