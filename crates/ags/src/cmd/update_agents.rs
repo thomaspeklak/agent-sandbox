@@ -98,9 +98,11 @@ CLAUDE_BIN="$CLAUDE_HOME/.local/bin/claude" && \
 if [ -x "$CLAUDE_BIN" ]; then \
   HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" "$CLAUDE_BIN" update || \
   (echo 'claude update failed; reinstalling via install.sh' >&2 && \
-   HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" curl -fsSL https://claude.ai/install.sh | bash); \
+   export HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" && \
+   curl -fsSL https://claude.ai/install.sh | bash); \
 else \
-  HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" curl -fsSL https://claude.ai/install.sh | bash; \
+  export HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" && \
+  curl -fsSL https://claude.ai/install.sh | bash; \
 fi && \
 [ -x "$CLAUDE_BIN" ] && \
 rm -f /usr/local/pnpm/claude && \
