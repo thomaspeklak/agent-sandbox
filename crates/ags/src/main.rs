@@ -234,10 +234,13 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     // 6c. PSP sidecar
     let _psp_guard;
     let psp_socket;
+    let psp_session_id;
     if opts.psp {
-        match ags::psp::start(&config.psp.binary) {
+        match ags::psp::start(&config.psp.binary, opts.psp_keep) {
             Ok(guard) => {
                 psp_socket = Some(guard.socket_path.clone());
+                psp_session_id =
+                    Some(format!("ags-{}-{}", opts.agent.as_str(), std::process::id()));
                 _psp_guard = Some(guard);
             }
             Err(e) => {
@@ -247,6 +250,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     } else {
         psp_socket = None;
+        psp_session_id = None;
         _psp_guard = None;
     }
 
@@ -272,6 +276,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             resolved_secrets: &resolved_secrets,
             auth_proxy_runtime_dir: auth_proxy_runtime_dir.as_deref(),
             psp_socket: psp_socket.as_deref(),
+            psp_session_id: psp_session_id.as_deref(),
             extra_mount_dirs: &opts.add_dirs,
         },
     ) {

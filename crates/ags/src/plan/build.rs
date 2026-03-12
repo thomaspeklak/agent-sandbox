@@ -28,6 +28,7 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub resolved_secrets: &'a HashMap<String, String>,
     pub auth_proxy_runtime_dir: Option<&'a Path>,
     pub psp_socket: Option<&'a Path>,
+    pub psp_session_id: Option<&'a str>,
     pub extra_mount_dirs: &'a [PathBuf],
 }
 
@@ -58,6 +59,7 @@ pub fn build_launch_plan(
         resolved_secrets,
         auth_proxy_runtime_dir,
         psp_socket,
+        psp_session_id,
         extra_mount_dirs,
     } = options;
     let profile = agent::profile_for(agent, config);
@@ -177,6 +179,7 @@ pub fn build_launch_plan(
         resolved_secrets,
         auth_proxy_runtime_dir.is_some(),
         psp_socket.is_some(),
+        psp_session_id,
     );
 
     // Network mode
@@ -521,6 +524,7 @@ fn build_env(
     resolved_secrets: &HashMap<String, String>,
     auth_proxy_enabled: bool,
     psp_enabled: bool,
+    psp_session_id: Option<&str>,
 ) -> PlanEnv {
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
@@ -575,6 +579,9 @@ fn build_env(
                 crate::psp::PspGuard::container_socket_path()
             ),
         ));
+        if let Some(session_id) = psp_session_id {
+            inline.push(("PSP_SESSION_ID".to_owned(), session_id.to_owned()));
+        }
     }
 
     let passthrough_names = vec![

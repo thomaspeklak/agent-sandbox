@@ -79,6 +79,7 @@ fn build_plan_from_agent(toml: &str, workdir: &Path, agent: Agent) -> ags::plan:
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     )
@@ -269,6 +270,7 @@ debug_port = 9222
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     )
@@ -331,6 +333,7 @@ fn tmux_mode_wraps_agent_command() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     )
@@ -404,6 +407,7 @@ mode = \"ro\"\n",
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     );
@@ -498,6 +502,7 @@ fn secrets_in_env_file() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     )
@@ -529,6 +534,7 @@ fn ssh_socket_mounted_when_provided() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     )
@@ -557,6 +563,7 @@ fn runtime_add_dir_mounts_are_included() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &extra_dirs,
         },
     )
@@ -586,6 +593,7 @@ fn runtime_add_dir_missing_path_is_error() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &extra_dirs,
         },
     );
@@ -608,6 +616,7 @@ fn nonexistent_workdir_is_error() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     );
@@ -642,6 +651,7 @@ pi_skill_path = "/home/dev/browser-tools"
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     )
@@ -902,6 +912,7 @@ fn psp_mode_injects_docker_host_env() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: Some(&psp_sock),
+            psp_session_id: Some("ags-pi-12345"),
             extra_mount_dirs: &[],
         },
     )
@@ -919,6 +930,11 @@ fn psp_mode_injects_docker_host_env() {
         find_env("DOCKER_HOST"),
         Some("unix:///run/psp/psp.sock".to_owned()),
         "DOCKER_HOST should point to container-side PSP socket"
+    );
+    assert_eq!(
+        find_env("PSP_SESSION_ID"),
+        Some("ags-pi-12345".to_owned()),
+        "PSP_SESSION_ID should be injected"
     );
 }
 
@@ -942,6 +958,7 @@ fn psp_mode_mounts_socket_dir() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
             psp_socket: Some(&psp_sock),
+            psp_session_id: Some("ags-pi-12345"),
             extra_mount_dirs: &[],
         },
     )
@@ -972,6 +989,10 @@ fn no_psp_env_when_disabled() {
         find_env("DOCKER_HOST").is_none(),
         "DOCKER_HOST should not be set without PSP"
     );
+    assert!(
+        find_env("PSP_SESSION_ID").is_none(),
+        "PSP_SESSION_ID should not be set without PSP"
+    );
 }
 
 // --- Auth proxy integration ---
@@ -999,6 +1020,7 @@ fn auth_proxy_mounts_and_env_when_enabled() {
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: Some(auth_dir.path()),
             psp_socket: None,
+            psp_session_id: None,
             extra_mount_dirs: &[],
         },
     )

@@ -57,6 +57,7 @@ pub struct RunOptions {
     pub browser: bool,
     pub tmux: bool,
     pub psp: bool,
+    pub psp_keep: bool,
     pub config_path: Option<PathBuf>,
     pub add_dirs: Vec<PathBuf>,
     pub passthrough_args: Vec<String>,
@@ -213,6 +214,7 @@ where
     let mut browser = false;
     let mut tmux = false;
     let mut psp = false;
+    let mut psp_keep = false;
     let mut config_path: Option<PathBuf> = None;
     let mut add_dirs = Vec::new();
     let mut passthrough_args = Vec::new();
@@ -228,6 +230,7 @@ where
             &mut browser,
             &mut tmux,
             &mut psp,
+            &mut psp_keep,
             &mut config_path,
             &mut add_dirs,
         )?;
@@ -244,6 +247,7 @@ where
                 &mut browser,
                 &mut tmux,
                 &mut psp,
+                &mut psp_keep,
                 &mut config_path,
                 &mut add_dirs,
             )?;
@@ -257,6 +261,7 @@ where
         browser,
         tmux,
         psp,
+        psp_keep,
         config_path,
         add_dirs,
         passthrough_args,
@@ -270,6 +275,7 @@ fn parse_run_arg<I: Iterator<Item = String>>(
     browser: &mut bool,
     tmux: &mut bool,
     psp: &mut bool,
+    psp_keep: &mut bool,
     config_path: &mut Option<PathBuf>,
     add_dirs: &mut Vec<PathBuf>,
 ) -> Result<(), CliError> {
@@ -303,6 +309,11 @@ fn parse_run_arg<I: Iterator<Item = String>>(
 
     if arg == "--psp" {
         *psp = true;
+        return Ok(());
+    }
+
+    if arg == "--psp-keep" {
+        *psp_keep = true;
         return Ok(());
     }
 
@@ -499,6 +510,7 @@ pub fn help_text() -> &'static str {
      \x20 --browser         Enable browser sidecar\n\
      \x20 --tmux            Launch the agent inside a tmux session (opt-in)\n\
      \x20 --psp             Enable podman-socket-proxy mode (auto-starts psp sidecar)\n\
+     \x20 --psp-keep        Keep PSP-managed containers on exit (debug mode)\n\
      \x20 --config <path>   Override config file path\n\
      \x20 --add-dir, -d <path>  Add an extra same-path directory mount for this run (repeatable)\n"
 }

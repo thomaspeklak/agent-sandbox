@@ -18,6 +18,9 @@ const READINESS_TIMEOUT: Duration = Duration::from_secs(10);
 /// Poll interval for readiness check.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+/// How long to wait for PSP to shut down gracefully (SIGTERM) before SIGKILL.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Debug)]
 pub enum PspError {
     BinaryNotFound(String),
@@ -74,8 +77,25 @@ impl PspGuard {
 
 impl Drop for PspGuard {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        // Send SIGTERM so PSP can clean up tracked containers gracefully.
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(self.child.id() as libc::pid_t, libc::SIGTERM);
+        }
+
+        // Wait for graceful exit, then SIGKILL as fallback.
+        let exited = crate::util::poll_until(SHUTDOWN_TIMEOUT, POLL_INTERVAL, || {
+            use std::ops::ControlFlow;
+            match self.child.try_wait() {
+                Ok(Some(_)) => ControlFlow::Break(()),
+                _ => ControlFlow::Continue(()),
+            }
+        });
+        if exited.is_none() {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+
         let _ = fs::remove_dir_all(&self.socket_dir);
     }
 }
@@ -99,7 +119,9 @@ fn resolve_binary(config_binary: &str) -> Result<PathBuf, PspError> {
 /// Start PSP as a sidecar process with a per-PID socket.
 ///
 /// Blocks until PSP is ready (socket accepts connections) or times out.
-pub fn start(config_binary: &str) -> Result<PspGuard, PspError> {
+/// When `keep_on_failure` is true, PSP will retain containers on shutdown
+/// for debugging (sets `PSP_KEEP_ON_FAILURE=true`).
+pub fn start(config_binary: &str, keep_on_failure: bool) -> Result<PspGuard, PspError> {
     let binary = resolve_binary(config_binary)?;
 
     let runtime_base = crate::util::runtime_dir();
@@ -109,14 +131,18 @@ pub fn start(config_binary: &str) -> Result<PspGuard, PspError> {
 
     let socket_path = socket_dir.join("psp.sock");
 
-    let child = Command::new(&binary)
-        .arg("run")
+    let mut cmd = Command::new(&binary);
+    cmd.arg("run")
         .env("PSP_LISTEN_SOCKET", &socket_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(PspError::Spawn)?;
+        .stderr(Stdio::inherit());
+
+    if keep_on_failure {
+        cmd.env("PSP_KEEP_ON_FAILURE", "true");
+    }
+
+    let child = cmd.spawn().map_err(PspError::Spawn)?;
 
     let mut guard = PspGuard {
         socket_path,

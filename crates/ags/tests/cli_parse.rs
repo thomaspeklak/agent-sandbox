@@ -53,7 +53,22 @@ fn parses_tmux_flag() {
 fn parses_psp_flag() {
     let cmd = parse_args(args(&["ags", "--agent", "pi", "--psp"])).unwrap();
     match cmd {
-        Command::Run(opts) => assert!(opts.psp),
+        Command::Run(opts) => {
+            assert!(opts.psp);
+            assert!(!opts.psp_keep);
+        }
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn parses_psp_keep_flag() {
+    let cmd = parse_args(args(&["ags", "--agent", "pi", "--psp", "--psp-keep"])).unwrap();
+    match cmd {
+        Command::Run(opts) => {
+            assert!(opts.psp);
+            assert!(opts.psp_keep);
+        }
         _ => panic!("expected Run command"),
     }
 }
