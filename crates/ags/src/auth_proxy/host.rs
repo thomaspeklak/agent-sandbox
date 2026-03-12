@@ -420,13 +420,22 @@ fn bind_callback_listener(port: u16) -> io::Result<TcpListener> {
             std::mem::size_of::<libc::c_int>() as libc::socklen_t,
         );
 
-        let addr = libc::sockaddr_in {
-            sin_family: libc::AF_INET as libc::sa_family_t,
-            sin_port: port.to_be(),
-            sin_addr: libc::in_addr {
-                s_addr: u32::from_ne_bytes([127, 0, 0, 1]),
-            },
-            sin_zero: [0; 8],
+        let mut addr: libc::sockaddr_in = std::mem::zeroed();
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "dragonfly",
+        ))]
+        {
+            addr.sin_len = std::mem::size_of::<libc::sockaddr_in>() as u8;
+        }
+        addr.sin_family = libc::AF_INET as libc::sa_family_t;
+        addr.sin_port = port.to_be();
+        addr.sin_addr = libc::in_addr {
+            s_addr: u32::from_ne_bytes([127, 0, 0, 1]),
         };
 
         if libc::bind(
