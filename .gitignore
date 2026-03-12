@@ -29,3 +29,6 @@ agent/settings.json
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# beads local history exports
+.beads/.br_history/
