@@ -24,6 +24,7 @@ const HOST_SERVICES_HINT: &str =
 pub struct BuildLaunchPlanOptions<'a> {
     pub browser_mode: bool,
     pub tmux_mode: bool,
+    pub guard_enabled: bool,
     pub ssh_auth_sock: Option<&'a Path>,
     pub resolved_secrets: &'a HashMap<String, String>,
     pub auth_proxy_runtime_dir: Option<&'a Path>,
@@ -40,6 +41,7 @@ struct BuildEnvOptions<'a> {
     auth_proxy_enabled: bool,
     psp_enabled: bool,
     psp_session_id: Option<&'a str>,
+    guard_enabled: bool,
 }
 
 /// Cache volume mappings: (host_suffix under cache_dir, container_path, env_var).
@@ -65,6 +67,7 @@ pub fn build_launch_plan(
     let BuildLaunchPlanOptions {
         browser_mode,
         tmux_mode,
+        guard_enabled,
         ssh_auth_sock,
         resolved_secrets,
         auth_proxy_runtime_dir,
@@ -72,7 +75,7 @@ pub fn build_launch_plan(
         psp_session_id,
         extra_mount_dirs,
     } = options;
-    let profile = agent::profile_for(agent, config);
+    let profile = agent::profile_for_with_guards(agent, config, guard_enabled);
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);
     let cache_dir = &config.sandbox.cache_dir;
@@ -191,6 +194,7 @@ pub fn build_launch_plan(
             auth_proxy_enabled: auth_proxy_runtime_dir.is_some(),
             psp_enabled: psp_socket.is_some(),
             psp_session_id,
+            guard_enabled,
         },
     );
 
@@ -540,6 +544,7 @@ fn build_env(
         auth_proxy_enabled,
         psp_enabled,
         psp_session_id,
+        guard_enabled,
     } = options;
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
@@ -568,6 +573,10 @@ fn build_env(
         if !env_var.is_empty() {
             inline.push((env_var.to_string(), container_path.to_string()));
         }
+    }
+
+    if !guard_enabled {
+        inline.push(("AGS_GUARD_YOLO".to_owned(), "1".to_owned()));
     }
 
     if let Some(w) = wayland {

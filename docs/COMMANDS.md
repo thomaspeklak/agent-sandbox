@@ -8,7 +8,7 @@ This document explains what each `ags` command does and what side effects to exp
 
 ```bash
 ags [command]
-ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--psp] [--psp-keep] [--config PATH] [--add-dir PATH ...] -- [agent args...]
+ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--psp] [--psp-keep] [--yolo] [--config PATH] [--add-dir PATH ...] -- [agent args...]
 ```
 
 Subcommands:
@@ -50,12 +50,14 @@ ags --agent claude -d ~/code -d ~/Downloads
 7. Start auth proxy (Unix socket + shim in per-run temp dir).
 7b. Optionally start PSP sidecar (`--psp`).
 8. Build launch plan (mounts/env/security/network/entrypoint).
-9. Ensure image exists (builds if missing), then run `podman run`.
+9. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
+10. Ensure image exists (builds if missing), then run `podman run`.
 
 ### Notes
 
 - Args after `--` are passed directly to agent CLI.
 - `--add-dir <path>` / `-d <path>` adds an extra same-path directory mount for the current run only; repeat it to add multiple directories.
+- `--yolo` disables AGS-managed Pi/Claude guard integrations for that run. For Pi, the AGS guard extension sees `AGS_GUARD_YOLO=1` and becomes a no-op; for Claude, AGS omits its PreToolUse guard hook wiring.
 - Container runs with rootless user namespace (`keep-id`), dropped capabilities, and `no-new-privileges`.
 - Agent host state comes from explicit `[[agent_mount]]` / `[[mount]]` entries.
 - Agent processes run inside the container: `localhost` is container-local. Use `host.containers.internal` for host machine ports/services.
@@ -102,6 +104,7 @@ Health checks for your environment and config.
 - Required config/assets presence
 - Tool binaries and configured mounts
 - Image presence
+- Whether bundled `dcg` is available inside the sandbox image
 - SSH keys and dedicated ssh-agent state
 - Secret source availability
 - Session directory/writeability checks

@@ -20,6 +20,8 @@ type SandboxDetection = {
 	source: string;
 };
 
+type DcgAvailability = "unknown" | "available" | "missing";
+
 function detectSandboxAtStartup(): SandboxDetection {
 	const explicit = process.env.AGS_SANDBOX;
 	if (explicit === "1") {
@@ -41,9 +43,14 @@ function detectSandboxAtStartup(): SandboxDetection {
 }
 
 const SANDBOX_DETECTION = detectSandboxAtStartup();
+let dcgAvailability: DcgAvailability = "unknown";
 
 function dim(text: string): string {
 	return `\x1b[2m${text}\x1b[22m`;
+}
+
+function yoloModeEnabled(): boolean {
+	return process.env.AGS_GUARD_YOLO === "1";
 }
 
 function expandHome(inputPath: string, home: string): string {
@@ -83,11 +90,22 @@ function matchesDeniedWrite(targetPath: string): boolean {
 	return DENY_WRITE_GLOBS.some((re) => re.test(targetPath));
 }
 
-async function maybeRunDcg(pi: ExtensionAPI, command: string): Promise<string | undefined> {
+async function detectDcgAvailability(pi: ExtensionAPI): Promise<boolean> {
+	if (dcgAvailability === "available") return true;
+	if (dcgAvailability === "missing") return false;
+
 	try {
 		const version = await pi.exec("dcg", ["--version"], { timeout: 500 });
-		if (version.code !== 0) return undefined;
+		dcgAvailability = version.code === 0 ? "available" : "missing";
 	} catch {
+		dcgAvailability = "missing";
+	}
+
+	return dcgAvailability === "available";
+}
+
+async function maybeRunDcg(pi: ExtensionAPI, command: string): Promise<string | undefined> {
+	if (!(await detectDcgAvailability(pi))) {
 		return undefined;
 	}
 
@@ -111,14 +129,27 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		const theme = ctx.ui.theme;
-		const status = SANDBOX_DETECTION.enabled
-			? dim(theme.fg("success", "sandbox:on"))
-			: theme.fg("error", "sandbox:off");
+		const yolo = yoloModeEnabled();
+		const status = yolo
+			? theme.fg("warning", "guard:yolo")
+			: SANDBOX_DETECTION.enabled
+				? dim(theme.fg("success", "sandbox:on"))
+				: theme.fg("error", "sandbox:off");
 		ctx.ui.setWidget("ags-sandbox", [status], { placement: "aboveEditor" });
 		ctx.ui.notify(
 			`Sandbox ${SANDBOX_DETECTION.enabled ? "ON" : "OFF"} (${SANDBOX_DETECTION.source})`,
 			SANDBOX_DETECTION.enabled ? "info" : "warning",
 		);
+		if (yolo) {
+			ctx.ui.notify("AGS guard disabled for this run (--yolo)", "warning");
+			return;
+		}
+		if (!(await detectDcgAvailability(pi))) {
+			ctx.ui.notify(
+				"destructive_command_guard (dcg) is unavailable in this sandbox; Bash classification will fail open. Run `ags doctor` or `ags update`.",
+				"warning",
+			);
+		}
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
@@ -127,6 +158,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		if (yoloModeEnabled()) {
+			return undefined;
+		}
+
 		const home = process.env.HOME ?? "/home/dev";
 		const cwd = ctx.cwd;
 		const workspace = normalize(cwd);
@@ -185,12 +220,15 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const readRoots = parseRootsFromEnv("AGS_GUARD_READ_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi/agent"];
 			const writeRoots = parseRootsFromEnv("AGS_GUARD_WRITE_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi/agent"];
+			const yolo = yoloModeEnabled();
+			const dcgState = yolo ? "disabled by --yolo" : (await detectDcgAvailability(pi)) ? "available" : "missing";
 
 			ctx.ui.notify(
 				[
-					"Sandbox guard active.",
+					yolo ? "Sandbox guard disabled for this run (--yolo)." : "Sandbox guard active.",
 					`Sandbox mode (startup check): ${SANDBOX_DETECTION.enabled ? "ON" : "OFF"}`,
 					`Detection source: ${SANDBOX_DETECTION.source}`,
+					`dcg: ${dcgState}`,
 					`Workspace root: ${ctx.cwd}`,
 					`Read roots: ${readRoots.join(", ")}`,
 					`Write roots: ${writeRoots.join(", ")}`,

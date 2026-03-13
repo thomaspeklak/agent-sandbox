@@ -62,6 +62,31 @@ ags --agent shell -- -lc 'br --version && bv --version && dcg --version'
 
 ---
 
+## Startup warning: `dcg` is missing and Pi/Claude guards will fail open
+
+Symptoms:
+
+- `ags doctor` reports bundled `dcg` missing inside the sandbox image
+- `ags --agent pi` or `ags --agent claude` prints a startup warning about `dcg`
+- Pi also shows an in-session warning that Bash classification will fail open
+
+### Fix
+
+```bash
+ags update
+ags doctor
+ags --agent shell -- -lc 'dcg --version'
+```
+
+If you intentionally want to bypass AGS guard layers for a single Pi/Claude run, use:
+
+```bash
+ags --agent pi --yolo
+ags --agent claude --yolo
+```
+
+---
+
 ## `psql` missing inside container
 
 If `psql` is not found in sandbox shell.

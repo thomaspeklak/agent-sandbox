@@ -34,6 +34,16 @@ pub fn image_exists(image: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
+/// Check whether a binary is available on PATH inside a built image.
+pub fn image_has_binary(image: &str, binary: &str) -> Result<bool, PodmanError> {
+    let status = Command::new("podman")
+        .args(["run", "--rm", "--entrypoint", "bash", image, "-lc"])
+        .arg(format!("command -v {} >/dev/null 2>&1", shell_word(binary)))
+        .status()
+        .map_err(PodmanError::SpawnFailed)?;
+    Ok(status.success())
+}
+
 /// Build an image from a Containerfile if it does not already exist.
 pub fn ensure_image(image: &str, containerfile: &Path) -> Result<(), PodmanError> {
     if image_exists(image) {
@@ -121,4 +131,15 @@ fn run_container(
         .map_err(PodmanError::SpawnFailed)?;
 
     Ok(status.code().unwrap_or(1) as u8)
+}
+
+fn shell_word(value: &str) -> String {
+    if value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
+    {
+        value.to_owned()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }

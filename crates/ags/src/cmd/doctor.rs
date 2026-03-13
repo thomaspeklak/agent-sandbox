@@ -6,8 +6,8 @@ use crate::config::{MountWhen, SecretSource, ValidatedConfig};
 
 use super::doctor_util::{
     Checker, check_optional_cmd, check_required_cmd, file_non_empty, git_config_get, has_command,
-    is_executable, is_pid_alive, is_port_open, list_agent_keys, podman_image_exists, pub_key_path,
-    read_agent_env, secret_tool_has_value, socket_exists,
+    image_has_binary, is_executable, is_pid_alive, is_port_open, list_agent_keys,
+    podman_image_exists, pub_key_path, read_agent_env, secret_tool_has_value, socket_exists,
 };
 
 /// Run the doctor command: health-check the sandbox environment.
@@ -160,10 +160,20 @@ fn check_container_image(ck: &mut Checker, config: &ValidatedConfig) {
     let image = &config.sandbox.image;
     if podman_image_exists(image) {
         ck.ok(&format!("image exists: {image}"));
+        match image_has_binary(image, "dcg") {
+            Ok(true) => ck.ok("bundled dcg available inside sandbox image"),
+            Ok(false) => ck.fail(
+                "bundled dcg missing inside sandbox image; Pi/Claude Bash guards will fail open (run 'ags update')",
+            ),
+            Err(err) => ck.warn(&format!(
+                "could not verify bundled dcg inside sandbox image: {err}"
+            )),
+        }
     } else {
         ck.warn(&format!(
             "image not built yet: {image} (run 'ags update' to build)"
         ));
+        ck.warn("cannot verify bundled dcg until the sandbox image is built");
     }
 }
 

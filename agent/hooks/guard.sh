@@ -21,6 +21,9 @@
 
 set -euo pipefail
 
+# Explicit AGS escape hatch for runs that intentionally disable guard layers.
+[[ "${AGS_GUARD_YOLO:-0}" == "1" ]] && exit 0
+
 INPUT=$(cat)
 
 TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty')

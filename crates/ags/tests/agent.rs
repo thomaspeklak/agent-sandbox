@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use ags::agent::profile_for;
+use ags::agent::{profile_for, profile_for_with_guards};
 use ags::cli::Agent;
 use ags::config::parse_toml_str;
 
@@ -106,6 +106,20 @@ fn pi_profile_no_extra_boot_dirs() {
 }
 
 #[test]
+fn pi_profile_omits_guard_extension_when_guards_disabled() {
+    let config = minimal_config();
+    let profile = profile_for_with_guards(Agent::Pi, &config, false);
+    assert_eq!(profile.command, "pi");
+    assert_eq!(
+        profile.command_args,
+        vec![
+            "--append-system-prompt",
+            "Sandbox: use host.containers.internal (localhost is container-local)."
+        ]
+    );
+}
+
+#[test]
 fn claude_profile_command() {
     let config = minimal_config();
     let profile = profile_for(Agent::Claude, &config);
@@ -188,6 +202,21 @@ fn claude_profile_no_browser_skill() {
     let config = minimal_config();
     let profile = profile_for(Agent::Claude, &config);
     assert!(profile.browser_skill_flag.is_none());
+}
+
+#[test]
+fn claude_profile_omits_guard_hook_when_guards_disabled() {
+    let config = minimal_config();
+    let profile = profile_for_with_guards(Agent::Claude, &config, false);
+    assert_eq!(profile.command, "claude");
+    assert_eq!(
+        profile.command_args,
+        vec![
+            "--dangerously-skip-permissions",
+            "--append-system-prompt",
+            "Sandbox: use host.containers.internal (localhost is container-local)."
+        ]
+    );
 }
 
 #[test]

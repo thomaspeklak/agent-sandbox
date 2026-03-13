@@ -111,10 +111,11 @@ pub fn git_config_get(gitconfig: &Path, key: &str) -> Option<String> {
 }
 
 pub fn podman_image_exists(image: &str) -> bool {
-    Command::new("podman")
-        .args(["image", "exists", image])
-        .status()
-        .is_ok_and(|s| s.success())
+    crate::podman::image_exists(image)
+}
+
+pub fn image_has_binary(image: &str, binary: &str) -> Result<bool, crate::podman::PodmanError> {
+    crate::podman::image_has_binary(image, binary)
 }
 
 pub fn file_non_empty(path: &Path) -> bool {

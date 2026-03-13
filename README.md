@@ -143,7 +143,7 @@ cargo run -p ags -- update-agents
 
 ```bash
 cargo run -p ags -- doctor
-cargo run -p ags -- --agent shell -- -lc 'br --version && bv --version && tmux -V && test -f ~/.tmux.conf'
+cargo run -p ags -- --agent shell -- -lc 'br --version && bv --version && dcg --version && tmux -V && test -f ~/.tmux.conf'
 ```
 
 ---
@@ -193,6 +193,13 @@ Run with browser sidecar:
 
 ```bash
 ags --agent pi --browser
+```
+
+Disable AGS Pi/Claude guards for one run:
+
+```bash
+ags --agent pi --yolo
+ags --agent claude --yolo
 ```
 
 Run other agents:

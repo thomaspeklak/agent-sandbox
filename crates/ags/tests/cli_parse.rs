@@ -19,6 +19,7 @@ fn parses_agent_and_passthrough_args() {
             assert!(!opts.browser);
             assert!(!opts.tmux);
             assert!(!opts.psp);
+            assert!(!opts.yolo);
             assert!(opts.config_path.is_none());
         }
         _ => panic!("expected Run command"),
@@ -69,6 +70,15 @@ fn parses_psp_keep_flag() {
             assert!(opts.psp);
             assert!(opts.psp_keep);
         }
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn parses_yolo_flag() {
+    let cmd = parse_args(args(&["ags", "--agent", "pi", "--yolo"])).unwrap();
+    match cmd {
+        Command::Run(opts) => assert!(opts.yolo),
         _ => panic!("expected Run command"),
     }
 }

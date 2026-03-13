@@ -58,6 +58,7 @@ pub struct RunOptions {
     pub tmux: bool,
     pub psp: bool,
     pub psp_keep: bool,
+    pub yolo: bool,
     pub config_path: Option<PathBuf>,
     pub add_dirs: Vec<PathBuf>,
     pub passthrough_args: Vec<String>,
@@ -236,6 +237,7 @@ where
         tmux: state.tmux,
         psp: state.psp,
         psp_keep: state.psp_keep,
+        yolo: state.yolo,
         config_path: state.config_path,
         add_dirs: state.add_dirs,
         passthrough_args,
@@ -249,6 +251,7 @@ struct RunParseState {
     tmux: bool,
     psp: bool,
     psp_keep: bool,
+    yolo: bool,
     config_path: Option<PathBuf>,
     add_dirs: Vec<PathBuf>,
 }
@@ -293,6 +296,11 @@ fn parse_run_arg<I: Iterator<Item = String>>(
 
     if arg == "--psp-keep" {
         state.psp_keep = true;
+        return Ok(());
+    }
+
+    if arg == "--yolo" {
+        state.yolo = true;
         return Ok(());
     }
 
@@ -464,12 +472,21 @@ pub fn help_text() -> &'static str {
      Commands:\n\
      \x20 setup          Generate SSH keys and configure secrets\n\
      \x20 doctor         Run health checks on sandbox configuration\n\
-     \x20 update         Rebuild container image and refresh bundled br/bv\n\
+     \x20 update         Rebuild container image and refresh bundled br/bv/dcg\n\
      \x20 update-agents  Install/update agents in persistent volumes\n\
      \x20 install         Install config/assets (optional self-link)\n\
      \x20 uninstall       Reserved (currently no-op)\n\
      \x20 create-aliases  Create managed wrapper scripts and/or shell aliases\n\
      \x20 completions     Print shell completion script to stdout\n\
+     \n\
+     run flags:\n\
+     \x20 --browser         Start browser sidecar and browser skill wiring\n\
+     \x20 --tmux            Start the agent inside tmux in the sandbox\n\
+     \x20 --psp             Enable podman-socket-proxy for Docker/Testcontainers flows\n\
+     \x20 --psp-keep        Keep PSP-created containers after session exit\n\
+     \x20 --yolo            Disable AGS Pi/Claude guard integrations for this run\n\
+     \x20 --config <path>   Use an alternate AGS config file\n\
+     \x20 --add-dir, -d     Add an extra host directory mount for this run\n\
      \n\
      install flags:\n\
      \x20 --link-self        Link current ags executable to ~/.local/bin/ags\n\

@@ -275,6 +275,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         ags::plan::BuildLaunchPlanOptions {
             browser_mode: opts.browser,
             tmux_mode: opts.tmux,
+            guard_enabled: !opts.yolo,
             ssh_auth_sock: ssh_sock.as_deref(),
             resolved_secrets: &resolved_secrets,
             auth_proxy_runtime_dir: auth_proxy_runtime_dir.as_deref(),
@@ -289,6 +290,30 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+
+    if matches!(opts.agent, Agent::Pi | Agent::Claude) {
+        if opts.yolo {
+            eprintln!(
+                "warning: --yolo disables AGS {} guards for this run",
+                opts.agent.as_str()
+            );
+        } else {
+            if let Err(e) = ags::podman::ensure_image(&plan.image, &plan.containerfile) {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+            match ags::podman::image_has_binary(&plan.image, "dcg") {
+                Ok(true) => {}
+                Ok(false) => eprintln!(
+                    "warning: destructive_command_guard (dcg) is missing in the sandbox image; AGS {} Bash guards will fail open. Run `ags doctor` or `ags update`.",
+                    opts.agent.as_str()
+                ),
+                Err(e) => eprintln!(
+                    "warning: could not verify destructive_command_guard (dcg) availability in the sandbox image: {e}"
+                ),
+            }
+        }
+    }
 
     // 9. Execute via podman
     match ags::podman::execute(&plan, &opts.passthrough_args) {

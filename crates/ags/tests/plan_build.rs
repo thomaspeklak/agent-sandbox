@@ -75,6 +75,7 @@ fn build_plan_from_agent(toml: &str, workdir: &Path, agent: Agent) -> ags::plan:
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -205,6 +206,39 @@ fn empty_env_var_not_emitted() {
 }
 
 #[test]
+fn yolo_mode_sets_guard_escape_hatch_env() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            browser_mode: false,
+            tmux_mode: false,
+            guard_enabled: false,
+            ssh_auth_sock: None,
+            resolved_secrets: &secrets,
+            auth_proxy_runtime_dir: None,
+            psp_socket: None,
+            psp_session_id: None,
+            extra_mount_dirs: &[],
+        },
+    )
+    .unwrap();
+
+    assert!(
+        plan.env
+            .inline
+            .iter()
+            .any(|(k, v)| k == "AGS_GUARD_YOLO" && v == "1"),
+        "yolo mode should export AGS_GUARD_YOLO=1"
+    );
+}
+
+#[test]
 fn env_passthrough_names() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();
@@ -266,6 +300,7 @@ debug_port = 9222
         BuildLaunchPlanOptions {
             browser_mode: true,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -334,6 +369,7 @@ fn tmux_mode_wraps_agent_command() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: true,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -413,6 +449,7 @@ mode = \"ro\"\n",
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -508,6 +545,7 @@ fn secrets_in_env_file() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -540,6 +578,7 @@ fn ssh_socket_mounted_when_provided() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: Some(sock),
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -569,6 +608,7 @@ fn runtime_add_dir_mounts_are_included() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -599,6 +639,7 @@ fn runtime_add_dir_missing_path_is_error() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -622,6 +663,7 @@ fn nonexistent_workdir_is_error() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -657,6 +699,7 @@ pi_skill_path = "/home/dev/browser-tools"
         BuildLaunchPlanOptions {
             browser_mode: true,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -918,6 +961,7 @@ fn psp_mode_injects_docker_host_env() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -969,6 +1013,7 @@ fn psp_mode_mounts_socket_dir() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: None,
@@ -1032,6 +1077,7 @@ fn auth_proxy_mounts_and_env_when_enabled() {
         BuildLaunchPlanOptions {
             browser_mode: false,
             tmux_mode: false,
+            guard_enabled: true,
             ssh_auth_sock: None,
             resolved_secrets: &secrets,
             auth_proxy_runtime_dir: Some(auth_dir.path()),
