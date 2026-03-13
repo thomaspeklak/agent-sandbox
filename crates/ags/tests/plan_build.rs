@@ -979,10 +979,7 @@ fn psp_mode_mounts_socket_dir() {
     )
     .unwrap();
 
-    let psp_mount = plan
-        .mounts
-        .iter()
-        .find(|m| m.container == "/run/psp");
+    let psp_mount = plan.mounts.iter().find(|m| m.container == "/run/psp");
     assert!(psp_mount.is_some(), "PSP socket dir should be mounted");
     assert_eq!(psp_mount.unwrap().mode, MountMode::Rw);
 }

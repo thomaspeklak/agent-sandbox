@@ -206,4 +206,3 @@ fn wait_for_ready(port: u16) -> Result<(), BrowserError> {
         timeout: READY_TIMEOUT,
     })
 }
-

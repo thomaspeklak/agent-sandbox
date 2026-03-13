@@ -210,74 +210,53 @@ where
     }
 
     // Parse run command flags
-    let mut agent: Option<Agent> = None;
-    let mut browser = false;
-    let mut tmux = false;
-    let mut psp = false;
-    let mut psp_keep = false;
-    let mut config_path: Option<PathBuf> = None;
-    let mut add_dirs = Vec::new();
+    let mut state = RunParseState::default();
     let mut passthrough_args = Vec::new();
 
     // Process the first arg we already consumed (handle `--` as passthrough separator)
     if first == "--" {
         passthrough_args.extend(iter);
     } else {
-        parse_run_arg(
-            &first,
-            &mut iter,
-            &mut agent,
-            &mut browser,
-            &mut tmux,
-            &mut psp,
-            &mut psp_keep,
-            &mut config_path,
-            &mut add_dirs,
-        )?;
+        parse_run_arg(&first, &mut iter, &mut state)?;
 
         while let Some(arg) = iter.next() {
             if arg == "--" {
                 passthrough_args.extend(iter);
                 break;
             }
-            parse_run_arg(
-                &arg,
-                &mut iter,
-                &mut agent,
-                &mut browser,
-                &mut tmux,
-                &mut psp,
-                &mut psp_keep,
-                &mut config_path,
-                &mut add_dirs,
-            )?;
+            parse_run_arg(&arg, &mut iter, &mut state)?;
         }
     }
 
-    let agent = agent.ok_or(CliError::MissingAgent)?;
+    let agent = state.agent.ok_or(CliError::MissingAgent)?;
 
     Ok(Command::Run(RunOptions {
         agent,
-        browser,
-        tmux,
-        psp,
-        psp_keep,
-        config_path,
-        add_dirs,
+        browser: state.browser,
+        tmux: state.tmux,
+        psp: state.psp,
+        psp_keep: state.psp_keep,
+        config_path: state.config_path,
+        add_dirs: state.add_dirs,
         passthrough_args,
     }))
+}
+
+#[derive(Default)]
+struct RunParseState {
+    agent: Option<Agent>,
+    browser: bool,
+    tmux: bool,
+    psp: bool,
+    psp_keep: bool,
+    config_path: Option<PathBuf>,
+    add_dirs: Vec<PathBuf>,
 }
 
 fn parse_run_arg<I: Iterator<Item = String>>(
     arg: &str,
     iter: &mut I,
-    agent: &mut Option<Agent>,
-    browser: &mut bool,
-    tmux: &mut bool,
-    psp: &mut bool,
-    psp_keep: &mut bool,
-    config_path: &mut Option<PathBuf>,
-    add_dirs: &mut Vec<PathBuf>,
+    state: &mut RunParseState,
 ) -> Result<(), CliError> {
     if arg == "-h" || arg == "--help" {
         return Err(CliError::HelpRequested);
@@ -285,7 +264,7 @@ fn parse_run_arg<I: Iterator<Item = String>>(
 
     if arg == "--agent" {
         let raw = iter.next().ok_or(CliError::MissingAgentValue)?;
-        *agent = Some(Agent::parse(&raw)?);
+        state.agent = Some(Agent::parse(&raw)?);
         return Ok(());
     }
 
@@ -293,33 +272,33 @@ fn parse_run_arg<I: Iterator<Item = String>>(
         if raw.is_empty() {
             return Err(CliError::MissingAgentValue);
         }
-        *agent = Some(Agent::parse(raw)?);
+        state.agent = Some(Agent::parse(raw)?);
         return Ok(());
     }
 
     if arg == "--browser" {
-        *browser = true;
+        state.browser = true;
         return Ok(());
     }
 
     if arg == "--tmux" {
-        *tmux = true;
+        state.tmux = true;
         return Ok(());
     }
 
     if arg == "--psp" {
-        *psp = true;
+        state.psp = true;
         return Ok(());
     }
 
     if arg == "--psp-keep" {
-        *psp_keep = true;
+        state.psp_keep = true;
         return Ok(());
     }
 
     if arg == "--config" {
         let raw = iter.next().ok_or(CliError::MissingConfigValue)?;
-        *config_path = Some(PathBuf::from(raw));
+        state.config_path = Some(PathBuf::from(raw));
         return Ok(());
     }
 
@@ -327,13 +306,13 @@ fn parse_run_arg<I: Iterator<Item = String>>(
         if raw.is_empty() {
             return Err(CliError::MissingConfigValue);
         }
-        *config_path = Some(PathBuf::from(raw));
+        state.config_path = Some(PathBuf::from(raw));
         return Ok(());
     }
 
     if arg == "--add-dir" || arg == "-d" {
         let raw = iter.next().ok_or(CliError::MissingMountPathValue)?;
-        add_dirs.push(PathBuf::from(raw));
+        state.add_dirs.push(PathBuf::from(raw));
         return Ok(());
     }
 
@@ -341,7 +320,7 @@ fn parse_run_arg<I: Iterator<Item = String>>(
         if raw.is_empty() {
             return Err(CliError::MissingMountPathValue);
         }
-        add_dirs.push(PathBuf::from(raw));
+        state.add_dirs.push(PathBuf::from(raw));
         return Ok(());
     }
 

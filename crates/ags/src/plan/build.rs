@@ -32,6 +32,16 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub extra_mount_dirs: &'a [PathBuf],
 }
 
+struct BuildEnvOptions<'a> {
+    wayland: &'a Option<WaylandInfo>,
+    read_roots: &'a [String],
+    write_roots: &'a [String],
+    resolved_secrets: &'a HashMap<String, String>,
+    auth_proxy_enabled: bool,
+    psp_enabled: bool,
+    psp_session_id: Option<&'a str>,
+}
+
 /// Cache volume mappings: (host_suffix under cache_dir, container_path, env_var).
 /// An empty env_var means no environment variable is emitted for that mount.
 const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
@@ -155,14 +165,14 @@ pub fn build_launch_plan(
     }
 
     // PSP socket mount
-    if let Some(sock) = psp_socket {
-        if let Some(sock_dir) = sock.parent() {
-            mounts.push(PlanMount {
-                host: sock_dir.to_owned(),
-                container: crate::psp::PspGuard::container_socket_dir().to_owned(),
-                mode: MountMode::Rw,
-            });
-        }
+    if let Some(sock) = psp_socket
+        && let Some(sock_dir) = sock.parent()
+    {
+        mounts.push(PlanMount {
+            host: sock_dir.to_owned(),
+            container: crate::psp::PspGuard::container_socket_dir().to_owned(),
+            mode: MountMode::Rw,
+        });
     }
 
     // Public key files
@@ -173,13 +183,15 @@ pub fn build_launch_plan(
     let env = build_env(
         config,
         &profile,
-        &wayland,
-        &read_roots,
-        &write_roots,
-        resolved_secrets,
-        auth_proxy_runtime_dir.is_some(),
-        psp_socket.is_some(),
-        psp_session_id,
+        BuildEnvOptions {
+            wayland: &wayland,
+            read_roots: &read_roots,
+            write_roots: &write_roots,
+            resolved_secrets,
+            auth_proxy_enabled: auth_proxy_runtime_dir.is_some(),
+            psp_enabled: psp_socket.is_some(),
+            psp_session_id,
+        },
     );
 
     // Network mode
@@ -518,14 +530,17 @@ fn clipboard_enabled() -> Result<bool, PlanError> {
 fn build_env(
     config: &ValidatedConfig,
     profile: &AgentProfile,
-    wayland: &Option<WaylandInfo>,
-    read_roots: &[String],
-    write_roots: &[String],
-    resolved_secrets: &HashMap<String, String>,
-    auth_proxy_enabled: bool,
-    psp_enabled: bool,
-    psp_session_id: Option<&str>,
+    options: BuildEnvOptions<'_>,
 ) -> PlanEnv {
+    let BuildEnvOptions {
+        wayland,
+        read_roots,
+        write_roots,
+        resolved_secrets,
+        auth_proxy_enabled,
+        psp_enabled,
+        psp_session_id,
+    } = options;
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
         (
@@ -574,10 +589,7 @@ fn build_env(
     if psp_enabled {
         inline.push((
             "DOCKER_HOST".to_owned(),
-            format!(
-                "unix://{}",
-                crate::psp::PspGuard::container_socket_path()
-            ),
+            format!("unix://{}", crate::psp::PspGuard::container_socket_path()),
         ));
         inline.push((
             "TESTCONTAINERS_HOST_OVERRIDE".to_owned(),

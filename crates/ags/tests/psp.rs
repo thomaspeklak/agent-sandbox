@@ -95,9 +95,7 @@ fn psp_responds_to_ping() {
     let guard = ags::psp::start("", false).expect("psp should start");
 
     let mut stream = UnixStream::connect(&guard.socket_path).expect("connect to socket");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .ok();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     // Send HTTP GET /_ping
     let request = "GET /_ping HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -120,9 +118,7 @@ fn psp_returns_request_id_header() {
     let guard = ags::psp::start("", false).expect("psp should start");
 
     let mut stream = UnixStream::connect(&guard.socket_path).expect("connect to socket");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .ok();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     let request = "GET /_ping HTTP/1.1\r\nHost: localhost\r\n\r\n";
     stream.write_all(request.as_bytes()).expect("send request");
@@ -144,9 +140,7 @@ fn psp_returns_effective_session_id() {
     let guard = ags::psp::start("", false).expect("psp should start");
 
     let mut stream = UnixStream::connect(&guard.socket_path).expect("connect to socket");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .ok();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     let request =
         "GET /_ping HTTP/1.1\r\nHost: localhost\r\nx-psp-session-id: test-session\r\n\r\n";
@@ -169,9 +163,7 @@ fn psp_rejects_unsupported_endpoint() {
     let guard = ags::psp::start("", false).expect("psp should start");
 
     let mut stream = UnixStream::connect(&guard.socket_path).expect("connect to socket");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .ok();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     // /networks is not in the testcontainers profile
     let request = "GET /networks HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -195,7 +187,10 @@ fn psp_guard_cleans_up_on_drop() {
     {
         let guard = ags::psp::start("", false).expect("psp should start");
         socket_dir = guard.socket_path.parent().unwrap().to_owned();
-        assert!(socket_dir.exists(), "socket dir should exist while guard is alive");
+        assert!(
+            socket_dir.exists(),
+            "socket dir should exist while guard is alive"
+        );
     }
     // Guard dropped — socket dir should be gone
     // Give a moment for cleanup

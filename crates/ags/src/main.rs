@@ -239,8 +239,11 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         match ags::psp::start(&config.psp.binary, opts.psp_keep) {
             Ok(guard) => {
                 psp_socket = Some(guard.socket_path.clone());
-                psp_session_id =
-                    Some(format!("ags-{}-{}", opts.agent.as_str(), std::process::id()));
+                psp_session_id = Some(format!(
+                    "ags-{}-{}",
+                    opts.agent.as_str(),
+                    std::process::id()
+                ));
                 _psp_guard = Some(guard);
             }
             Err(e) => {

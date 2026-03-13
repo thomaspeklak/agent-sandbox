@@ -212,7 +212,6 @@ fn store_secrets_interactive(config: &ValidatedConfig) -> Result<(), SetupError>
     Ok(())
 }
 
-
 fn pub_key_path(key_path: &Path) -> PathBuf {
     let mut p = key_path.as_os_str().to_owned();
     p.push(".pub");
