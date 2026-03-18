@@ -5,9 +5,12 @@ use std::net::TcpListener;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+use serde_json::json;
 
 use crate::auth_proxy::protocol::{HostMessage, ShimMessage};
 use crate::webview_relay;
@@ -111,25 +114,48 @@ pub trait AuthProxyHost {
         Err("proxy unavailable".to_owned())
     }
 
+    /// Open a proxied localhost URL in the preferred host UI.
+    fn open_proxy_target(&self, url: &str) -> Result<(), String> {
+        self.open_browser(url)
+    }
+
     /// Open a URL in the host browser.
     fn open_browser(&self, url: &str) -> Result<(), String>;
 }
 
 /// Real implementation that uses zenity/kdialog for prompts and xdg-open for browser.
+struct HostUiWindowLease {
+    _writer: UnixStream,
+}
+
 pub struct OsAuthProxyHost {
     auto_allow_domains: Vec<String>,
     webview_relay_socket_path: Option<PathBuf>,
+    host_ui_socket_path: Option<PathBuf>,
+    host_ui_windows: Mutex<Vec<HostUiWindowLease>>,
+    next_host_ui_request_id: AtomicU64,
 }
 
 impl OsAuthProxyHost {
     pub fn new(
         auto_allow_domains: Vec<String>,
         webview_relay_socket_path: Option<PathBuf>,
+        host_ui_socket_path: Option<PathBuf>,
     ) -> Self {
         Self {
             auto_allow_domains,
             webview_relay_socket_path,
+            host_ui_socket_path,
+            host_ui_windows: Mutex::new(Vec::new()),
+            next_host_ui_request_id: AtomicU64::new(1),
         }
+    }
+
+    fn next_request_id(&self) -> String {
+        format!(
+            "auth_proxy_{}",
+            self.next_host_ui_request_id.fetch_add(1, Ordering::Relaxed)
+        )
     }
 }
 
@@ -152,6 +178,19 @@ impl AuthProxyHost for OsAuthProxyHost {
         rewrite_localhost_url_via_relay(url, socket_path)
     }
 
+    fn open_proxy_target(&self, url: &str) -> Result<(), String> {
+        if let Some(socket_path) = self.host_ui_socket_path.as_deref() {
+            let lease = open_url_in_host_ui(socket_path, url, || self.next_request_id())?;
+            self.host_ui_windows
+                .lock()
+                .map_err(|_| "host UI state lock poisoned".to_owned())?
+                .push(lease);
+            Ok(())
+        } else {
+            open_url_on_host(url)
+        }
+    }
+
     fn open_browser(&self, url: &str) -> Result<(), String> {
         open_url_on_host(url)
     }
@@ -165,12 +204,14 @@ pub fn start(
     runtime_dir: &Path,
     auto_allow_domains: Vec<String>,
     webview_relay_socket_path: Option<PathBuf>,
+    host_ui_socket_path: Option<PathBuf>,
 ) -> Result<AuthProxyGuard, AuthProxyError> {
     start_with_host(
         runtime_dir,
         Arc::new(OsAuthProxyHost::new(
             auto_allow_domains,
             webview_relay_socket_path,
+            host_ui_socket_path,
         )),
     )
 }
@@ -349,13 +390,17 @@ fn handle_open_url(
     if let Some(port) = callback_port {
         handle_callback_flow(session_id, &target_url, port, reader, writer, host)?;
     } else {
-        // Simple open: just open the browser
-        if let Err(e) = host.open_browser(&target_url) {
+        let open_result = if matches!(decision, OpenDecision::Proxy) {
+            host.open_proxy_target(&target_url)
+        } else {
+            host.open_browser(&target_url)
+        };
+        if let Err(e) = open_result {
             send_message(
                 writer,
                 &HostMessage::Error {
                     session_id: session_id.to_owned(),
-                    message: format!("failed to open browser: {e}"),
+                    message: format!("failed to open target URL: {e}"),
                 },
             )?;
             return Ok(());
@@ -831,6 +876,127 @@ fn rewrite_localhost_url_via_relay(url: &str, socket_path: &Path) -> Result<Stri
     rewritten.set_query(parsed.query());
     rewritten.set_fragment(parsed.fragment());
     Ok(rewritten.to_string())
+}
+
+// --- Host UI URL open ---
+
+fn open_url_in_host_ui<F>(
+    socket_path: &Path,
+    url: &str,
+    mut next_request_id: F,
+) -> Result<HostUiWindowLease, String>
+where
+    F: FnMut() -> String,
+{
+    let mut writer = UnixStream::connect(socket_path).map_err(|e| {
+        format!(
+            "failed to connect to host UI socket {}: {e}",
+            socket_path.display()
+        )
+    })?;
+    writer
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("failed to configure host UI socket: {e}"))?;
+    let reader_stream = writer
+        .try_clone()
+        .map_err(|e| format!("failed to clone host UI socket: {e}"))?;
+    let mut reader = BufReader::new(reader_stream);
+
+    let hello_id = next_request_id();
+    let _ = host_ui_request(
+        &mut writer,
+        &mut reader,
+        &hello_id,
+        "hello",
+        json!({
+            "client_name": "ags-auth-proxy",
+            "client_version": env!("CARGO_PKG_VERSION"),
+            "protocol_min": 1,
+            "protocol_max": 1,
+            "session_id": serde_json::Value::Null,
+        }),
+    )?;
+
+    let open_id = next_request_id();
+    let _ = host_ui_request(
+        &mut writer,
+        &mut reader,
+        &open_id,
+        "open",
+        json!({
+            "source": { "kind": "url", "url": url },
+            "options": {
+                "width": 1100,
+                "height": 800,
+                "title": "Sandbox App"
+            }
+        }),
+    )?;
+
+    thread::spawn(move || {
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+    });
+
+    Ok(HostUiWindowLease { _writer: writer })
+}
+
+fn host_ui_request(
+    writer: &mut UnixStream,
+    reader: &mut BufReader<UnixStream>,
+    id: &str,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload = json!({
+        "v": 1,
+        "kind": "request",
+        "id": id,
+        "method": method,
+        "params": params,
+    });
+    writeln!(writer, "{payload}").map_err(|e| format!("failed to send host UI request: {e}"))?;
+    writer
+        .flush()
+        .map_err(|e| format!("failed to flush host UI request: {e}"))?;
+
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|e| format!("failed to read host UI response: {e}"))?;
+        if read == 0 {
+            return Err("host UI closed the connection".to_owned());
+        }
+        let value: serde_json::Value = serde_json::from_str(line.trim())
+            .map_err(|e| format!("invalid host UI response: {e}"))?;
+        if value.get("kind").and_then(|v| v.as_str()) != Some("response") {
+            continue;
+        }
+        if value.get("id").and_then(|v| v.as_str()) != Some(id) {
+            continue;
+        }
+        if value.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+            return Ok(value
+                .get("result")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null));
+        }
+        let message = value
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("host UI request failed");
+        return Err(message.to_owned());
+    }
 }
 
 // --- Browser open ---

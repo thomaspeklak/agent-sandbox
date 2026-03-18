@@ -64,7 +64,8 @@ impl AuthProxyHost for BrowserFailHost {
 
 #[derive(Default)]
 struct ProxyHost {
-    opened_urls: std::sync::Mutex<Vec<String>>,
+    opened_browser_urls: std::sync::Mutex<Vec<String>>,
+    opened_proxy_urls: std::sync::Mutex<Vec<String>>,
     prompt_can_proxy: std::sync::Mutex<Vec<bool>>,
 }
 
@@ -89,8 +90,16 @@ impl AuthProxyHost for ProxyHost {
         Ok(rewritten)
     }
 
+    fn open_proxy_target(&self, url: &str) -> Result<(), String> {
+        self.opened_proxy_urls.lock().unwrap().push(url.to_owned());
+        Ok(())
+    }
+
     fn open_browser(&self, url: &str) -> Result<(), String> {
-        self.opened_urls.lock().unwrap().push(url.to_owned());
+        self.opened_browser_urls
+            .lock()
+            .unwrap()
+            .push(url.to_owned());
         Ok(())
     }
 }
@@ -313,11 +322,12 @@ fn proxy_choice_rewrites_localhost_urls_before_opening() {
         other => panic!("expected SessionComplete, got: {other:?}"),
     }
 
-    let opened = host.opened_urls.lock().unwrap().clone();
+    let opened_proxy = host.opened_proxy_urls.lock().unwrap().clone();
     assert_eq!(
-        opened,
+        opened_proxy,
         vec!["http://127.0.0.1:43125/app/index.html?x=1#frag".to_owned()]
     );
+    assert!(host.opened_browser_urls.lock().unwrap().is_empty());
     let prompt_flags = host.prompt_can_proxy.lock().unwrap().clone();
     assert_eq!(prompt_flags, vec![true]);
 }
@@ -349,7 +359,8 @@ fn proxy_option_is_not_offered_for_non_localhost_urls() {
         other => panic!("expected SessionComplete, got: {other:?}"),
     }
 
-    assert!(host.opened_urls.lock().unwrap().is_empty());
+    assert!(host.opened_browser_urls.lock().unwrap().is_empty());
+    assert!(host.opened_proxy_urls.lock().unwrap().is_empty());
     let prompt_flags = host.prompt_can_proxy.lock().unwrap().clone();
     assert_eq!(prompt_flags, vec![false]);
 }

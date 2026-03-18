@@ -275,6 +275,9 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             &dir,
             config.auth_proxy.auto_allow_domains.clone(),
             webview_relay_register_socket.clone(),
+            host_ui_runtime_dir
+                .as_ref()
+                .map(|dir| dir.join("host-ui.sock")),
         ) {
             Ok(guard) => {
                 // Write the shim script into the runtime dir so it can be mounted
