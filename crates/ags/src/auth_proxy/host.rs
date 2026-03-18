@@ -680,17 +680,38 @@ fn prompt_text(url: &str, has_callback: bool, can_proxy: bool) -> String {
     let display = display_url(url);
     if has_callback {
         return format!(
-            "A sandbox tool wants to open this URL and capture a localhost callback:\n\n{display}\n\nChoose OK to open it in the host browser or Cancel to deny."
+            "A sandbox tool wants to open this URL and capture a localhost callback:\n\n{display}\n\nChoose Open to open it in the host browser or Cancel to deny."
         );
     }
     if can_proxy {
         return format!(
-            "A sandbox tool wants to open this URL:\n\n{display}\n\nChoose OK to open the original URL, Proxy to route sandbox localhost through AGS, or Cancel to deny."
+            "A sandbox tool wants to open this URL:\n\n{display}\n\nChoose Open to open the original URL, Proxy to route sandbox localhost through AGS, or Cancel to deny."
         );
     }
     format!(
-        "A sandbox tool wants to open this URL:\n\n{display}\n\nChoose OK to open it or Cancel to deny."
+        "A sandbox tool wants to open this URL:\n\n{display}\n\nChoose Open to open it or Cancel to deny."
     )
+}
+
+fn parse_named_decision(label: &str, can_proxy: bool) -> Option<OpenDecision> {
+    match label.trim().to_ascii_lowercase().as_str() {
+        "open" | "ok" => Some(OpenDecision::OpenOriginal),
+        "proxy" if can_proxy => Some(OpenDecision::Proxy),
+        "cancel" => Some(OpenDecision::Cancel),
+        _ => None,
+    }
+}
+
+fn parse_zenity_decision(output: &std::process::Output, can_proxy: bool) -> OpenDecision {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if let Some(decision) = parse_named_decision(&stdout, can_proxy) {
+        return decision;
+    }
+    if output.status.success() {
+        OpenDecision::OpenOriginal
+    } else {
+        OpenDecision::Cancel
+    }
 }
 
 fn try_zenity(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDecision> {
@@ -704,7 +725,7 @@ fn try_zenity(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDeci
         "520",
         "--no-wrap",
         "--ok-label",
-        "OK",
+        "Open",
         "--cancel-label",
         "Cancel",
     ])
@@ -716,17 +737,7 @@ fn try_zenity(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDeci
         cmd.args(["--extra-button", "Proxy"]);
     }
     let output = cmd.output().ok()?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        if can_proxy && stdout == "Proxy" {
-            Some(OpenDecision::Proxy)
-        } else {
-            Some(OpenDecision::OpenOriginal)
-        }
-    } else {
-        Some(OpenDecision::Cancel)
-    }
+    Some(parse_zenity_decision(&output, can_proxy))
 }
 
 fn try_kdialog(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDecision> {
@@ -739,7 +750,7 @@ fn try_kdialog(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDec
             .arg("--menu")
             .arg(&text)
             .args([
-                "ok",
+                "open",
                 "Open original URL",
                 "proxy",
                 "Proxy localhost through AGS",
@@ -766,7 +777,16 @@ fn try_kdialog(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDec
     }
 
     let status = std::process::Command::new("kdialog")
-        .args(["--yesno", &text, "--title", "AGS Auth Proxy"])
+        .args([
+            "--yesno",
+            &text,
+            "--title",
+            "AGS Auth Proxy",
+            "--yes-label",
+            "Open",
+            "--no-label",
+            "Cancel",
+        ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -833,8 +853,12 @@ fn open_url_on_host(url: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_proxyable_localhost_url, rewrite_localhost_url_via_relay};
+    use super::{
+        OpenDecision, is_proxyable_localhost_url, parse_zenity_decision,
+        rewrite_localhost_url_via_relay,
+    };
     use crate::webview_relay;
+    use std::os::unix::process::ExitStatusExt;
 
     #[test]
     fn proxyable_localhost_detection_requires_http_and_explicit_port() {
@@ -843,6 +867,16 @@ mod tests {
         assert!(!is_proxyable_localhost_url("https://localhost:4173/app"));
         assert!(!is_proxyable_localhost_url("http://localhost/app"));
         assert!(!is_proxyable_localhost_url("http://example.com:4173/app"));
+    }
+
+    #[test]
+    fn parse_zenity_proxy_button_even_when_exit_status_is_nonzero() {
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(256),
+            stdout: b"Proxy\n".to_vec(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(parse_zenity_decision(&output, true), OpenDecision::Proxy);
     }
 
     #[test]
