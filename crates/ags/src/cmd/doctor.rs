@@ -379,7 +379,9 @@ fn check_host_ui(ck: &mut Checker, config: &ValidatedConfig) {
         if path.exists() && is_executable(path) {
             ck.ok(&format!("host UI binary is executable: {binary}"));
         } else {
-            ck.fail(&format!("host UI binary missing or not executable: {binary}"));
+            ck.fail(&format!(
+                "host UI binary missing or not executable: {binary}"
+            ));
         }
     } else if has_command(binary) {
         ck.ok(&format!("host UI binary available on PATH: {binary}"));

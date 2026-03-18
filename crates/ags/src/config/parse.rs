@@ -9,8 +9,8 @@ use crate::config::raw::{
 };
 use crate::config::types::{
     AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,
-    SecretSource, UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox,
-    ValidatedSecret, ValidatedTool,
+    SecretSource, UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret,
+    ValidatedTool,
 };
 
 /// Read, parse, and validate a config TOML file from disk.

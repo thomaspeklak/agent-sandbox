@@ -115,8 +115,8 @@ pub fn start(runtime_dir: &Path) -> Result<WebviewRelayGuard, WebviewRelayError>
     if register_socket_path.exists() {
         let _ = fs::remove_file(&register_socket_path);
     }
-    let listener = UnixListener::bind(&register_socket_path)
-        .map_err(WebviewRelayError::RegisterSocketBind)?;
+    let listener =
+        UnixListener::bind(&register_socket_path).map_err(WebviewRelayError::RegisterSocketBind)?;
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let listeners = Arc::new(Mutex::new(Vec::new()));
@@ -191,7 +191,7 @@ enum RegisterRequest {
     },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct RegisterResponse {
     ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -202,6 +202,37 @@ struct RegisterResponse {
     base_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
+}
+
+pub(crate) fn register_local_app(
+    socket_path: &Path,
+    port: u16,
+    base_path: &str,
+) -> io::Result<String> {
+    let mut stream = UnixStream::connect(socket_path)?;
+    let line = serde_json::json!({
+        "type": "register",
+        "port": port,
+        "base_path": base_path,
+    })
+    .to_string();
+    writeln!(stream, "{line}")?;
+    stream.flush()?;
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    let response: RegisterResponse = serde_json::from_str(line.trim())
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    if !response.ok {
+        return Err(io::Error::other(
+            response
+                .error
+                .unwrap_or_else(|| "unknown relay registration error".to_owned()),
+        ));
+    }
+    response
+        .url
+        .ok_or_else(|| io::Error::other("relay response omitted url"))
 }
 
 fn handle_register_client(
@@ -286,7 +317,10 @@ fn normalize_base_path(value: &str) -> String {
     normalized
 }
 
-fn start_app_listener(runtime_dir: &Path, registration: Registration) -> io::Result<AppListenerGuard> {
+fn start_app_listener(
+    runtime_dir: &Path,
+    registration: Registration,
+) -> io::Result<AppListenerGuard> {
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
     let port = listener.local_addr()?.port();
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -659,7 +693,11 @@ mod tests {
         (status, header_text.into_owned(), body)
     }
 
-    fn register_app(runtime_dir: &std::path::Path, port: u16, base_path: &str) -> serde_json::Value {
+    fn register_app(
+        runtime_dir: &std::path::Path,
+        port: u16,
+        base_path: &str,
+    ) -> serde_json::Value {
         let socket_path = runtime_dir.join(SOCKET_NAME);
         let mut stream = UnixStream::connect(socket_path).unwrap();
         let line = serde_json::json!({
@@ -676,7 +714,10 @@ mod tests {
         serde_json::from_str(line.trim()).unwrap()
     }
 
-    fn spawn_upstream_stub(socket_path: PathBuf, expected: usize) -> (mpsc::Receiver<serde_json::Value>, JoinHandle<()>) {
+    fn spawn_upstream_stub(
+        socket_path: PathBuf,
+        expected: usize,
+    ) -> (mpsc::Receiver<serde_json::Value>, JoinHandle<()>) {
         let _ = fs::remove_file(&socket_path);
         let listener = UnixListener::bind(socket_path).unwrap();
         let (tx, rx) = mpsc::channel();
@@ -703,8 +744,7 @@ mod tests {
     }
 
     fn app_server_script_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../agent/webview-relay-shim")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../agent/webview-relay-shim")
     }
 
     #[test]
@@ -735,7 +775,11 @@ mod tests {
 
         let (status, _headers, body) = http_request(host_port, "/index.html", &[]);
         assert_eq!(status, 502);
-        assert!(String::from_utf8(body).unwrap().contains("Sandbox relay unavailable"));
+        assert!(
+            String::from_utf8(body)
+                .unwrap()
+                .contains("Sandbox relay unavailable")
+        );
 
         drop(guard);
     }
@@ -754,7 +798,11 @@ mod tests {
             &[("Upgrade", "websocket"), ("Connection", "Upgrade")],
         );
         assert_eq!(status, 501);
-        assert!(String::from_utf8(body).unwrap().contains("WebSocket relay is not implemented yet"));
+        assert!(
+            String::from_utf8(body)
+                .unwrap()
+                .contains("WebSocket relay is not implemented yet")
+        );
 
         drop(guard);
     }
@@ -776,7 +824,10 @@ mod tests {
             &[("Accept", "text/html"), ("X-Test", "1")],
         );
         assert_eq!(status, 200);
-        assert!(headers.contains("content-type: text/plain; charset=utf-8") || headers.contains("Content-Type: text/plain; charset=utf-8"));
+        assert!(
+            headers.contains("content-type: text/plain; charset=utf-8")
+                || headers.contains("Content-Type: text/plain; charset=utf-8")
+        );
         assert_eq!(String::from_utf8(body).unwrap(), "hello from sandbox");
 
         let request = rx.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -804,7 +855,11 @@ mod tests {
             .env("AGS_WEBVIEW_RELAY_SOCKET", runtime_dir.join(SOCKET_NAME))
             .output()
             .unwrap();
-        assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let url = String::from_utf8(output.stdout).unwrap();
         assert!(url.trim().starts_with("http://127.0.0.1:"));
         assert!(url.trim().ends_with("/app"));
@@ -850,7 +905,10 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        assert!(upstream_socket.exists(), "shim did not create upstream socket");
+        assert!(
+            upstream_socket.exists(),
+            "shim did not create upstream socket"
+        );
 
         let guard = start(&runtime_dir).unwrap();
         let response = register_app(&runtime_dir, app_port, "/");
@@ -924,14 +982,21 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        assert!(upstream_socket.exists(), "shim did not create upstream socket");
+        assert!(
+            upstream_socket.exists(),
+            "shim did not create upstream socket"
+        );
 
         let guard = start(&runtime_dir).unwrap();
         let response = register_app(&runtime_dir, app_port, "/app");
         let host_port = response["host_port"].as_u64().unwrap() as u16;
         assert!(response["url"].as_str().unwrap().ends_with("/app"));
 
-        for path in ["/app?session=abc123", "/styles.css", "/media?path=a.png&session=abc123"] {
+        for path in [
+            "/app?session=abc123",
+            "/styles.css",
+            "/media?path=a.png&session=abc123",
+        ] {
             let (status, _, body) = http_request(host_port, path, &[]);
             assert_eq!(status, 200);
             assert_eq!(String::from_utf8(body).unwrap(), "ok");

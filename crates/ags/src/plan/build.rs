@@ -11,8 +11,8 @@ use crate::config::{
     BrowserConfig, MountKind, MountMode, MountWhen, ValidatedConfig, ValidatedMount,
 };
 use crate::git;
-use crate::plan::types::*;
 use crate::host_ui::HostUiGuard;
+use crate::plan::types::*;
 use crate::webview_relay::WebviewRelayGuard;
 
 // Container-side path constants.
@@ -644,14 +644,8 @@ fn build_env(
             "AGS_HOST_UI_SOCK".to_owned(),
             HostUiGuard::container_socket_path().to_owned(),
         ));
-        inline.push((
-            "AGS_HOST_UI_PROTOCOL".to_owned(),
-            "1".to_owned(),
-        ));
-        inline.push((
-            "AGS_HOST_UI_TRANSPORT".to_owned(),
-            "socket".to_owned(),
-        ));
+        inline.push(("AGS_HOST_UI_PROTOCOL".to_owned(), "1".to_owned()));
+        inline.push(("AGS_HOST_UI_TRANSPORT".to_owned(), "socket".to_owned()));
         inline.push((
             "AGS_HOST_UI_HINT".to_owned(),
             "[ags] Host UI available through mounted socket; host owns Glimpse windows".to_owned(),

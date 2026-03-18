@@ -207,31 +207,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     }
 
-    // 6b. Auth proxy
-    let _auth_proxy_guard;
-    let auth_proxy_runtime_dir;
-    {
-        let runtime_base = ags::util::runtime_dir();
-        let dir = runtime_base.join(format!("ags-auth-proxy-{}", std::process::id()));
-
-        match ags::auth_proxy::start(&dir, config.auth_proxy.auto_allow_domains.clone()) {
-            Ok(guard) => {
-                // Write the shim script into the runtime dir so it can be mounted
-                if let Err(e) = ags::assets::ensure_auth_proxy_shim(&guard.runtime_dir) {
-                    eprintln!("warning: auth proxy shim write failed: {e}");
-                }
-                auth_proxy_runtime_dir = Some(guard.runtime_dir.clone());
-                _auth_proxy_guard = Some(guard);
-            }
-            Err(e) => {
-                eprintln!("warning: auth proxy: {e}");
-                auth_proxy_runtime_dir = None;
-                _auth_proxy_guard = None;
-            }
-        }
-    }
-
-    // 6c. Host UI service for sandbox-safe Glimpse windows
+    // 6b. Host UI service for sandbox-safe Glimpse windows
     let _host_ui_guard;
     let host_ui_runtime_dir;
     let host_ui_session_id;
@@ -261,9 +237,10 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     }
 
-    // 6d. Webview relay for host-owned webviews backed by sandbox-local app servers
+    // 6c. Webview relay for host-owned webviews backed by sandbox-local app servers
     let _webview_relay_guard;
     let webview_relay_runtime_dir;
+    let webview_relay_register_socket;
     {
         let runtime_base = ags::util::runtime_dir();
         let dir = runtime_base.join(format!("ags-webview-relay-{}", std::process::id()));
@@ -273,13 +250,44 @@ fn run_agent(opts: RunOptions) -> ExitCode {
                 if let Err(e) = ags::assets::ensure_webview_relay_assets(&guard.runtime_dir) {
                     eprintln!("warning: webview relay assets write failed: {e}");
                 }
+                webview_relay_register_socket =
+                    Some(guard.runtime_dir.join(ags::webview_relay::SOCKET_NAME));
                 webview_relay_runtime_dir = Some(guard.runtime_dir.clone());
                 _webview_relay_guard = Some(guard);
             }
             Err(e) => {
                 eprintln!("warning: webview relay: {e}");
+                webview_relay_register_socket = None;
                 webview_relay_runtime_dir = None;
                 _webview_relay_guard = None;
+            }
+        }
+    }
+
+    // 6d. Auth proxy
+    let _auth_proxy_guard;
+    let auth_proxy_runtime_dir;
+    {
+        let runtime_base = ags::util::runtime_dir();
+        let dir = runtime_base.join(format!("ags-auth-proxy-{}", std::process::id()));
+
+        match ags::auth_proxy::start(
+            &dir,
+            config.auth_proxy.auto_allow_domains.clone(),
+            webview_relay_register_socket.clone(),
+        ) {
+            Ok(guard) => {
+                // Write the shim script into the runtime dir so it can be mounted
+                if let Err(e) = ags::assets::ensure_auth_proxy_shim(&guard.runtime_dir) {
+                    eprintln!("warning: auth proxy shim write failed: {e}");
+                }
+                auth_proxy_runtime_dir = Some(guard.runtime_dir.clone());
+                _auth_proxy_guard = Some(guard);
+            }
+            Err(e) => {
+                eprintln!("warning: auth proxy: {e}");
+                auth_proxy_runtime_dir = None;
+                _auth_proxy_guard = None;
             }
         }
     }

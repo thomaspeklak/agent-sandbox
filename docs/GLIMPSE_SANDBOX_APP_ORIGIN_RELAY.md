@@ -200,6 +200,7 @@ Ownership boundary:
 - packages/tools construct their ordinary localhost URL (for example `http://localhost:4173/?session=abc`)
 - `glimpseui` detects sandbox-local localhost URLs under AGS and resolves them through this relay automatically
 - AGS owns dedicated host-port allocation and HTTP forwarding
+- browser-open fallbacks that pass through the AGS auth proxy may also offer a **Proxy** choice for the same localhost-with-port URLs; that uses this relay too, but Glimpse remains the primary owner of served-app URL resolution for packages that already use Glimpse directly
 
 For the host UI service protocol, `open`/`prompt` accept a source union rather than HTML-only payloads.
 

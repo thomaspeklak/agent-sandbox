@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use ags::auth_proxy::host::{self, AuthProxyGuard, AuthProxyHost};
+use ags::auth_proxy::host::{self, AuthProxyGuard, AuthProxyHost, OpenDecision};
 use ags::auth_proxy::protocol::{HostMessage, ShimMessage};
 
 // --- Test helpers ---
@@ -27,8 +27,8 @@ fn recv_host_msg(reader: &mut BufReader<UnixStream>) -> HostMessage {
 struct AllowHost;
 
 impl AuthProxyHost for AllowHost {
-    fn prompt_user(&self, _url: &str, _has_callback: bool) -> bool {
-        true
+    fn prompt_user(&self, _url: &str, _has_callback: bool, _can_proxy: bool) -> OpenDecision {
+        OpenDecision::OpenOriginal
     }
 
     fn open_browser(&self, _url: &str) -> Result<(), String> {
@@ -40,8 +40,8 @@ impl AuthProxyHost for AllowHost {
 struct DenyHost;
 
 impl AuthProxyHost for DenyHost {
-    fn prompt_user(&self, _url: &str, _has_callback: bool) -> bool {
-        false
+    fn prompt_user(&self, _url: &str, _has_callback: bool, _can_proxy: bool) -> OpenDecision {
+        OpenDecision::Cancel
     }
 
     fn open_browser(&self, _url: &str) -> Result<(), String> {
@@ -53,12 +53,45 @@ impl AuthProxyHost for DenyHost {
 struct BrowserFailHost;
 
 impl AuthProxyHost for BrowserFailHost {
-    fn prompt_user(&self, _url: &str, _has_callback: bool) -> bool {
-        true
+    fn prompt_user(&self, _url: &str, _has_callback: bool, _can_proxy: bool) -> OpenDecision {
+        OpenDecision::OpenOriginal
     }
 
     fn open_browser(&self, _url: &str) -> Result<(), String> {
         Err("browser not available".to_owned())
+    }
+}
+
+#[derive(Default)]
+struct ProxyHost {
+    opened_urls: std::sync::Mutex<Vec<String>>,
+    prompt_can_proxy: std::sync::Mutex<Vec<bool>>,
+}
+
+impl AuthProxyHost for ProxyHost {
+    fn prompt_user(&self, _url: &str, _has_callback: bool, can_proxy: bool) -> OpenDecision {
+        self.prompt_can_proxy.lock().unwrap().push(can_proxy);
+        if can_proxy {
+            OpenDecision::Proxy
+        } else {
+            OpenDecision::Cancel
+        }
+    }
+
+    fn can_proxy(&self, url: &str) -> bool {
+        url.starts_with("http://localhost:") || url.starts_with("http://127.0.0.1:")
+    }
+
+    fn resolve_proxy_url(&self, url: &str) -> Result<String, String> {
+        let rewritten = url
+            .replace("http://localhost:4173", "http://127.0.0.1:43125")
+            .replace("http://127.0.0.1:4173", "http://127.0.0.1:43125");
+        Ok(rewritten)
+    }
+
+    fn open_browser(&self, url: &str) -> Result<(), String> {
+        self.opened_urls.lock().unwrap().push(url.to_owned());
+        Ok(())
     }
 }
 
@@ -251,6 +284,74 @@ fn browser_failure_sends_error() {
         }
         other => panic!("expected Error, got: {other:?}"),
     }
+}
+
+#[test]
+fn proxy_choice_rewrites_localhost_urls_before_opening() {
+    let host = Arc::new(ProxyHost::default());
+    let guard = start_proxy(host.clone());
+    let (mut stream, mut reader) = connect(&guard);
+
+    send_shim_msg(
+        &mut stream,
+        &ShimMessage::OpenUrl {
+            session_id: "s-proxy".into(),
+            url: "http://localhost:4173/app/index.html?x=1#frag".into(),
+            callback_port: None,
+        },
+    );
+
+    let msg = recv_host_msg(&mut reader);
+    match msg {
+        HostMessage::PromptResult { allowed, .. } => assert!(allowed),
+        other => panic!("expected PromptResult, got: {other:?}"),
+    }
+
+    let msg = recv_host_msg(&mut reader);
+    match msg {
+        HostMessage::SessionComplete { session_id } => assert_eq!(session_id, "s-proxy"),
+        other => panic!("expected SessionComplete, got: {other:?}"),
+    }
+
+    let opened = host.opened_urls.lock().unwrap().clone();
+    assert_eq!(
+        opened,
+        vec!["http://127.0.0.1:43125/app/index.html?x=1#frag".to_owned()]
+    );
+    let prompt_flags = host.prompt_can_proxy.lock().unwrap().clone();
+    assert_eq!(prompt_flags, vec![true]);
+}
+
+#[test]
+fn proxy_option_is_not_offered_for_non_localhost_urls() {
+    let host = Arc::new(ProxyHost::default());
+    let guard = start_proxy(host.clone());
+    let (mut stream, mut reader) = connect(&guard);
+
+    send_shim_msg(
+        &mut stream,
+        &ShimMessage::OpenUrl {
+            session_id: "s-no-proxy".into(),
+            url: "https://example.com/remote".into(),
+            callback_port: None,
+        },
+    );
+
+    let msg = recv_host_msg(&mut reader);
+    match msg {
+        HostMessage::PromptResult { allowed, .. } => assert!(!allowed),
+        other => panic!("expected PromptResult, got: {other:?}"),
+    }
+
+    let msg = recv_host_msg(&mut reader);
+    match msg {
+        HostMessage::SessionComplete { session_id } => assert_eq!(session_id, "s-no-proxy"),
+        other => panic!("expected SessionComplete, got: {other:?}"),
+    }
+
+    assert!(host.opened_urls.lock().unwrap().is_empty());
+    let prompt_flags = host.prompt_can_proxy.lock().unwrap().clone();
+    assert_eq!(prompt_flags, vec![false]);
 }
 
 // --- Callback flow tests ---

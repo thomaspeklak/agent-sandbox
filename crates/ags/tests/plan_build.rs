@@ -1219,8 +1219,14 @@ fn host_ui_mounts_runtime_dir_and_env_when_enabled() {
     )
     .unwrap();
 
-    let runtime_mount = plan.mounts.iter().find(|m| m.container == "/run/ags-host-ui");
-    assert!(runtime_mount.is_some(), "host UI runtime dir should be mounted");
+    let runtime_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/run/ags-host-ui");
+    assert!(
+        runtime_mount.is_some(),
+        "host UI runtime dir should be mounted"
+    );
     assert_eq!(runtime_mount.unwrap().mode, MountMode::Rw);
 
     let find_env = |key: &str| -> Option<String> {

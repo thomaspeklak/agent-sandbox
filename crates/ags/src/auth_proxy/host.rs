@@ -10,6 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::auth_proxy::protocol::{HostMessage, ShimMessage};
+use crate::webview_relay;
 
 pub const SOCKET_NAME: &str = "auth-proxy.sock";
 const CONTAINER_RUNTIME_DIR: &str = "/run/ags-auth-proxy";
@@ -83,13 +84,32 @@ impl fmt::Debug for AuthProxyGuard {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenDecision {
+    Cancel,
+    OpenOriginal,
+    Proxy,
+}
+
 /// Abstraction over prompt and browser-open operations for testability.
 pub trait AuthProxyHost {
     /// Prompt the user to allow or deny a URL open.
     ///
     /// `has_callback` indicates whether the URL includes a localhost callback
-    /// (changes the prompt wording).
-    fn prompt_user(&self, url: &str, has_callback: bool) -> bool;
+    /// (changes the prompt wording). `can_proxy` indicates whether AGS can
+    /// relay the URL through the sandbox-app webview relay instead of opening
+    /// the raw host-local localhost URL.
+    fn prompt_user(&self, url: &str, has_callback: bool, can_proxy: bool) -> OpenDecision;
+
+    /// Whether this host can proxy the given URL through AGS.
+    fn can_proxy(&self, _url: &str) -> bool {
+        false
+    }
+
+    /// Rewrite a sandbox-local localhost URL through the AGS relay.
+    fn resolve_proxy_url(&self, _url: &str) -> Result<String, String> {
+        Err("proxy unavailable".to_owned())
+    }
 
     /// Open a URL in the host browser.
     fn open_browser(&self, url: &str) -> Result<(), String>;
@@ -98,20 +118,38 @@ pub trait AuthProxyHost {
 /// Real implementation that uses zenity/kdialog for prompts and xdg-open for browser.
 pub struct OsAuthProxyHost {
     auto_allow_domains: Vec<String>,
+    webview_relay_socket_path: Option<PathBuf>,
 }
 
 impl OsAuthProxyHost {
-    pub fn new(auto_allow_domains: Vec<String>) -> Self {
-        Self { auto_allow_domains }
+    pub fn new(
+        auto_allow_domains: Vec<String>,
+        webview_relay_socket_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            auto_allow_domains,
+            webview_relay_socket_path,
+        }
     }
 }
 
 impl AuthProxyHost for OsAuthProxyHost {
-    fn prompt_user(&self, url: &str, has_callback: bool) -> bool {
+    fn prompt_user(&self, url: &str, has_callback: bool, can_proxy: bool) -> OpenDecision {
         if is_auto_allowed(url, &self.auto_allow_domains) {
-            return true;
+            return OpenDecision::OpenOriginal;
         }
-        prompt_with_dialog(url, has_callback)
+        prompt_with_dialog(url, has_callback, can_proxy)
+    }
+
+    fn can_proxy(&self, url: &str) -> bool {
+        self.webview_relay_socket_path.is_some() && is_proxyable_localhost_url(url)
+    }
+
+    fn resolve_proxy_url(&self, url: &str) -> Result<String, String> {
+        let Some(socket_path) = self.webview_relay_socket_path.as_deref() else {
+            return Err("AGS webview relay is unavailable".to_owned());
+        };
+        rewrite_localhost_url_via_relay(url, socket_path)
     }
 
     fn open_browser(&self, url: &str) -> Result<(), String> {
@@ -126,10 +164,14 @@ impl AuthProxyHost for OsAuthProxyHost {
 pub fn start(
     runtime_dir: &Path,
     auto_allow_domains: Vec<String>,
+    webview_relay_socket_path: Option<PathBuf>,
 ) -> Result<AuthProxyGuard, AuthProxyError> {
     start_with_host(
         runtime_dir,
-        Arc::new(OsAuthProxyHost::new(auto_allow_domains)),
+        Arc::new(OsAuthProxyHost::new(
+            auto_allow_domains,
+            webview_relay_socket_path,
+        )),
     )
 }
 
@@ -250,9 +292,11 @@ fn handle_open_url(
     host: &dyn AuthProxyHost,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let has_callback = callback_port.is_some();
+    let can_proxy = host.can_proxy(url);
 
     // Prompt user
-    let allowed = host.prompt_user(url, has_callback);
+    let decision = host.prompt_user(url, has_callback, can_proxy);
+    let allowed = !matches!(decision, OpenDecision::Cancel);
 
     send_message(
         writer,
@@ -272,11 +316,41 @@ fn handle_open_url(
         return Ok(());
     }
 
+    let target_url = match decision {
+        OpenDecision::Cancel => url.to_owned(),
+        OpenDecision::OpenOriginal => url.to_owned(),
+        OpenDecision::Proxy => {
+            if !can_proxy {
+                send_message(
+                    writer,
+                    &HostMessage::Error {
+                        session_id: session_id.to_owned(),
+                        message: "proxy option is unavailable for this URL".to_owned(),
+                    },
+                )?;
+                return Ok(());
+            }
+            match host.resolve_proxy_url(url) {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    send_message(
+                        writer,
+                        &HostMessage::Error {
+                            session_id: session_id.to_owned(),
+                            message: format!("failed to resolve proxied URL: {e}"),
+                        },
+                    )?;
+                    return Ok(());
+                }
+            }
+        }
+    };
+
     if let Some(port) = callback_port {
-        handle_callback_flow(session_id, url, port, reader, writer, host)?;
+        handle_callback_flow(session_id, &target_url, port, reader, writer, host)?;
     } else {
         // Simple open: just open the browser
-        if let Err(e) = host.open_browser(url) {
+        if let Err(e) = host.open_browser(&target_url) {
             send_message(
                 writer,
                 &HostMessage::Error {
@@ -577,17 +651,17 @@ fn is_auto_allowed(url: &str, domains: &[String]) -> bool {
 }
 
 /// Try zenity, then kdialog, then deny.
-fn prompt_with_dialog(url: &str, has_callback: bool) -> bool {
-    if let Some(result) = try_zenity(url, has_callback) {
+fn prompt_with_dialog(url: &str, has_callback: bool, can_proxy: bool) -> OpenDecision {
+    if let Some(result) = try_zenity(url, has_callback, can_proxy) {
         return result;
     }
-    if let Some(result) = try_kdialog(url, has_callback) {
+    if let Some(result) = try_kdialog(url, has_callback, can_proxy) {
         return result;
     }
 
     eprintln!("[ags auth-proxy] no dialog tool available (install zenity or kdialog)");
     eprintln!("[ags auth-proxy] denying URL open: {url}");
-    false
+    OpenDecision::Cancel
 }
 
 /// Produce a display-safe URL: strip query string and escape Pango/XML markup characters.
@@ -602,45 +676,94 @@ fn display_url(url: &str) -> String {
         .replace('>', "&gt;")
 }
 
-fn try_zenity(url: &str, has_callback: bool) -> Option<bool> {
+fn prompt_text(url: &str, has_callback: bool, can_proxy: bool) -> String {
     let display = display_url(url);
-    let text = if has_callback {
-        format!(
-            "A sandbox tool wants to open this URL and capture a localhost callback:\n\n{display}\n\nAllow this browser open and callback relay?"
-        )
-    } else {
-        format!("A sandbox tool wants to open this URL:\n\n{display}\n\nAllow this browser open?")
-    };
-
-    let status = std::process::Command::new("zenity")
-        .args([
-            "--question",
-            "--title",
-            "AGS Auth Proxy",
-            "--width",
-            "500",
-            "--no-wrap",
-        ])
-        .arg("--text")
-        .arg(&text)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .ok()?;
-
-    Some(status.success())
+    if has_callback {
+        return format!(
+            "A sandbox tool wants to open this URL and capture a localhost callback:\n\n{display}\n\nChoose OK to open it in the host browser or Cancel to deny."
+        );
+    }
+    if can_proxy {
+        return format!(
+            "A sandbox tool wants to open this URL:\n\n{display}\n\nChoose OK to open the original URL, Proxy to route sandbox localhost through AGS, or Cancel to deny."
+        );
+    }
+    format!(
+        "A sandbox tool wants to open this URL:\n\n{display}\n\nChoose OK to open it or Cancel to deny."
+    )
 }
 
-fn try_kdialog(url: &str, has_callback: bool) -> Option<bool> {
-    let display = display_url(url);
-    let text = if has_callback {
-        format!(
-            "A sandbox tool wants to open this URL and capture a localhost callback:\n\n{display}\n\nAllow?"
-        )
+fn try_zenity(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDecision> {
+    let text = prompt_text(url, has_callback, can_proxy);
+    let mut cmd = std::process::Command::new("zenity");
+    cmd.args([
+        "--question",
+        "--title",
+        "AGS Auth Proxy",
+        "--width",
+        "520",
+        "--no-wrap",
+        "--ok-label",
+        "OK",
+        "--cancel-label",
+        "Cancel",
+    ])
+    .arg("--text")
+    .arg(&text)
+    .stdin(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null());
+    if can_proxy {
+        cmd.args(["--extra-button", "Proxy"]);
+    }
+    let output = cmd.output().ok()?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if can_proxy && stdout == "Proxy" {
+            Some(OpenDecision::Proxy)
+        } else {
+            Some(OpenDecision::OpenOriginal)
+        }
     } else {
-        format!("A sandbox tool wants to open:\n\n{display}\n\nAllow?")
-    };
+        Some(OpenDecision::Cancel)
+    }
+}
+
+fn try_kdialog(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDecision> {
+    let text = prompt_text(url, has_callback, can_proxy);
+
+    if can_proxy {
+        let output = std::process::Command::new("kdialog")
+            .arg("--title")
+            .arg("AGS Auth Proxy")
+            .arg("--menu")
+            .arg(&text)
+            .args([
+                "ok",
+                "Open original URL",
+                "proxy",
+                "Proxy localhost through AGS",
+                "cancel",
+                "Cancel",
+            ])
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return Some(OpenDecision::Cancel);
+        }
+
+        let choice = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .to_ascii_lowercase();
+        return Some(match choice.as_str() {
+            "proxy" => OpenDecision::Proxy,
+            "cancel" => OpenDecision::Cancel,
+            _ => OpenDecision::OpenOriginal,
+        });
+    }
 
     let status = std::process::Command::new("kdialog")
         .args(["--yesno", &text, "--title", "AGS Auth Proxy"])
@@ -650,7 +773,44 @@ fn try_kdialog(url: &str, has_callback: bool) -> Option<bool> {
         .status()
         .ok()?;
 
-    Some(status.success())
+    Some(if status.success() {
+        OpenDecision::OpenOriginal
+    } else {
+        OpenDecision::Cancel
+    })
+}
+
+// --- Localhost proxy rewriting ---
+
+fn is_proxyable_localhost_url(url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    parsed.scheme() == "http"
+        && parsed.port().is_some()
+        && matches!(parsed.host_str(), Some("localhost") | Some("127.0.0.1"))
+}
+
+fn rewrite_localhost_url_via_relay(url: &str, socket_path: &Path) -> Result<String, String> {
+    let parsed = url::Url::parse(url).map_err(|e| format!("invalid URL: {e}"))?;
+    if parsed.scheme() != "http" {
+        return Err("only http://localhost:<port> URLs can be proxied".to_owned());
+    }
+    let Some(port) = parsed.port() else {
+        return Err("localhost proxy requires an explicit port".to_owned());
+    };
+    if !matches!(parsed.host_str(), Some("localhost") | Some("127.0.0.1")) {
+        return Err("proxy option is only available for localhost/127.0.0.1 URLs".to_owned());
+    }
+
+    let base_url = webview_relay::register_local_app(socket_path, port, "/")
+        .map_err(|e| format!("relay registration failed: {e}"))?;
+    let mut rewritten =
+        url::Url::parse(&base_url).map_err(|e| format!("relay returned an invalid URL: {e}"))?;
+    rewritten.set_path(parsed.path());
+    rewritten.set_query(parsed.query());
+    rewritten.set_fragment(parsed.fragment());
+    Ok(rewritten.to_string())
 }
 
 // --- Browser open ---
@@ -668,5 +828,37 @@ fn open_url_on_host(url: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("xdg-open exited with {status}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_proxyable_localhost_url, rewrite_localhost_url_via_relay};
+    use crate::webview_relay;
+
+    #[test]
+    fn proxyable_localhost_detection_requires_http_and_explicit_port() {
+        assert!(is_proxyable_localhost_url("http://localhost:4173/app"));
+        assert!(is_proxyable_localhost_url("http://127.0.0.1:4173/"));
+        assert!(!is_proxyable_localhost_url("https://localhost:4173/app"));
+        assert!(!is_proxyable_localhost_url("http://localhost/app"));
+        assert!(!is_proxyable_localhost_url("http://example.com:4173/app"));
+    }
+
+    #[test]
+    fn relay_rewrite_preserves_path_query_and_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime_dir = dir.path().join("relay-runtime");
+        let guard = webview_relay::start(&runtime_dir).unwrap();
+        let socket_path = guard.runtime_dir.join(webview_relay::SOCKET_NAME);
+
+        let rewritten = rewrite_localhost_url_via_relay(
+            "http://localhost:4173/app/index.html?x=1&y=2#frag",
+            &socket_path,
+        )
+        .unwrap();
+
+        assert!(rewritten.starts_with("http://127.0.0.1:"));
+        assert!(rewritten.ends_with("/app/index.html?x=1&y=2#frag"));
     }
 }

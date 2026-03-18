@@ -8,6 +8,6 @@ pub use parse::{parse_and_validate, parse_and_validate_with_overlay, parse_toml_
 pub use raw::RawConfig;
 pub use types::{
     AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,
-    SecretSource, UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox,
-    ValidatedSecret, ValidatedTool,
+    SecretSource, UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret,
+    ValidatedTool,
 };
