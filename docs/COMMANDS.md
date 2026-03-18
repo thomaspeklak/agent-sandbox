@@ -48,10 +48,12 @@ ags --agent claude -d ~/code -d ~/Downloads
 5. Ensure dedicated SSH agent is running and keys are loaded.
 6. Optionally start browser sidecar (`--browser`).
 7. Start auth proxy (Unix socket + shim in per-run temp dir).
-7b. Optionally start PSP sidecar (`--psp`).
-8. Build launch plan (mounts/env/security/network/entrypoint).
-9. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
-10. Ensure image exists (builds if missing), then run `podman run`.
+8. Optionally start host UI sidecar (`[host_ui].enabled = true`).
+9. Start webview origin relay for sandbox-served app origins.
+10. Optionally start PSP sidecar (`--psp`).
+11. Build launch plan (mounts/env/security/network/entrypoint).
+12. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
+13. Ensure image exists (builds if missing), then run `podman run`.
 
 ### Notes
 
@@ -68,6 +70,8 @@ ags --agent claude -d ~/code -d ~/Downloads
 - `--psp` enables podman-socket-proxy mode. AGS spawns a `psp` sidecar process with a per-run Unix socket, waits for it to be ready, then mounts the socket into the container and sets `DOCKER_HOST` so Docker/Testcontainers clients route through PSP. On exit, AGS sends SIGTERM to allow PSP to clean up any containers it created, then falls back to SIGKILL after 5 seconds. PSP enforces policy-gated access to the host Podman API (deny-by-default, image allowlists, bind mount restrictions). The `psp` binary must be on `PATH` or configured via `[psp].binary` in `config.toml`. PSP picks up its own policy files (global `~/.config/psp/config.json` and project-local `.psp.json`). A stable session identifier (`PSP_SESSION_ID`) is injected into the container environment for tools that support the `x-psp-session-id` header.
 - `--psp-keep` tells PSP to retain containers it created when the session ends (sets `PSP_KEEP_ON_FAILURE=true`). Useful for debugging failed test runs. Stale containers will be cleaned up automatically on the next PSP start (startup sweep).
 - The auth proxy starts automatically on every run. Inside the container, `$BROWSER` points to the auth-proxy-shim. When agent code opens a URL (e.g. OAuth login), the shim sends it to the host proxy over a Unix socket. The host prompts the user via a zenity/kdialog dialog; if allowed, the URL opens in the host browser. For OAuth flows with a `localhost` callback, the host proxy captures the browser redirect and relays it back into the container. If neither `zenity` nor `kdialog` is installed, all URL-open requests are auto-denied. The proxy shuts down and cleans up its temp directory when the container exits. Domains listed in `[auth_proxy].auto_allow_domains` skip the dialog.
+- If `[host_ui].enabled = true`, AGS starts a per-session host UI service and mounts `/run/ags-host-ui` into the sandbox. Sandboxed clients discover it via `AGS_HOST_UI_SOCK`, `AGS_HOST_UI_PROTOCOL`, `AGS_HOST_UI_TRANSPORT`, and `AGS_HOST_UI_SESSION_ID`. The host owns the actual Glimpse window; sandboxed code only sees the socket-backed client API.
+- The webview origin relay also starts automatically. It exposes `AGS_WEBVIEW_RELAY_SOCKET` and `AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET` inside the sandbox plus a helper command `ags-webview-url <port> [base_path]`. Use it when a host-owned webview must load a temporary HTTP app server running on `127.0.0.1:<port>` inside the container. The helper returns a dedicated host origin for that app, but Glimpse-based packages should normally just pass their ordinary localhost URL to `glimpseui` and let Glimpse resolve it automatically.
 - Postgres quick-connect from host into sandbox shell:
   - `ags --agent shell -- -lc 'PGPASSWORD="${PGPASSWORD:-postgres}" psql -h "${AGS_HOST_SERVICES_HOST}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" "${PGDATABASE:-postgres}"'`
 

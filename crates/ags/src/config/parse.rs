@@ -4,11 +4,13 @@ use std::path::{Path, PathBuf};
 use toml::Value;
 
 use crate::config::error::ConfigError;
-use crate::config::raw::{RawAgentMount, RawBrowser, RawConfig, RawMount, RawSecret, RawTool};
+use crate::config::raw::{
+    RawAgentMount, RawBrowser, RawConfig, RawHostUi, RawMount, RawSecret, RawTool,
+};
 use crate::config::types::{
-    AuthProxyConfig, BrowserConfig, MountKind, MountMode, MountWhen, PspConfig, SecretSource,
-    UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret,
-    ValidatedTool,
+    AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,
+    SecretSource, UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox,
+    ValidatedSecret, ValidatedTool,
 };
 
 /// Read, parse, and validate a config TOML file from disk.
@@ -131,6 +133,7 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
     }
 
     let browser = validate_browser(&raw.browser)?;
+    let host_ui = validate_host_ui(&raw.host_ui)?;
 
     Ok(ValidatedConfig {
         config_file: config_path.to_owned(),
@@ -146,6 +149,7 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
         auth_proxy: AuthProxyConfig {
             auto_allow_domains: raw.auth_proxy.auto_allow_domains,
         },
+        host_ui,
         psp: PspConfig {
             binary: raw.psp.binary,
         },
@@ -359,6 +363,33 @@ fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {
         debug_port: raw.debug_port,
         pi_skill_path: raw.pi_skill_path.clone(),
         command_args: raw.command_args.clone(),
+    })
+}
+
+fn validate_host_ui(raw: &RawHostUi) -> Result<HostUiConfig, ConfigError> {
+    let renderer = require_non_empty(&raw.renderer, "[host_ui].renderer")?.to_owned();
+    let log_level = require_non_empty(&raw.log_level, "[host_ui].log_level")?.to_owned();
+    let binary_str = require_non_empty(&raw.binary, "[host_ui].binary")?;
+    let binary = if binary_str.contains('/') || binary_str.starts_with('~') {
+        expand_path(binary_str, "[host_ui].binary")?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        binary_str.to_owned()
+    };
+    let renderer_bin = if raw.renderer_bin.trim().is_empty() {
+        None
+    } else {
+        Some(expand_path(&raw.renderer_bin, "[host_ui].renderer_bin")?)
+    };
+
+    Ok(HostUiConfig {
+        enabled: raw.enabled,
+        binary,
+        renderer,
+        renderer_bin,
+        idle_timeout_ms: raw.idle_timeout_ms,
+        log_level,
     })
 }
 

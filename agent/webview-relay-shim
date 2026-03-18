@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""AGS sandbox-side webview relay shim.
+
+Listens on a Unix socket inside the shared AGS runtime dir. The host relay
+connects to this socket and asks the shim to forward HTTP requests to
+sandbox-local app servers.
+
+Protocol: one JSON object per line, one response per connection.
+"""
+
+import base64
+import http.client
+import json
+import os
+import socket
+import sys
+import threading
+
+SOCK_PATH = os.environ.get("AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET", "/run/ags-webview-relay/upstream.sock")
+MAX_LINE = 1024 * 1024
+
+
+def log(msg: str) -> None:
+    print(f"[ags-webview-relay] {msg}", file=sys.stderr, flush=True)
+
+
+def normalize_base_path(value: str | None) -> str:
+    if not value:
+        return "/"
+    if not value.startswith("/"):
+        value = "/" + value
+    if len(value) > 1 and value.endswith("/"):
+        value = value[:-1]
+    return value or "/"
+
+
+def join_path(base_path: str, request_path: str | None) -> str:
+    extra = request_path or "/"
+    if not extra:
+        extra = "/"
+    if extra.startswith("?"):
+        extra = "/" + extra
+    elif not extra.startswith("/"):
+        extra = "/" + extra
+
+    if base_path == "/":
+        return extra
+    if extra == "/":
+        return base_path
+    if extra.startswith("/?"):
+        return base_path + extra[1:]
+    if extra == base_path or extra.startswith(base_path + "/") or extra.startswith(base_path + "?"):
+        return extra
+    return base_path + extra
+
+
+def read_json_line(conn: socket.socket) -> dict:
+    data = bytearray()
+    while True:
+        chunk = conn.recv(4096)
+        if not chunk:
+            break
+        data.extend(chunk)
+        if len(data) > MAX_LINE:
+            raise ValueError("message too large")
+        if b"\n" in chunk:
+            break
+    if not data:
+        raise ValueError("empty request")
+    line = bytes(data).split(b"\n", 1)[0]
+    return json.loads(line.decode("utf-8"))
+
+
+def write_json(conn: socket.socket, payload: dict) -> None:
+    conn.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+
+
+def handle_http_request(msg: dict) -> dict:
+    port = msg.get("port")
+    if not isinstance(port, int) or port < 1 or port > 65535:
+        return {"ok": False, "error": "invalid port"}
+
+    method = msg.get("method")
+    if not isinstance(method, str) or not method:
+        return {"ok": False, "error": "missing method"}
+
+    base_path = normalize_base_path(msg.get("base_path"))
+    request_path = msg.get("path")
+    upstream_path = join_path(base_path, request_path)
+
+    raw_headers = msg.get("headers") or []
+    headers = {}
+    for pair in raw_headers:
+        if not isinstance(pair, list) or len(pair) != 2:
+            continue
+        key, value = pair
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        if key.lower() in {
+            "host",
+            "connection",
+            "content-length",
+            "proxy-connection",
+            "upgrade",
+        }:
+            continue
+        headers[key] = value
+
+    body_b64 = msg.get("body_base64") or ""
+    try:
+        body = base64.b64decode(body_b64) if body_b64 else b""
+    except Exception:
+        return {"ok": False, "error": "invalid body_base64"}
+
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
+        conn.request(method, upstream_path, body=body, headers=headers)
+        response = conn.getresponse()
+        payload = response.read()
+        out_headers = []
+        for key, value in response.getheaders():
+            if key.lower() in {"connection", "transfer-encoding", "keep-alive"}:
+                continue
+            out_headers.append([key, value])
+        return {
+            "ok": True,
+            "status": int(response.status),
+            "reason": response.reason,
+            "headers": out_headers,
+            "body_base64": base64.b64encode(payload).decode("ascii"),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def handle_message(msg: dict) -> dict:
+    kind = msg.get("type")
+    if kind == "http_request":
+        return handle_http_request(msg)
+    return {"ok": False, "error": f"unknown request type: {kind}"}
+
+
+def handle_conn(conn: socket.socket) -> None:
+    with conn:
+        try:
+            msg = read_json_line(conn)
+            write_json(conn, handle_message(msg))
+        except Exception as exc:
+            write_json(conn, {"ok": False, "error": str(exc)})
+
+
+def main() -> int:
+    os.makedirs(os.path.dirname(SOCK_PATH), exist_ok=True)
+    try:
+        os.unlink(SOCK_PATH)
+    except FileNotFoundError:
+        pass
+
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(SOCK_PATH)
+    os.chmod(SOCK_PATH, 0o666)
+    server.listen(64)
+    log(f"listening on {SOCK_PATH}")
+
+    try:
+        while True:
+            conn, _ = server.accept()
+            threading.Thread(target=handle_conn, args=(conn,), daemon=True).start()
+    finally:
+        server.close()
+        try:
+            os.unlink(SOCK_PATH)
+        except FileNotFoundError:
+            pass
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

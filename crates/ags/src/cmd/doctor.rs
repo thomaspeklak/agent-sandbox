@@ -23,6 +23,7 @@ pub fn run(config: &ValidatedConfig) -> bool {
     check_secrets(&mut ck, config);
     check_sessions(&mut ck, config);
     check_browser(&mut ck, config);
+    check_host_ui(&mut ck, config);
 
     ck.print_summary();
     ck.fail_count == 0
@@ -362,5 +363,52 @@ fn check_browser(ck: &mut Checker, config: &ValidatedConfig) {
         ));
     } else {
         ck.warn("browser pi skill path is empty; browser tooling skill won't auto-load");
+    }
+}
+
+fn check_host_ui(ck: &mut Checker, config: &ValidatedConfig) {
+    ck.section("Host UI bridge (optional)");
+    if !config.host_ui.enabled {
+        ck.warn("host UI bridge disabled in config");
+        return;
+    }
+
+    let binary = &config.host_ui.binary;
+    if binary.contains('/') {
+        let path = Path::new(binary);
+        if path.exists() && is_executable(path) {
+            ck.ok(&format!("host UI binary is executable: {binary}"));
+        } else {
+            ck.fail(&format!("host UI binary missing or not executable: {binary}"));
+        }
+    } else if has_command(binary) {
+        ck.ok(&format!("host UI binary available on PATH: {binary}"));
+    } else {
+        ck.fail(&format!("host UI binary not found on PATH: {binary}"));
+    }
+
+    if config.host_ui.renderer.eq_ignore_ascii_case("process")
+        || config.host_ui.renderer.eq_ignore_ascii_case("glimpse")
+    {
+        if let Some(renderer_bin) = &config.host_ui.renderer_bin {
+            if renderer_bin.exists() && is_executable(renderer_bin) {
+                ck.ok(&format!(
+                    "host UI renderer binary present: {}",
+                    renderer_bin.display()
+                ));
+            } else {
+                ck.fail(&format!(
+                    "host UI renderer binary missing or not executable: {}",
+                    renderer_bin.display()
+                ));
+            }
+        } else {
+            ck.fail("host UI renderer=process requires [host_ui].renderer_bin");
+        }
+    } else {
+        ck.ok(&format!(
+            "host UI renderer configured: {}",
+            config.host_ui.renderer
+        ));
     }
 }

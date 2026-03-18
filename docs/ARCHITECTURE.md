@@ -33,8 +33,15 @@
   - Ephemeral auth proxy for sandbox browser opens and OAuth loopback callbacks.
   - `protocol.rs`: JSON-over-Unix-socket message types (`ShimMessage`, `HostMessage`).
   - `host.rs`: host-side proxy — Unix socket listener, user prompt via zenity/kdialog, callback relay.
+- `host_ui.rs`
+  - Session-scoped host UI sidecar lifecycle for sandbox-safe Glimpse windows.
+  - Starts `glimpse-host-ui`, waits for its Unix socket, and cleans it up on session end.
+- `webview_relay.rs`
+  - Session-scoped host HTTP relay for host-owned webviews that need to reach sandbox-local temporary app servers.
+  - Pairs with embedded sandbox helper scripts written by `assets.rs`.
+  - `glimpseui` is the intended owner of localhost-to-relay URL resolution for Glimpse-based packages.
 - `assets.rs`
-  - Writes embedded Containerfile/guard/settings/auth-proxy-shim.
+  - Writes embedded Containerfile/guard/settings/auth-proxy-shim/webview relay assets.
 
 ---
 

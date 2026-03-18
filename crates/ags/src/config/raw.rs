@@ -22,6 +22,8 @@ pub struct RawConfig {
     #[serde(default)]
     pub auth_proxy: RawAuthProxy,
     #[serde(default)]
+    pub host_ui: RawHostUi,
+    #[serde(default)]
     pub psp: RawPsp,
 }
 
@@ -133,6 +135,35 @@ pub struct RawAuthProxy {
     pub auto_allow_domains: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RawHostUi {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_host_ui_binary")]
+    pub binary: String,
+    #[serde(default = "default_host_ui_renderer")]
+    pub renderer: String,
+    #[serde(default)]
+    pub renderer_bin: String,
+    #[serde(default = "default_host_ui_idle_timeout_ms")]
+    pub idle_timeout_ms: u64,
+    #[serde(default = "default_host_ui_log_level")]
+    pub log_level: String,
+}
+
+impl Default for RawHostUi {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            binary: default_host_ui_binary(),
+            renderer: default_host_ui_renderer(),
+            renderer_bin: String::new(),
+            idle_timeout_ms: default_host_ui_idle_timeout_ms(),
+            log_level: default_host_ui_log_level(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct RawPsp {
     #[serde(default)]
@@ -161,4 +192,20 @@ fn default_pi_spec() -> String {
 
 fn default_release_age() -> u32 {
     1440
+}
+
+fn default_host_ui_binary() -> String {
+    "glimpse-host-ui".to_owned()
+}
+
+fn default_host_ui_renderer() -> String {
+    "stub".to_owned()
+}
+
+fn default_host_ui_idle_timeout_ms() -> u64 {
+    30_000
+}
+
+fn default_host_ui_log_level() -> String {
+    "info".to_owned()
 }

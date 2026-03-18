@@ -3,8 +3,8 @@ use std::path::Path;
 
 use ags::cmd::doctor;
 use ags::config::{
-    AuthProxyConfig, BrowserConfig, MountKind, MountMode, MountWhen, PspConfig, UpdateConfig,
-    ValidatedConfig, ValidatedMount, ValidatedSandbox,
+    AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,
+    UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox,
 };
 
 fn minimal_config(tmp: &Path) -> ValidatedConfig {
@@ -51,6 +51,7 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
         browser: BrowserConfig::default(),
         update: UpdateConfig::default(),
         auth_proxy: AuthProxyConfig::default(),
+        host_ui: HostUiConfig::default(),
         psp: PspConfig::default(),
     }
 }

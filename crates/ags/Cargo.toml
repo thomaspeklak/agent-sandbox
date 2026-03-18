@@ -4,6 +4,7 @@ version = "0.7.0"
 edition = "2024"
 
 [dependencies]
+base64 = "0.22"
 dirs = "6"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }

@@ -31,6 +31,19 @@ pub fn run(config: &ValidatedConfig) -> Result<(), SetupError> {
 
     store_secrets_interactive(config)?;
 
+    if config.host_ui.enabled {
+        println!(
+            "\nHost UI bridge is enabled. Ensure '{}' is installed{}.",
+            config.host_ui.binary,
+            config
+                .host_ui
+                .renderer_bin
+                .as_ref()
+                .map(|path| format!(" and renderer_bin points to {}", path.display()))
+                .unwrap_or_default()
+        );
+    }
+
     println!(
         "\nSetup complete.\n\n\
          Next steps:\n\

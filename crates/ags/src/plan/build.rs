@@ -12,6 +12,8 @@ use crate::config::{
 };
 use crate::git;
 use crate::plan::types::*;
+use crate::host_ui::HostUiGuard;
+use crate::webview_relay::WebviewRelayGuard;
 
 // Container-side path constants.
 const CONTAINER_HOME: &str = "/home/dev";
@@ -28,6 +30,9 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub ssh_auth_sock: Option<&'a Path>,
     pub resolved_secrets: &'a HashMap<String, String>,
     pub auth_proxy_runtime_dir: Option<&'a Path>,
+    pub host_ui_runtime_dir: Option<&'a Path>,
+    pub host_ui_session_id: Option<&'a str>,
+    pub webview_relay_runtime_dir: Option<&'a Path>,
     pub psp_socket: Option<&'a Path>,
     pub psp_session_id: Option<&'a str>,
     pub extra_mount_dirs: &'a [PathBuf],
@@ -39,6 +44,9 @@ struct BuildEnvOptions<'a> {
     write_roots: &'a [String],
     resolved_secrets: &'a HashMap<String, String>,
     auth_proxy_enabled: bool,
+    host_ui_enabled: bool,
+    host_ui_session_id: Option<&'a str>,
+    webview_relay_enabled: bool,
     psp_enabled: bool,
     psp_session_id: Option<&'a str>,
     guard_enabled: bool,
@@ -71,6 +79,9 @@ pub fn build_launch_plan(
         ssh_auth_sock,
         resolved_secrets,
         auth_proxy_runtime_dir,
+        host_ui_runtime_dir,
+        host_ui_session_id,
+        webview_relay_runtime_dir,
         psp_socket,
         psp_session_id,
         extra_mount_dirs,
@@ -167,6 +178,32 @@ pub fn build_launch_plan(
         });
     }
 
+    // Host UI service runtime dir mount
+    if let Some(runtime_dir) = host_ui_runtime_dir {
+        mounts.push(PlanMount {
+            host: runtime_dir.to_owned(),
+            container: HostUiGuard::container_runtime_dir().to_owned(),
+            mode: MountMode::Rw,
+        });
+    }
+
+    // Webview relay runtime dir + helper for sandbox-local app servers
+    if let Some(runtime_dir) = webview_relay_runtime_dir {
+        mounts.push(PlanMount {
+            host: runtime_dir.to_owned(),
+            container: WebviewRelayGuard::container_runtime_dir().to_owned(),
+            mode: MountMode::Rw,
+        });
+
+        let helper_host = runtime_dir.join("ags-webview-url");
+        let helper_container = format!("{CONTAINER_HOME}/.local/bin/ags-webview-url");
+        mounts.push(PlanMount {
+            host: helper_host,
+            container: helper_container,
+            mode: MountMode::Ro,
+        });
+    }
+
     // PSP socket mount
     if let Some(sock) = psp_socket
         && let Some(sock_dir) = sock.parent()
@@ -192,6 +229,9 @@ pub fn build_launch_plan(
             write_roots: &write_roots,
             resolved_secrets,
             auth_proxy_enabled: auth_proxy_runtime_dir.is_some(),
+            host_ui_enabled: host_ui_runtime_dir.is_some(),
+            host_ui_session_id,
+            webview_relay_enabled: webview_relay_runtime_dir.is_some(),
             psp_enabled: psp_socket.is_some(),
             psp_session_id,
             guard_enabled,
@@ -213,6 +253,7 @@ pub fn build_launch_plan(
         &config.browser,
         browser_mode,
         tmux_mode,
+        webview_relay_runtime_dir.is_some(),
     );
 
     Ok(LaunchPlan {
@@ -542,6 +583,9 @@ fn build_env(
         write_roots,
         resolved_secrets,
         auth_proxy_enabled,
+        host_ui_enabled,
+        host_ui_session_id,
+        webview_relay_enabled,
         psp_enabled,
         psp_session_id,
         guard_enabled,
@@ -592,6 +636,43 @@ fn build_env(
         inline.push((
             "BROWSER".to_owned(),
             format!("{CONTAINER_HOME}/.local/bin/auth-proxy-shim"),
+        ));
+    }
+
+    if host_ui_enabled {
+        inline.push((
+            "AGS_HOST_UI_SOCK".to_owned(),
+            HostUiGuard::container_socket_path().to_owned(),
+        ));
+        inline.push((
+            "AGS_HOST_UI_PROTOCOL".to_owned(),
+            "1".to_owned(),
+        ));
+        inline.push((
+            "AGS_HOST_UI_TRANSPORT".to_owned(),
+            "socket".to_owned(),
+        ));
+        inline.push((
+            "AGS_HOST_UI_HINT".to_owned(),
+            "[ags] Host UI available through mounted socket; host owns Glimpse windows".to_owned(),
+        ));
+        if let Some(session_id) = host_ui_session_id {
+            inline.push(("AGS_HOST_UI_SESSION_ID".to_owned(), session_id.to_owned()));
+        }
+    }
+
+    if webview_relay_enabled {
+        inline.push((
+            "AGS_WEBVIEW_RELAY_SOCKET".to_owned(),
+            WebviewRelayGuard::container_socket_path().to_owned(),
+        ));
+        inline.push((
+            "AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET".to_owned(),
+            WebviewRelayGuard::container_upstream_socket_path().to_owned(),
+        ));
+        inline.push((
+            "AGS_WEBVIEW_URL_HELPER".to_owned(),
+            format!("{CONTAINER_HOME}/.local/bin/ags-webview-url"),
         ));
     }
 
@@ -649,6 +730,7 @@ fn build_entrypoint(
     browser: &BrowserConfig,
     browser_mode: bool,
     tmux_mode: bool,
+    webview_relay_enabled: bool,
 ) -> String {
     let mut script = String::new();
 
@@ -675,6 +757,18 @@ fn build_entrypoint(
              TCP:10.0.2.2:{port} >/tmp/ags-socat.log 2>&1 & ",
             port = browser.debug_port
         ));
+    }
+
+    if webview_relay_enabled {
+        script.push_str(
+            "if [ -n \"${AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET:-}\" ]; then \
+                if command -v python3 >/dev/null 2>&1; then \
+                    python3 /run/ags-webview-relay/webview-relay-shim >/tmp/ags-webview-relay.log 2>&1 & \
+                else \
+                    echo '[ags] warning: python3 is missing; sandbox webview relay will not work in this sandbox.' >&2; \
+                fi; \
+            fi; ",
+        );
     }
 
     script.push_str(&format!(

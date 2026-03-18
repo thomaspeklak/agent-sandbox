@@ -10,6 +10,8 @@ pub const GUARD_SKILL_MD: &str = include_str!("../../../agent/hooks/skills/guard
 pub const GUARD_PLUGIN_JSON: &str = include_str!("../../../agent/hooks/.claude-plugin/plugin.json");
 pub const SETTINGS_EXAMPLE: &str = include_str!("../../../agent/settings.example.json");
 pub const AUTH_PROXY_SHIM: &str = include_str!("../../../agent/auth-proxy-shim");
+pub const WEBVIEW_RELAY_SHIM: &str = include_str!("../../../agent/webview-relay-shim");
+pub const WEBVIEW_URL_HELPER: &str = include_str!("../../../agent/webview-url-helper");
 
 /// Write the embedded Containerfile to `path`, always overwriting.
 pub fn ensure_containerfile(path: &Path) -> io::Result<()> {
@@ -81,6 +83,25 @@ pub fn ensure_auth_proxy_shim(dir: &Path) -> io::Result<()> {
     let target = dir.join("auth-proxy-shim");
     fs::write(&target, AUTH_PROXY_SHIM)?;
     set_permissions(&target, 0o755);
+    Ok(())
+}
+
+/// Write the embedded sandbox-side webview relay shim and helper into `dir`.
+///
+/// Files written:
+///   <dir>/webview-relay-shim
+///   <dir>/ags-webview-url
+pub fn ensure_webview_relay_assets(dir: &Path) -> io::Result<()> {
+    fs::create_dir_all(dir)?;
+
+    let shim = dir.join("webview-relay-shim");
+    fs::write(&shim, WEBVIEW_RELAY_SHIM)?;
+    set_permissions(&shim, 0o755);
+
+    let helper = dir.join("ags-webview-url");
+    fs::write(&helper, WEBVIEW_URL_HELPER)?;
+    set_permissions(&helper, 0o755);
+
     Ok(())
 }
 

@@ -231,7 +231,60 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     }
 
-    // 6c. PSP sidecar
+    // 6c. Host UI service for sandbox-safe Glimpse windows
+    let _host_ui_guard;
+    let host_ui_runtime_dir;
+    let host_ui_session_id;
+    {
+        let runtime_base = ags::util::runtime_dir();
+        let dir = runtime_base.join(format!("ags-host-ui-{}", std::process::id()));
+        let session_id = format!("ags-{}-{}", opts.agent.as_str(), std::process::id());
+
+        if config.host_ui.enabled {
+            match ags::host_ui::start(&dir, session_id.clone(), &config.host_ui) {
+                Ok(guard) => {
+                    host_ui_runtime_dir = Some(guard.runtime_dir.clone());
+                    host_ui_session_id = Some(guard.session_id.clone());
+                    _host_ui_guard = Some(guard);
+                }
+                Err(e) => {
+                    eprintln!("warning: host UI: {e}");
+                    host_ui_runtime_dir = None;
+                    host_ui_session_id = None;
+                    _host_ui_guard = None;
+                }
+            }
+        } else {
+            host_ui_runtime_dir = None;
+            host_ui_session_id = None;
+            _host_ui_guard = None;
+        }
+    }
+
+    // 6d. Webview relay for host-owned webviews backed by sandbox-local app servers
+    let _webview_relay_guard;
+    let webview_relay_runtime_dir;
+    {
+        let runtime_base = ags::util::runtime_dir();
+        let dir = runtime_base.join(format!("ags-webview-relay-{}", std::process::id()));
+
+        match ags::webview_relay::start(&dir) {
+            Ok(guard) => {
+                if let Err(e) = ags::assets::ensure_webview_relay_assets(&guard.runtime_dir) {
+                    eprintln!("warning: webview relay assets write failed: {e}");
+                }
+                webview_relay_runtime_dir = Some(guard.runtime_dir.clone());
+                _webview_relay_guard = Some(guard);
+            }
+            Err(e) => {
+                eprintln!("warning: webview relay: {e}");
+                webview_relay_runtime_dir = None;
+                _webview_relay_guard = None;
+            }
+        }
+    }
+
+    // 6e. PSP sidecar
     let _psp_guard;
     let psp_socket;
     let psp_session_id;
@@ -279,6 +332,9 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             ssh_auth_sock: ssh_sock.as_deref(),
             resolved_secrets: &resolved_secrets,
             auth_proxy_runtime_dir: auth_proxy_runtime_dir.as_deref(),
+            host_ui_runtime_dir: host_ui_runtime_dir.as_deref(),
+            host_ui_session_id: host_ui_session_id.as_deref(),
+            webview_relay_runtime_dir: webview_relay_runtime_dir.as_deref(),
             psp_socket: psp_socket.as_deref(),
             psp_session_id: psp_session_id.as_deref(),
             extra_mount_dirs: &opts.add_dirs,
@@ -421,6 +477,13 @@ container = "/home/dev/.config/opencode"
 [[agent_mount]]
 host = "~/.gemini"
 container = "/home/dev/.gemini"
+
+[host_ui]
+enabled = false
+binary = "glimpse-host-ui"
+renderer = "stub"
+idle_timeout_ms = 30000
+log_level = "info"
 "#;
 
 fn default_config_path() -> PathBuf {

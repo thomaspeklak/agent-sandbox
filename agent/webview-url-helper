@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Print a host-reachable URL for a sandbox-local web app.
+
+Usage:
+  ags-webview-url <port> [base_path]
+"""
+
+import json
+import os
+import socket
+import sys
+import time
+
+SOCK_PATH = os.environ.get("AGS_WEBVIEW_RELAY_SOCKET", "/run/ags-webview-relay/relay.sock")
+
+
+def fail(message: str, code: int = 1) -> int:
+    print(message, file=sys.stderr)
+    return code
+
+
+def connect_with_retry(path: str, attempts: int = 40, delay: float = 0.1) -> socket.socket:
+    last_exc = None
+    for _ in range(attempts):
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.connect(path)
+            return sock
+        except OSError as exc:
+            last_exc = exc
+            time.sleep(delay)
+    raise ConnectionError(f"could not connect to relay socket at {path}: {last_exc}")
+
+
+def main() -> int:
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        return fail("Usage: ags-webview-url <port> [base_path]")
+    try:
+        port = int(sys.argv[1])
+    except ValueError:
+        return fail(f"invalid port: {sys.argv[1]}")
+    base_path = sys.argv[2] if len(sys.argv) == 3 else "/"
+
+    try:
+        sock = connect_with_retry(SOCK_PATH)
+        with sock:
+            payload = {
+                "type": "register",
+                "port": port,
+                "base_path": base_path,
+            }
+            sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+            response = sock.recv(65536)
+        if not response:
+            return fail("relay closed connection without a response")
+        msg = json.loads(response.decode("utf-8").splitlines()[0])
+        if not msg.get("ok"):
+            return fail(f"relay error: {msg.get('error', 'unknown error')}")
+        url = msg.get("url")
+        if not isinstance(url, str) or not url:
+            return fail("relay returned no url")
+        print(url)
+        return 0
+    except Exception as exc:
+        return fail(str(exc))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

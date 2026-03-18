@@ -13,6 +13,7 @@ pub struct ValidatedConfig {
     pub browser: BrowserConfig,
     pub update: UpdateConfig,
     pub auth_proxy: AuthProxyConfig,
+    pub host_ui: HostUiConfig,
     pub psp: PspConfig,
 }
 
@@ -156,6 +157,29 @@ pub struct UpdateConfig {
 #[derive(Debug, Clone, Default)]
 pub struct AuthProxyConfig {
     pub auto_allow_domains: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HostUiConfig {
+    pub enabled: bool,
+    pub binary: String,
+    pub renderer: String,
+    pub renderer_bin: Option<PathBuf>,
+    pub idle_timeout_ms: u64,
+    pub log_level: String,
+}
+
+impl Default for HostUiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            binary: "glimpse-host-ui".to_owned(),
+            renderer: "stub".to_owned(),
+            renderer_bin: None,
+            idle_timeout_ms: 30_000,
+            log_level: "info".to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
