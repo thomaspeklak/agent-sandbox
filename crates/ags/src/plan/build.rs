@@ -37,6 +37,7 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub psp_socket: Option<&'a Path>,
     pub psp_session_id: Option<&'a str>,
     pub extra_mount_dirs: &'a [PathBuf],
+    pub stop_when_done: bool,
 }
 
 /// Intermediate env-assembly context. Sidecar fields mirror
@@ -89,6 +90,7 @@ pub fn build_launch_plan(
         psp_socket,
         psp_session_id,
         extra_mount_dirs,
+        stop_when_done,
     } = options;
     let profile = agent::profile_for_with_guards(agent, config, guard_enabled);
     let workdir_mapping = resolve_workdir(workdir)?;
@@ -258,6 +260,7 @@ pub fn build_launch_plan(
         browser_mode,
         tmux_mode,
         webview_relay_runtime_dir.is_some(),
+        stop_when_done,
     );
 
     Ok(LaunchPlan {
@@ -709,6 +712,7 @@ fn build_entrypoint(
     browser_mode: bool,
     tmux_mode: bool,
     webview_relay_enabled: bool,
+    stop_when_done: bool,
 ) -> String {
     let mut script = String::new();
 
@@ -760,7 +764,17 @@ fn build_entrypoint(
             "if ! command -v tmux >/dev/null 2>&1; then echo '[ags] tmux is not available in the sandbox image. Run `ags update` to rebuild the image with tmux support.' >&2; exit 127; fi; ",
         );
         script.push_str("cat > /tmp/ags-run-in-tmux.sh <<'EOF'\n#!/usr/bin/env bash\n");
-        script.push_str(&agent_exec);
+        if stop_when_done {
+            script.push_str(&agent_exec);
+        } else {
+            // Strip leading "exec " so the agent runs as a child process and the
+            // script continues after it exits.
+            let child_cmd = agent_exec.strip_prefix("exec ").unwrap_or(&agent_exec);
+            script.push_str(child_cmd);
+            script.push_str("\nAGS_EXIT=$?");
+            script.push_str("\necho \"[ags] Agent exited (code $AGS_EXIT). Shell is ready — type 'exit' to stop the container.\"");
+            script.push_str("\nexec bash");
+        }
         script.push_str("\nEOF\n");
         script.push_str("chmod +x /tmp/ags-run-in-tmux.sh; ");
         script.push_str("exec tmux new-session -A -s ags /tmp/ags-run-in-tmux.sh \"$@\"");

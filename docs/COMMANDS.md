@@ -8,7 +8,7 @@ This document explains what each `ags` command does and what side effects to exp
 
 ```bash
 ags [command]
-ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--psp] [--psp-keep] [--yolo] [--config PATH] [--add-dir PATH ...] -- [agent args...]
+ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--config PATH] [--add-dir PATH ...] -- [agent args...]
 ```
 
 Subcommands:
@@ -66,7 +66,8 @@ ags --agent claude -d ~/code -d ~/Downloads
 - Runtime env vars are injected for discoverability: `AGS_HOST_SERVICES_HOST` and `AGS_HOST_SERVICES_HINT`.
 - `pi`/`claude`/`codex` runs also inject a short host-service hint into prompt context.
 - Interactive launches print a one-line host-service reminder before the agent CLI starts.
-- `--tmux` wraps the agent command in a tmux session inside the container; this is opt-in and does not change the default launch behavior.
+- `--tmux` wraps the agent command in a tmux session inside the container. After the agent exits, an interactive shell remains available for inspection. Combine with `--stop-when-done` to exit immediately instead.
+- `--stop-when-done` (requires `--tmux`) exits the container as soon as the agent process finishes instead of dropping to an interactive shell. Useful for batch/CI runs where you don't need post-task inspection.
 - `--psp` enables podman-socket-proxy mode. AGS spawns a `psp` sidecar process with a per-run Unix socket, waits for it to be ready, then mounts the socket into the container and sets `DOCKER_HOST` so Docker/Testcontainers clients route through PSP. On exit, AGS sends SIGTERM to allow PSP to clean up any containers it created, then falls back to SIGKILL after 5 seconds. PSP enforces policy-gated access to the host Podman API (deny-by-default, image allowlists, bind mount restrictions). The `psp` binary must be on `PATH` or configured via `[psp].binary` in `config.toml`. PSP picks up its own policy files (global `~/.config/psp/config.json` and project-local `.psp.json`). A stable session identifier (`PSP_SESSION_ID`) is injected into the container environment for tools that support the `x-psp-session-id` header.
 - `--psp-keep` tells PSP to retain containers it created when the session ends (sets `PSP_KEEP_ON_FAILURE=true`). Useful for debugging failed test runs. Stale containers will be cleaned up automatically on the next PSP start (startup sweep).
 - The auth proxy starts automatically on every run. Inside the container, `$BROWSER` points to the auth-proxy-shim. When agent code opens a URL (e.g. OAuth login), the shim sends it to the host proxy over a Unix socket. The host prompts the user via a zenity/kdialog dialog. Standard URLs get **Open** / **Cancel**. If the target itself is `http://localhost:<port>/...` or `http://127.0.0.1:<port>/...` and the AGS webview relay is available, the dialog also offers **Proxy**, which rewrites the URL through the same dedicated host-port relay used for sandbox-served Glimpse apps. When AGS host UI is enabled, Proxy prefers opening that relayed URL in a host-owned Glimpse window; otherwise it falls back to the normal host browser. For OAuth flows with a `localhost` callback, the host proxy captures the browser redirect and relays it back into the container. If neither `zenity` nor `kdialog` is installed, all URL-open requests are auto-denied. The proxy shuts down and cleans up its temp directory when the container exits. Domains listed in `[auth_proxy].auto_allow_domains` skip the dialog.

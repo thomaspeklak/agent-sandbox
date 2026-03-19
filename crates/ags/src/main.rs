@@ -300,6 +300,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             psp_socket: _psp_guard.as_ref().map(|g| g.socket_path.as_path()),
             psp_session_id: psp_session_id.as_deref(),
             extra_mount_dirs: &opts.add_dirs,
+            stop_when_done: opts.stop_when_done,
         },
     ) {
         Ok(p) => p,
