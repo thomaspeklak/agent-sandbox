@@ -172,23 +172,16 @@ fn validate_command(command: &str) -> Result<(), BrowserError> {
 
 /// Spawn the browser as a detached background process.
 fn spawn_browser(config: &BrowserConfig) -> Result<Child, BrowserError> {
-    let mut cmd = Command::new(&config.command);
-
-    for arg in &config.command_args {
-        cmd.arg(arg);
-    }
-
-    cmd.arg(format!("--remote-debugging-port={}", config.debug_port));
-    cmd.arg(format!("--user-data-dir={}", config.profile_dir.display()));
-    cmd.arg("--no-first-run");
-    cmd.arg("--no-default-browser-check");
-    cmd.arg("about:blank");
-
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::null());
-    cmd.stderr(Stdio::null());
-
-    cmd.spawn().map_err(BrowserError::SpawnFailed)
+    Command::new(&config.command)
+        .args(&config.command_args)
+        .arg(format!("--remote-debugging-port={}", config.debug_port))
+        .arg(format!("--user-data-dir={}", config.profile_dir.display()))
+        .args(["--no-first-run", "--no-default-browser-check", "about:blank"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(BrowserError::SpawnFailed)
 }
 
 /// Poll the debug port until the browser is ready or timeout.

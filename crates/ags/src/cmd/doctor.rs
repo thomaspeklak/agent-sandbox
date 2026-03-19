@@ -5,9 +5,9 @@ use std::path::Path;
 use crate::config::{MountWhen, SecretSource, ValidatedConfig};
 
 use super::doctor_util::{
-    Checker, check_optional_cmd, check_required_cmd, file_non_empty, git_config_get, has_command,
-    image_has_binary, is_executable, is_pid_alive, is_port_open, list_agent_keys,
-    podman_image_exists, pub_key_path, read_agent_env, secret_tool_has_value, socket_exists,
+    Checker, check_optional_cmd, check_required_cmd, file_non_empty, git_config_get, is_pid_alive,
+    is_port_open, list_agent_keys, pub_key_path, read_agent_env, secret_tool_has_value,
+    socket_exists,
 };
 
 /// Run the doctor command: health-check the sandbox environment.
@@ -45,7 +45,8 @@ fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
     let _ = crate::assets::ensure_containerfile(&config.sandbox.containerfile);
     let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
     let _ = crate::assets::ensure_tmux_conf(&tmux_conf);
-    if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {
+    let pi_host = config.mount_host_for_container("/home/dev/.pi");
+    if let Some(pi_host) = pi_host {
         let _ = crate::assets::ensure_guard_extension(&pi_host.join("agent"));
     }
     let hooks_dir = config.sandbox.cache_dir.join("ags-hooks");
@@ -54,7 +55,7 @@ fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
 
     check_file_exists(ck, &config.sandbox.containerfile, "Containerfile", true);
     check_file_exists(ck, &tmux_conf, "tmux config", true);
-    if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {
+    if let Some(pi_host) = pi_host {
         let pi_agent_dir = pi_host.join("agent");
         let settings = pi_agent_dir.join("settings.json");
         check_file_exists(ck, &settings, "sandbox settings", true);
@@ -116,7 +117,7 @@ fn check_integrations(ck: &mut Checker, config: &ValidatedConfig) {
         ck.warn("no tools configured in [[tool]]");
     }
     for tool in &config.tools {
-        if tool.path.exists() && is_executable(&tool.path) {
+        if tool.path.exists() && crate::util::is_executable(&tool.path) {
             ck.ok(&format!(
                 "tool '{}' binary present: {}",
                 tool.name,
@@ -159,9 +160,9 @@ fn check_mount(ck: &mut Checker, mount: &crate::config::ValidatedMount) {
 fn check_container_image(ck: &mut Checker, config: &ValidatedConfig) {
     ck.section("Container image/runtime");
     let image = &config.sandbox.image;
-    if podman_image_exists(image) {
+    if crate::podman::image_exists(image) {
         ck.ok(&format!("image exists: {image}"));
-        match image_has_binary(image, "dcg") {
+        match crate::podman::image_has_binary(image, "dcg") {
             Ok(true) => ck.ok("bundled dcg available inside sandbox image"),
             Ok(false) => ck.fail(
                 "bundled dcg missing inside sandbox image; Pi/Claude Bash guards will fail open (run 'ags update')",
@@ -315,10 +316,11 @@ fn check_sessions(ck: &mut Checker, config: &ValidatedConfig) {
             pi_dir.display()
         ));
     }
-    if pi_dir.join("sessions").is_dir() {
+    let sessions_dir = pi_dir.join("sessions");
+    if sessions_dir.is_dir() {
         ck.ok(&format!(
             "sessions directory present: {}",
-            pi_dir.join("sessions").display()
+            sessions_dir.display()
         ));
     } else {
         ck.warn("sessions directory not created yet (will appear after first session)");
@@ -330,24 +332,35 @@ fn check_sessions(ck: &mut Checker, config: &ValidatedConfig) {
     }
 }
 
+/// Check whether a binary (given as a command name or absolute path) is
+/// available. Returns `true` when found, `false` otherwise.  On failure the
+/// checker records either a `warn` or `fail` depending on `required`.
+fn check_binary(ck: &mut Checker, binary: &str, label: &str, required: bool) -> bool {
+    if binary.contains('/') {
+        let path = Path::new(binary);
+        if path.exists() && crate::util::is_executable(path) {
+            ck.ok(&format!("{label} is executable: {binary}"));
+            return true;
+        }
+        let msg = format!("{label} missing or not executable: {binary}");
+        if required { ck.fail(&msg); } else { ck.warn(&msg); }
+    } else if crate::util::has_command(binary) {
+        ck.ok(&format!("{label} available on PATH: {binary}"));
+        return true;
+    } else {
+        let msg = format!("{label} not found on PATH: {binary}");
+        if required { ck.fail(&msg); } else { ck.warn(&msg); }
+    }
+    false
+}
+
 fn check_browser(ck: &mut Checker, config: &ValidatedConfig) {
     ck.section("Browser sidecar (optional)");
     if !config.browser.enabled {
         ck.warn("browser integration disabled in config");
         return;
     }
-    let cmd = &config.browser.command;
-    if cmd.contains('/') {
-        if Path::new(cmd).exists() && is_executable(Path::new(cmd)) {
-            ck.ok(&format!("browser command is executable: {cmd}"));
-        } else {
-            ck.warn(&format!("browser command not executable: {cmd}"));
-        }
-    } else if has_command(cmd) {
-        ck.ok(&format!("browser command available: {cmd}"));
-    } else {
-        ck.warn(&format!("browser command not found in PATH: {cmd}"));
-    }
+    check_binary(ck, &config.browser.command, "browser command", false);
     let port = config.browser.debug_port;
     if is_port_open(port) {
         ck.ok(&format!(
@@ -373,27 +386,13 @@ fn check_host_ui(ck: &mut Checker, config: &ValidatedConfig) {
         return;
     }
 
-    let binary = &config.host_ui.binary;
-    if binary.contains('/') {
-        let path = Path::new(binary);
-        if path.exists() && is_executable(path) {
-            ck.ok(&format!("host UI binary is executable: {binary}"));
-        } else {
-            ck.fail(&format!(
-                "host UI binary missing or not executable: {binary}"
-            ));
-        }
-    } else if has_command(binary) {
-        ck.ok(&format!("host UI binary available on PATH: {binary}"));
-    } else {
-        ck.fail(&format!("host UI binary not found on PATH: {binary}"));
-    }
+    check_binary(ck, &config.host_ui.binary, "host UI binary", true);
 
     if config.host_ui.renderer.eq_ignore_ascii_case("process")
         || config.host_ui.renderer.eq_ignore_ascii_case("glimpse")
     {
         if let Some(renderer_bin) = &config.host_ui.renderer_bin {
-            if renderer_bin.exists() && is_executable(renderer_bin) {
+            if renderer_bin.exists() && crate::util::is_executable(renderer_bin) {
                 ck.ok(&format!(
                     "host UI renderer binary present: {}",
                     renderer_bin.display()

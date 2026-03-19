@@ -75,8 +75,7 @@ impl SshRunner for OsSshRunner {
     fn socket_exists(&self, path: &Path) -> bool {
         use std::os::unix::fs::FileTypeExt;
         path.symlink_metadata()
-            .map(|m| m.file_type().is_socket())
-            .unwrap_or(false)
+            .is_ok_and(|m| m.file_type().is_socket())
     }
 
     fn start_agent(&self, sock_path: &Path) -> Result<AgentState, SshError> {
@@ -110,22 +109,9 @@ impl SshRunner for OsSshRunner {
     }
 
     fn read_pub_key(&self, key_path: &Path) -> Option<String> {
-        let pub_path = key_path.with_extension(format!(
-            "{}.pub",
-            key_path
-                .extension()
-                .map(|e| e.to_string_lossy())
-                .unwrap_or_default()
-        ));
-        // Try <key>.pub first, then <key_path>.pub (for paths without extension)
-        let pub_path = if pub_path.exists() {
-            pub_path
-        } else {
-            let mut p = key_path.as_os_str().to_owned();
-            p.push(".pub");
-            PathBuf::from(p)
-        };
-        fs::read_to_string(&pub_path)
+        let mut p = key_path.as_os_str().to_owned();
+        p.push(".pub");
+        fs::read_to_string(PathBuf::from(p))
             .ok()
             .map(|s| s.trim().to_owned())
     }

@@ -34,35 +34,27 @@ fn main() -> ExitCode {
     code
 }
 
+/// Run a fallible subcommand, printing `"{label} error: …"` on failure.
+fn try_sub(label: &str, result: Result<(), impl std::fmt::Display>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{label} error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn run_subcommand(sub: SubCommand) -> ExitCode {
+    // Subcommands that don't need a config file.
     match sub {
-        SubCommand::Install(opts) => {
-            if let Err(e) = ags::cmd::install::run(&opts) {
-                eprintln!("install error: {e}");
-                return ExitCode::FAILURE;
-            }
-            return ExitCode::SUCCESS;
+        SubCommand::Install(ref opts) => return try_sub("install", ags::cmd::install::run(opts)),
+        SubCommand::Uninstall => return try_sub("uninstall", ags::cmd::install::uninstall()),
+        SubCommand::CreateAliases(ref opts) => {
+            return try_sub("create-aliases", ags::cmd::create_aliases::run(opts));
         }
-        SubCommand::Uninstall => {
-            if let Err(e) = ags::cmd::install::uninstall() {
-                eprintln!("uninstall error: {e}");
-                return ExitCode::FAILURE;
-            }
-            return ExitCode::SUCCESS;
-        }
-        SubCommand::CreateAliases(opts) => {
-            if let Err(e) = ags::cmd::create_aliases::run(&opts) {
-                eprintln!("create-aliases error: {e}");
-                return ExitCode::FAILURE;
-            }
-            return ExitCode::SUCCESS;
-        }
-        SubCommand::Completions(opts) => {
-            if let Err(e) = ags::cmd::completions::run(&opts) {
-                eprintln!("completions error: {e}");
-                return ExitCode::FAILURE;
-            }
-            return ExitCode::SUCCESS;
+        SubCommand::Completions(ref opts) => {
+            return try_sub("completions", ags::cmd::completions::run(opts));
         }
         SubCommand::Setup | SubCommand::Doctor | SubCommand::Update | SubCommand::UpdateAgents => {}
     }
@@ -73,16 +65,12 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
     };
 
     match sub {
-        SubCommand::Setup => {
-            if let Err(e) = ags::cmd::setup::run(&config) {
-                eprintln!("setup error: {e}");
-                return ExitCode::FAILURE;
-            }
-        }
+        SubCommand::Setup => try_sub("setup", ags::cmd::setup::run(&config)),
         SubCommand::Doctor => {
-            let ok = ags::cmd::doctor::run(&config);
-            if !ok {
-                return ExitCode::FAILURE;
+            if ags::cmd::doctor::run(&config) {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
             }
         }
         SubCommand::Update => {
@@ -95,19 +83,18 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 eprintln!("update error: could not write tmux config: {e}");
                 return ExitCode::FAILURE;
             }
-            let opts = ags::cmd::update::UpdateOptions::default();
-            if let Err(e) = ags::cmd::update::run(&config, &opts) {
-                eprintln!("update error: {e}");
-                return ExitCode::FAILURE;
-            }
+            try_sub(
+                "update",
+                ags::cmd::update::run(&config, &ags::cmd::update::UpdateOptions::default()),
+            )
         }
-        SubCommand::UpdateAgents => {
-            let opts = ags::cmd::update_agents::UpdateAgentsOptions::default();
-            if let Err(e) = ags::cmd::update_agents::run(&config, &opts) {
-                eprintln!("update-agents error: {e}");
-                return ExitCode::FAILURE;
-            }
-        }
+        SubCommand::UpdateAgents => try_sub(
+            "update-agents",
+            ags::cmd::update_agents::run(
+                &config,
+                &ags::cmd::update_agents::UpdateAgentsOptions::default(),
+            ),
+        ),
         SubCommand::Install(_)
         | SubCommand::Uninstall
         | SubCommand::CreateAliases(_)
@@ -115,8 +102,6 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
             unreachable!()
         }
     }
-
-    ExitCode::SUCCESS
 }
 
 fn run_agent(opts: RunOptions) -> ExitCode {
@@ -195,7 +180,10 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     };
 
-    // 6. Browser sidecar
+    // 6. Sidecars
+    let runtime_base = ags::util::runtime_dir();
+    let pid = std::process::id();
+
     let mut _browser_guard = None;
     if opts.browser {
         match ags::browser::start_if_needed(true, &config.browser) {
@@ -207,121 +195,79 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     }
 
-    // 6b. Host UI service for sandbox-safe Glimpse windows
-    let _host_ui_guard;
-    let host_ui_runtime_dir;
-    let host_ui_session_id;
-    {
-        let runtime_base = ags::util::runtime_dir();
-        let dir = runtime_base.join(format!("ags-host-ui-{}", std::process::id()));
-        let session_id = format!("ags-{}-{}", opts.agent.as_str(), std::process::id());
-
-        if config.host_ui.enabled {
-            match ags::host_ui::start(&dir, session_id.clone(), &config.host_ui) {
-                Ok(guard) => {
-                    host_ui_runtime_dir = Some(guard.runtime_dir.clone());
-                    host_ui_session_id = Some(guard.session_id.clone());
-                    _host_ui_guard = Some(guard);
-                }
-                Err(e) => {
-                    eprintln!("warning: host UI: {e}");
-                    host_ui_runtime_dir = None;
-                    host_ui_session_id = None;
-                    _host_ui_guard = None;
-                }
+    let _host_ui_guard: Option<ags::host_ui::HostUiGuard> = if config.host_ui.enabled {
+        let dir = runtime_base.join(format!("ags-host-ui-{pid}"));
+        let session_id = format!("ags-{}-{pid}", opts.agent.as_str());
+        match ags::host_ui::start(&dir, session_id, &config.host_ui) {
+            Ok(guard) => Some(guard),
+            Err(e) => {
+                eprintln!("warning: host UI: {e}");
+                None
             }
-        } else {
-            host_ui_runtime_dir = None;
-            host_ui_session_id = None;
-            _host_ui_guard = None;
         }
-    }
+    } else {
+        None
+    };
 
-    // 6c. Webview relay for host-owned webviews backed by sandbox-local app servers
-    let _webview_relay_guard;
-    let webview_relay_runtime_dir;
-    let webview_relay_register_socket;
-    {
-        let runtime_base = ags::util::runtime_dir();
-        let dir = runtime_base.join(format!("ags-webview-relay-{}", std::process::id()));
-
+    let _webview_relay_guard = {
+        let dir = runtime_base.join(format!("ags-webview-relay-{pid}"));
         match ags::webview_relay::start(&dir) {
             Ok(guard) => {
                 if let Err(e) = ags::assets::ensure_webview_relay_assets(&guard.runtime_dir) {
                     eprintln!("warning: webview relay assets write failed: {e}");
                 }
-                webview_relay_register_socket =
-                    Some(guard.runtime_dir.join(ags::webview_relay::SOCKET_NAME));
-                webview_relay_runtime_dir = Some(guard.runtime_dir.clone());
-                _webview_relay_guard = Some(guard);
+                Some(guard)
             }
             Err(e) => {
                 eprintln!("warning: webview relay: {e}");
-                webview_relay_register_socket = None;
-                webview_relay_runtime_dir = None;
-                _webview_relay_guard = None;
+                None
             }
         }
-    }
+    };
 
-    // 6d. Auth proxy
-    let _auth_proxy_guard;
-    let auth_proxy_runtime_dir;
-    {
-        let runtime_base = ags::util::runtime_dir();
-        let dir = runtime_base.join(format!("ags-auth-proxy-{}", std::process::id()));
-
+    let _auth_proxy_guard = {
+        let dir = runtime_base.join(format!("ags-auth-proxy-{pid}"));
+        let relay_socket = _webview_relay_guard
+            .as_ref()
+            .map(|g| g.runtime_dir.join(ags::webview_relay::SOCKET_NAME));
+        let host_ui_socket = _host_ui_guard
+            .as_ref()
+            .map(|g| g.runtime_dir.join("host-ui.sock"));
         match ags::auth_proxy::start(
             &dir,
             config.auth_proxy.auto_allow_domains.clone(),
-            webview_relay_register_socket.clone(),
-            host_ui_runtime_dir
-                .as_ref()
-                .map(|dir| dir.join("host-ui.sock")),
+            relay_socket,
+            host_ui_socket,
         ) {
             Ok(guard) => {
-                // Write the shim script into the runtime dir so it can be mounted
                 if let Err(e) = ags::assets::ensure_auth_proxy_shim(&guard.runtime_dir) {
                     eprintln!("warning: auth proxy shim write failed: {e}");
                 }
-                auth_proxy_runtime_dir = Some(guard.runtime_dir.clone());
-                _auth_proxy_guard = Some(guard);
+                Some(guard)
             }
             Err(e) => {
                 eprintln!("warning: auth proxy: {e}");
-                auth_proxy_runtime_dir = None;
-                _auth_proxy_guard = None;
+                None
             }
         }
-    }
+    };
 
-    // 6e. PSP sidecar
-    let _psp_guard;
-    let psp_socket;
-    let psp_session_id;
-    if opts.psp {
+    let _psp_guard = if opts.psp {
         match ags::psp::start(&config.psp.binary, opts.psp_keep) {
-            Ok(guard) => {
-                psp_socket = Some(guard.socket_path.clone());
-                psp_session_id = Some(format!(
-                    "ags-{}-{}",
-                    opts.agent.as_str(),
-                    std::process::id()
-                ));
-                _psp_guard = Some(guard);
-            }
+            Ok(guard) => Some(guard),
             Err(e) => {
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;
             }
         }
     } else {
-        psp_socket = None;
-        psp_session_id = None;
-        _psp_guard = None;
-    }
+        None
+    };
+    let psp_session_id = _psp_guard
+        .as_ref()
+        .map(|_| format!("ags-{}-{pid}", opts.agent.as_str()));
 
-    // 7. Discover external git mounts
+    // 7. Working directory
     let workdir = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -329,7 +275,6 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let _git_mounts = ags::git::discover_external_git_mounts(&workdir);
 
     // 8. Build launch plan
     let plan = match ags::plan::build_launch_plan(
@@ -342,11 +287,17 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             guard_enabled: !opts.yolo,
             ssh_auth_sock: ssh_sock.as_deref(),
             resolved_secrets: &resolved_secrets,
-            auth_proxy_runtime_dir: auth_proxy_runtime_dir.as_deref(),
-            host_ui_runtime_dir: host_ui_runtime_dir.as_deref(),
-            host_ui_session_id: host_ui_session_id.as_deref(),
-            webview_relay_runtime_dir: webview_relay_runtime_dir.as_deref(),
-            psp_socket: psp_socket.as_deref(),
+            auth_proxy_runtime_dir: _auth_proxy_guard
+                .as_ref()
+                .map(|g| g.runtime_dir.as_path()),
+            host_ui_runtime_dir: _host_ui_guard
+                .as_ref()
+                .map(|g| g.runtime_dir.as_path()),
+            host_ui_session_id: _host_ui_guard.as_ref().map(|g| g.session_id.as_str()),
+            webview_relay_runtime_dir: _webview_relay_guard
+                .as_ref()
+                .map(|g| g.runtime_dir.as_path()),
+            psp_socket: _psp_guard.as_ref().map(|g| g.socket_path.as_path()),
             psp_session_id: psp_session_id.as_deref(),
             extra_mount_dirs: &opts.add_dirs,
         },

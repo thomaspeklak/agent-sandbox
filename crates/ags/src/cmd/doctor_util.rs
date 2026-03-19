@@ -30,29 +30,17 @@ impl Checker {
 
     pub fn ok(&mut self, msg: &str) {
         self.ok_count += 1;
-        if self.use_color {
-            println!("\x1b[32m[OK]\x1b[0m {msg}");
-        } else {
-            println!("[OK] {msg}");
-        }
+        self.emit("\x1b[32m", "[OK]", msg);
     }
 
     pub fn warn(&mut self, msg: &str) {
         self.warn_count += 1;
-        if self.use_color {
-            println!("\x1b[33m[WARN]\x1b[0m {msg}");
-        } else {
-            println!("[WARN] {msg}");
-        }
+        self.emit("\x1b[33m", "[WARN]", msg);
     }
 
     pub fn fail(&mut self, msg: &str) {
         self.fail_count += 1;
-        if self.use_color {
-            println!("\x1b[31m[FAIL]\x1b[0m {msg}");
-        } else {
-            println!("[FAIL] {msg}");
-        }
+        self.emit("\x1b[31m", "[FAIL]", msg);
     }
 
     pub fn print_summary(&self) {
@@ -71,25 +59,32 @@ impl Checker {
             );
         }
     }
+
+    fn emit(&self, color: &str, tag: &str, msg: &str) {
+        if self.use_color {
+            println!("{color}{tag}\x1b[0m {msg}");
+        } else {
+            println!("{tag} {msg}");
+        }
+    }
 }
 
 // ── System probes ────────────────────────────────────────────────────
 
-pub fn has_command(name: &str) -> bool {
-    crate::util::has_command(name)
-}
-
 pub fn check_required_cmd(ck: &mut Checker, cmd: &str) {
-    if has_command(cmd) {
-        ck.ok(&format!("binary available: {cmd}"));
-    } else {
-        ck.fail(&format!("missing required binary: {cmd}"));
-    }
+    check_cmd(ck, cmd, true);
 }
 
 pub fn check_optional_cmd(ck: &mut Checker, cmd: &str) {
-    if has_command(cmd) {
-        ck.ok(&format!("optional binary available: {cmd}"));
+    check_cmd(ck, cmd, false);
+}
+
+fn check_cmd(ck: &mut Checker, cmd: &str, required: bool) {
+    if crate::util::has_command(cmd) {
+        let qualifier = if required { "" } else { "optional " };
+        ck.ok(&format!("{qualifier}binary available: {cmd}"));
+    } else if required {
+        ck.fail(&format!("missing required binary: {cmd}"));
     } else {
         ck.warn(&format!("optional binary missing: {cmd}"));
     }
@@ -108,14 +103,6 @@ pub fn git_config_get(gitconfig: &Path, key: &str) -> Option<String> {
     } else {
         None
     }
-}
-
-pub fn podman_image_exists(image: &str) -> bool {
-    crate::podman::image_exists(image)
-}
-
-pub fn image_has_binary(image: &str, binary: &str) -> Result<bool, crate::podman::PodmanError> {
-    crate::podman::image_has_binary(image, binary)
 }
 
 pub fn file_non_empty(path: &Path) -> bool {
@@ -170,22 +157,16 @@ pub fn list_agent_keys(sock_path: &Path) -> Option<String> {
 }
 
 pub fn secret_tool_has_value(attributes: &std::collections::BTreeMap<String, String>) -> bool {
-    if !has_command("secret-tool") || attributes.is_empty() {
+    if !crate::util::has_command("secret-tool") || attributes.is_empty() {
         return false;
     }
-    let mut args = vec!["lookup".to_owned()];
-    for (k, v) in attributes {
-        args.push(k.clone());
-        args.push(v.clone());
-    }
+    let args: Vec<&str> = std::iter::once("lookup")
+        .chain(attributes.iter().flat_map(|(k, v)| [k.as_str(), v.as_str()]))
+        .collect();
     Command::new("secret-tool")
         .args(&args)
         .output()
         .is_ok_and(|o| o.status.success() && !o.stdout.is_empty())
-}
-
-pub fn is_executable(path: &Path) -> bool {
-    crate::util::is_executable(path)
 }
 
 pub fn is_port_open(port: u16) -> bool {

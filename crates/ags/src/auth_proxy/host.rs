@@ -312,12 +312,10 @@ fn handle_session(
             host,
         ),
         _ => {
-            send_message(
+            send_error(
                 &mut writer,
-                &HostMessage::Error {
-                    session_id: "unknown".into(),
-                    message: "expected open_url as first message".into(),
-                },
+                "unknown",
+                "expected open_url as first message".to_owned(),
             )?;
             Ok(())
         }
@@ -348,42 +346,24 @@ fn handle_open_url(
     )?;
 
     if !allowed {
-        send_message(
-            writer,
-            &HostMessage::SessionComplete {
-                session_id: session_id.to_owned(),
-            },
-        )?;
+        send_session_complete(writer, session_id)?;
         return Ok(());
     }
 
     let target_url = match decision {
-        OpenDecision::Cancel => url.to_owned(),
-        OpenDecision::OpenOriginal => url.to_owned(),
+        OpenDecision::OpenOriginal | OpenDecision::Cancel => url.to_owned(),
         OpenDecision::Proxy => {
             if !can_proxy {
-                send_message(
-                    writer,
-                    &HostMessage::Error {
-                        session_id: session_id.to_owned(),
-                        message: "proxy option is unavailable for this URL".to_owned(),
-                    },
-                )?;
+                send_error(writer, session_id, "proxy option is unavailable for this URL".to_owned())?;
                 return Ok(());
             }
             match host.resolve_proxy_url(url) {
-                Ok(resolved) => resolved,
-                Err(e) => {
-                    send_message(
-                        writer,
-                        &HostMessage::Error {
-                            session_id: session_id.to_owned(),
-                            message: format!("failed to resolve proxied URL: {e}"),
-                        },
-                    )?;
-                    return Ok(());
-                }
+            Ok(resolved) => resolved,
+            Err(e) => {
+                send_error(writer, session_id, format!("failed to resolve proxied URL: {e}"))?;
+                return Ok(());
             }
+        }
         }
     };
 
@@ -396,21 +376,10 @@ fn handle_open_url(
             host.open_browser(&target_url)
         };
         if let Err(e) = open_result {
-            send_message(
-                writer,
-                &HostMessage::Error {
-                    session_id: session_id.to_owned(),
-                    message: format!("failed to open target URL: {e}"),
-                },
-            )?;
+            send_error(writer, session_id, format!("failed to open target URL: {e}"))?;
             return Ok(());
         }
-        send_message(
-            writer,
-            &HostMessage::SessionComplete {
-                session_id: session_id.to_owned(),
-            },
-        )?;
+        send_session_complete(writer, session_id)?;
     }
 
     Ok(())
@@ -433,13 +402,7 @@ fn handle_callback_flow(
     // Open the browser
     if let Err(e) = host.open_browser(url) {
         drop(callback_listener);
-        send_message(
-            writer,
-            &HostMessage::Error {
-                session_id: session_id.to_owned(),
-                message: format!("failed to open browser: {e}"),
-            },
-        )?;
+        send_error(writer, session_id, format!("failed to open browser: {e}"))?;
         return Ok(());
     }
 
@@ -459,7 +422,7 @@ fn handle_callback_flow(
         writer,
         &HostMessage::CallbackRequest {
             session_id: session_id.to_owned(),
-            request_id: request_id.clone(),
+            request_id,
             method,
             path,
             headers,
@@ -497,12 +460,7 @@ fn handle_callback_flow(
         }
     }
 
-    send_message(
-        writer,
-        &HostMessage::SessionComplete {
-            session_id: session_id.to_owned(),
-        },
-    )?;
+    send_session_complete(writer, session_id)?;
 
     Ok(())
 }
@@ -514,6 +472,25 @@ fn send_message(writer: &mut dyn Write, msg: &HostMessage) -> io::Result<()> {
     writer.write_all(json.as_bytes())?;
     writer.write_all(b"\n")?;
     writer.flush()
+}
+
+fn send_error(writer: &mut dyn Write, session_id: &str, message: String) -> io::Result<()> {
+    send_message(
+        writer,
+        &HostMessage::Error {
+            session_id: session_id.to_owned(),
+            message,
+        },
+    )
+}
+
+fn send_session_complete(writer: &mut dyn Write, session_id: &str) -> io::Result<()> {
+    send_message(
+        writer,
+        &HostMessage::SessionComplete {
+            session_id: session_id.to_owned(),
+        },
+    )
 }
 
 // --- Callback listener ---
@@ -653,21 +630,13 @@ fn write_http_response(
 
     write!(stream, "HTTP/1.1 {status} {reason}\r\n")?;
 
-    let mut has_content_length = false;
-    let mut has_connection = false;
     for (key, value) in headers {
         write!(stream, "{key}: {value}\r\n")?;
-        if key.eq_ignore_ascii_case("content-length") {
-            has_content_length = true;
-        }
-        if key.eq_ignore_ascii_case("connection") {
-            has_connection = true;
-        }
     }
-    if !has_content_length {
+    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-length")) {
         write!(stream, "Content-Length: {}\r\n", body.len())?;
     }
-    if !has_connection {
+    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("connection")) {
         write!(stream, "Connection: close\r\n")?;
     }
     write!(stream, "\r\n")?;
@@ -690,9 +659,12 @@ fn is_auto_allowed(url: &str, domains: &[String]) -> bool {
         .split(['/', ':', '?'])
         .next()
         .unwrap_or("");
-    domains
-        .iter()
-        .any(|d| host == d.as_str() || host.ends_with(&format!(".{d}")))
+    domains.iter().any(|d| {
+        host == d.as_str()
+            || (host.len() > d.len()
+                && host.ends_with(d.as_str())
+                && host.as_bytes()[host.len() - d.len() - 1] == b'.')
+    })
 }
 
 /// Try zenity, then kdialog, then deny.
@@ -711,31 +683,30 @@ fn prompt_with_dialog(url: &str, has_callback: bool, can_proxy: bool) -> OpenDec
 
 /// Produce a display-safe URL: strip query string and escape Pango/XML markup characters.
 fn display_url(url: &str) -> String {
-    let short = match url.find('?') {
+    let base = match url.find('?') {
         Some(i) => format!("{}?...", &url[..i]),
         None => url.to_owned(),
     };
-    short
-        .replace('&', "&amp;")
+    base.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
 
 fn prompt_text(url: &str, has_callback: bool, can_proxy: bool) -> String {
     let display = display_url(url);
-    if has_callback {
-        return format!(
-            "A sandbox tool wants to open this URL and capture a localhost callback:\n\n{display}\n\nChoose Open to open it in the host browser or Cancel to deny."
-        );
-    }
-    if can_proxy {
-        return format!(
-            "A sandbox tool wants to open this URL:\n\n{display}\n\nChoose Open to open the original URL, Proxy to route sandbox localhost through AGS, or Cancel to deny."
-        );
-    }
-    format!(
-        "A sandbox tool wants to open this URL:\n\n{display}\n\nChoose Open to open it or Cancel to deny."
-    )
+    let action = if has_callback {
+        "open this URL and capture a localhost callback"
+    } else {
+        "open this URL"
+    };
+    let choices = if has_callback {
+        "Choose Open to open it in the host browser or Cancel to deny."
+    } else if can_proxy {
+        "Choose Open to open the original URL, Proxy to route sandbox localhost through AGS, or Cancel to deny."
+    } else {
+        "Choose Open to open it or Cancel to deny."
+    };
+    format!("A sandbox tool wants to {action}:\n\n{display}\n\n{choices}")
 }
 
 fn parse_named_decision(label: &str, can_proxy: bool) -> Option<OpenDecision> {
@@ -787,62 +758,38 @@ fn try_zenity(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDeci
 
 fn try_kdialog(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDecision> {
     let text = prompt_text(url, has_callback, can_proxy);
+    let mut cmd = std::process::Command::new("kdialog");
+    cmd.arg("--title").arg("AGS Auth Proxy");
 
     if can_proxy {
-        let output = std::process::Command::new("kdialog")
-            .arg("--title")
-            .arg("AGS Auth Proxy")
-            .arg("--menu")
-            .arg(&text)
-            .args([
-                "open",
-                "Open original URL",
-                "proxy",
-                "Proxy localhost through AGS",
-                "cancel",
-                "Cancel",
-            ])
-            .stdin(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return Some(OpenDecision::Cancel);
-        }
-
-        let choice = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_ascii_lowercase();
-        return Some(match choice.as_str() {
-            "proxy" => OpenDecision::Proxy,
-            "cancel" => OpenDecision::Cancel,
-            _ => OpenDecision::OpenOriginal,
-        });
+        cmd.arg("--menu").arg(&text).args([
+            "open",
+            "Open original URL",
+            "proxy",
+            "Proxy localhost through AGS",
+            "cancel",
+            "Cancel",
+        ]);
+    } else {
+        cmd.args(["--yesno", &text, "--yes-label", "Open", "--no-label", "Cancel"]);
     }
 
-    let status = std::process::Command::new("kdialog")
-        .args([
-            "--yesno",
-            &text,
-            "--title",
-            "AGS Auth Proxy",
-            "--yes-label",
-            "Open",
-            "--no-label",
-            "Cancel",
-        ])
+    let output = cmd
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .status()
+        .output()
         .ok()?;
 
-    Some(if status.success() {
-        OpenDecision::OpenOriginal
+    if !output.status.success() {
+        return Some(OpenDecision::Cancel);
+    }
+    if can_proxy {
+        let choice = String::from_utf8_lossy(&output.stdout);
+        Some(parse_named_decision(&choice, true).unwrap_or(OpenDecision::OpenOriginal))
     } else {
-        OpenDecision::Cancel
-    })
+        Some(OpenDecision::OpenOriginal)
+    }
 }
 
 // --- Localhost proxy rewriting ---
@@ -913,7 +860,7 @@ where
             "client_version": env!("CARGO_PKG_VERSION"),
             "protocol_min": 1,
             "protocol_max": 1,
-            "session_id": serde_json::Value::Null,
+            "session_id": null,
         }),
     )?;
 
@@ -933,16 +880,9 @@ where
         }),
     )?;
 
+    // Drain incoming messages so the host UI doesn't block on a full send buffer.
     thread::spawn(move || {
-        let mut line = String::new();
-        loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => break,
-                Ok(_) => {}
-                Err(_) => break,
-            }
-        }
+        let _ = io::copy(&mut reader, &mut io::sink());
     });
 
     Ok(HostUiWindowLease { _writer: writer })
@@ -978,24 +918,26 @@ fn host_ui_request(
         }
         let value: serde_json::Value = serde_json::from_str(line.trim())
             .map_err(|e| format!("invalid host UI response: {e}"))?;
-        if value.get("kind").and_then(|v| v.as_str()) != Some("response") {
+
+        if value.get("kind").and_then(|v| v.as_str()) != Some("response")
+            || value.get("id").and_then(|v| v.as_str()) != Some(id)
+        {
             continue;
         }
-        if value.get("id").and_then(|v| v.as_str()) != Some(id) {
-            continue;
-        }
-        if value.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-            return Ok(value
+
+        return if value.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+            Ok(value
                 .get("result")
                 .cloned()
-                .unwrap_or(serde_json::Value::Null));
-        }
-        let message = value
-            .get("error")
-            .and_then(|e| e.get("message"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("host UI request failed");
-        return Err(message.to_owned());
+                .unwrap_or(serde_json::Value::Null))
+        } else {
+            let message = value
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("host UI request failed");
+            Err(message.to_owned())
+        };
     }
 }
 

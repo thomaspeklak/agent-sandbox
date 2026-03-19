@@ -13,27 +13,39 @@ pub const AUTH_PROXY_SHIM: &str = include_str!("../../../agent/auth-proxy-shim")
 pub const WEBVIEW_RELAY_SHIM: &str = include_str!("../../../agent/webview-relay-shim");
 pub const WEBVIEW_URL_HELPER: &str = include_str!("../../../agent/webview-url-helper");
 
-/// Write the embedded Containerfile to `path`, always overwriting.
-pub fn ensure_containerfile(path: &Path) -> io::Result<()> {
+/// Write `content` into `dir/name`, creating `dir` if needed, and optionally
+/// setting permissions to `mode` on Unix.
+fn write_asset(dir: &Path, name: &str, content: &str, mode: Option<u32>) -> io::Result<()> {
+    fs::create_dir_all(dir)?;
+    let target = dir.join(name);
+    fs::write(&target, content)?;
+    if let Some(m) = mode {
+        set_permissions(&target, m);
+    }
+    Ok(())
+}
+
+/// Write `content` to an exact `path`, creating its parent directory if needed.
+fn write_asset_at(path: &Path, content: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, CONTAINERFILE)
+    fs::write(path, content)
+}
+
+/// Write the embedded Containerfile to `path`, always overwriting.
+pub fn ensure_containerfile(path: &Path) -> io::Result<()> {
+    write_asset_at(path, CONTAINERFILE)
 }
 
 /// Write the embedded tmux config alongside the configured Containerfile.
 pub fn ensure_tmux_conf(path: &Path) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, TMUX_CONF)
+    write_asset_at(path, TMUX_CONF)
 }
 
 /// Write the embedded guard.ts to `<pi_sandbox>/extensions/guard.ts`, always overwriting.
 pub fn ensure_guard_extension(pi_sandbox: &Path) -> io::Result<()> {
-    let dir = pi_sandbox.join("extensions");
-    fs::create_dir_all(&dir)?;
-    fs::write(dir.join("guard.ts"), GUARD_TS)
+    write_asset(&pi_sandbox.join("extensions"), "guard.ts", GUARD_TS, None)
 }
 
 /// Write the embedded settings template to `<pi_sandbox>/settings.json`,
@@ -43,19 +55,12 @@ pub fn ensure_settings_template(pi_sandbox: &Path) -> io::Result<()> {
     if target.exists() {
         return Ok(());
     }
-    fs::create_dir_all(pi_sandbox)?;
-    fs::write(&target, SETTINGS_EXAMPLE)?;
-    set_permissions(&target, 0o600);
-    Ok(())
+    write_asset(pi_sandbox, "settings.json", SETTINGS_EXAMPLE, Some(0o600))
 }
 
 /// Write the embedded guard.sh hook for Claude to `<hooks_dir>/guard.sh`, always overwriting.
 pub fn ensure_claude_guard_hook(hooks_dir: &Path) -> io::Result<()> {
-    fs::create_dir_all(hooks_dir)?;
-    let path = hooks_dir.join("guard.sh");
-    fs::write(&path, GUARD_SH)?;
-    set_permissions(&path, 0o755);
-    Ok(())
+    write_asset(hooks_dir, "guard.sh", GUARD_SH, Some(0o755))
 }
 
 /// Write the embedded guard skill and plugin manifest for Claude to `<hooks_dir>/`, always overwriting.
@@ -66,24 +71,25 @@ pub fn ensure_claude_guard_hook(hooks_dir: &Path) -> io::Result<()> {
 ///
 /// Claude loads these via `--plugin-dir <hooks_dir>`.
 pub fn ensure_claude_guard_skill(hooks_dir: &Path) -> io::Result<()> {
-    let plugin_dir = hooks_dir.join(".claude-plugin");
-    fs::create_dir_all(&plugin_dir)?;
-    fs::write(plugin_dir.join("plugin.json"), GUARD_PLUGIN_JSON)?;
-
-    let skill_dir = hooks_dir.join("skills/guard");
-    fs::create_dir_all(&skill_dir)?;
-    fs::write(skill_dir.join("SKILL.md"), GUARD_SKILL_MD)
+    write_asset(
+        &hooks_dir.join(".claude-plugin"),
+        "plugin.json",
+        GUARD_PLUGIN_JSON,
+        None,
+    )?;
+    write_asset(
+        &hooks_dir.join("skills/guard"),
+        "SKILL.md",
+        GUARD_SKILL_MD,
+        None,
+    )
 }
 
 /// Write the embedded auth proxy shim to `<dir>/auth-proxy-shim`, always overwriting.
 ///
 /// The shim is made executable (mode 0755).
 pub fn ensure_auth_proxy_shim(dir: &Path) -> io::Result<()> {
-    fs::create_dir_all(dir)?;
-    let target = dir.join("auth-proxy-shim");
-    fs::write(&target, AUTH_PROXY_SHIM)?;
-    set_permissions(&target, 0o755);
-    Ok(())
+    write_asset(dir, "auth-proxy-shim", AUTH_PROXY_SHIM, Some(0o755))
 }
 
 /// Write the embedded sandbox-side webview relay shim and helper into `dir`.
@@ -92,17 +98,8 @@ pub fn ensure_auth_proxy_shim(dir: &Path) -> io::Result<()> {
 ///   <dir>/webview-relay-shim
 ///   <dir>/ags-webview-url
 pub fn ensure_webview_relay_assets(dir: &Path) -> io::Result<()> {
-    fs::create_dir_all(dir)?;
-
-    let shim = dir.join("webview-relay-shim");
-    fs::write(&shim, WEBVIEW_RELAY_SHIM)?;
-    set_permissions(&shim, 0o755);
-
-    let helper = dir.join("ags-webview-url");
-    fs::write(&helper, WEBVIEW_URL_HELPER)?;
-    set_permissions(&helper, 0o755);
-
-    Ok(())
+    write_asset(dir, "webview-relay-shim", WEBVIEW_RELAY_SHIM, Some(0o755))?;
+    write_asset(dir, "ags-webview-url", WEBVIEW_URL_HELPER, Some(0o755))
 }
 
 fn set_permissions(path: &Path, mode: u32) {

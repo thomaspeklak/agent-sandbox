@@ -4,7 +4,35 @@ use std::path::Path;
 
 use ags::cli::Agent;
 use ags::config::{MountMode, parse_toml_str};
-use ags::plan::{BuildLaunchPlanOptions, PlanError, build_launch_plan};
+use ags::plan::{BuildLaunchPlanOptions, LaunchPlan, PlanError, build_launch_plan};
+
+/// Look up an inline env var by key from a launch plan.
+fn find_plan_env(plan: &LaunchPlan, key: &str) -> Option<String> {
+    plan.env
+        .inline
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.clone())
+}
+
+/// Default `BuildLaunchPlanOptions` with all optional fields set to `None`/defaults.
+/// Tests override only the fields they care about via struct update syntax.
+fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<'_> {
+    BuildLaunchPlanOptions {
+        browser_mode: false,
+        tmux_mode: false,
+        guard_enabled: true,
+        ssh_auth_sock: None,
+        resolved_secrets: secrets,
+        auth_proxy_runtime_dir: None,
+        host_ui_runtime_dir: None,
+        host_ui_session_id: None,
+        webview_relay_runtime_dir: None,
+        psp_socket: None,
+        psp_session_id: None,
+        extra_mount_dirs: &[],
+    }
+}
 
 fn minimal_config_toml() -> String {
     let dir = tempfile::tempdir().unwrap();
@@ -68,26 +96,7 @@ fn build_plan_from(toml: &str, workdir: &Path) -> ags::plan::LaunchPlan {
 fn build_plan_from_agent(toml: &str, workdir: &Path, agent: Agent) -> ags::plan::LaunchPlan {
     let config = parse_toml_str(toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
-    build_launch_plan(
-        &config,
-        workdir,
-        agent,
-        BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
-        },
-    )
-    .unwrap()
+    build_launch_plan(&config, workdir, agent, default_options(&secrets)).unwrap()
 }
 
 #[test]
@@ -171,31 +180,29 @@ fn env_has_required_inline_vars() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
 
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
-
-    assert_eq!(find_env("HOME"), Some("/home/dev".to_owned()));
+    assert_eq!(find_plan_env(&plan, "HOME"), Some("/home/dev".to_owned()));
     assert!(
-        find_env("PI_CODING_AGENT_DIR").is_none(),
+        find_plan_env(&plan, "PI_CODING_AGENT_DIR").is_none(),
         "pi should not set PI_CODING_AGENT_DIR (uses $HOME/.pi/agent by default)"
     );
-    assert_eq!(find_env("SSH_AUTH_SOCK"), Some("/ssh-agent".to_owned()));
-    assert_eq!(find_env("AGS_SANDBOX"), Some("1".to_owned()));
     assert_eq!(
-        find_env("AGS_HOST_SERVICES_HOST"),
+        find_plan_env(&plan, "SSH_AUTH_SOCK"),
+        Some("/ssh-agent".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "AGS_SANDBOX"),
+        Some("1".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "AGS_HOST_SERVICES_HOST"),
         Some("host.containers.internal".to_owned())
     );
     assert!(
-        find_env("AGS_HOST_SERVICES_HINT")
+        find_plan_env(&plan, "AGS_HOST_SERVICES_HINT")
             .is_some_and(|v| v.contains("localhost is container-local"))
     );
-    assert!(find_env("PNPM_HOME").is_some());
-    assert!(find_env("CARGO_HOME").is_some());
+    assert!(find_plan_env(&plan, "PNPM_HOME").is_some());
+    assert!(find_plan_env(&plan, "CARGO_HOME").is_some());
 }
 
 #[test]
@@ -219,18 +226,8 @@ fn yolo_mode_sets_guard_escape_hatch_env() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
             guard_enabled: false,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -305,17 +302,7 @@ debug_port = 9222
         Agent::Pi,
         BuildLaunchPlanOptions {
             browser_mode: true,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -376,18 +363,8 @@ fn tmux_mode_wraps_agent_command() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
             tmux_mode: true,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -458,20 +435,7 @@ mode = \"ro\"\n",
         &config,
         workdir.path(),
         Agent::Pi,
-        BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
-        },
+        default_options(&secrets),
     );
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -557,20 +521,7 @@ fn secrets_in_env_file() {
         &config,
         workdir.path(),
         Agent::Pi,
-        BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
-        },
+        default_options(&secrets),
     )
     .unwrap();
 
@@ -594,18 +545,8 @@ fn ssh_socket_mounted_when_provided() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
             ssh_auth_sock: Some(sock),
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -627,18 +568,8 @@ fn runtime_add_dir_mounts_are_included() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
             extra_mount_dirs: &extra_dirs,
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -661,18 +592,8 @@ fn runtime_add_dir_missing_path_is_error() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
             extra_mount_dirs: &extra_dirs,
+            ..default_options(&secrets)
         },
     );
     assert!(matches!(result, Err(PlanError::MountMissing { .. })));
@@ -687,20 +608,7 @@ fn nonexistent_workdir_is_error() {
         &config,
         Path::new("/nonexistent/workdir"),
         Agent::Pi,
-        BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
-        },
+        default_options(&secrets),
     );
     assert!(matches!(result, Err(PlanError::WorkdirResolve(_))));
 }
@@ -728,17 +636,7 @@ pi_skill_path = "/home/dev/browser-tools"
         Agent::Pi,
         BuildLaunchPlanOptions {
             browser_mode: true,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -826,20 +724,12 @@ fn claude_agent_has_config_env() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Claude);
 
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
-
     assert!(
-        find_env("CLAUDE_CONFIG_DIR").is_none(),
+        find_plan_env(&plan, "CLAUDE_CONFIG_DIR").is_none(),
         "claude should not set CLAUDE_CONFIG_DIR (uses $HOME/.claude by default)"
     );
     assert!(
-        find_env("PI_CODING_AGENT_DIR").is_none(),
+        find_plan_env(&plan, "PI_CODING_AGENT_DIR").is_none(),
         "claude should not have PI_CODING_AGENT_DIR"
     );
 }
@@ -992,42 +882,25 @@ fn psp_mode_injects_docker_host_env() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
             psp_socket: Some(&psp_sock),
             psp_session_id: Some("ags-pi-12345"),
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
 
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
-
     assert_eq!(
-        find_env("DOCKER_HOST"),
+        find_plan_env(&plan, "DOCKER_HOST"),
         Some("unix:///run/psp/psp.sock".to_owned()),
         "DOCKER_HOST should point to container-side PSP socket"
     );
     assert_eq!(
-        find_env("PSP_SESSION_ID"),
+        find_plan_env(&plan, "PSP_SESSION_ID"),
         Some("ags-pi-12345".to_owned()),
         "PSP_SESSION_ID should be injected"
     );
     assert_eq!(
-        find_env("TESTCONTAINERS_HOST_OVERRIDE"),
+        find_plan_env(&plan, "TESTCONTAINERS_HOST_OVERRIDE"),
         Some("host.containers.internal".to_owned()),
         "TESTCONTAINERS_HOST_OVERRIDE should route to host"
     );
@@ -1047,18 +920,9 @@ fn psp_mode_mounts_socket_dir() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
             psp_socket: Some(&psp_sock),
             psp_session_id: Some("ags-pi-12345"),
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -1074,23 +938,16 @@ fn no_psp_env_when_disabled() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
 
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
     assert!(
-        find_env("DOCKER_HOST").is_none(),
+        find_plan_env(&plan, "DOCKER_HOST").is_none(),
         "DOCKER_HOST should not be set without PSP"
     );
     assert!(
-        find_env("PSP_SESSION_ID").is_none(),
+        find_plan_env(&plan, "PSP_SESSION_ID").is_none(),
         "PSP_SESSION_ID should not be set without PSP"
     );
     assert!(
-        find_env("TESTCONTAINERS_HOST_OVERRIDE").is_none(),
+        find_plan_env(&plan, "TESTCONTAINERS_HOST_OVERRIDE").is_none(),
         "TESTCONTAINERS_HOST_OVERRIDE should not be set without PSP"
     );
 }
@@ -1114,18 +971,8 @@ fn auth_proxy_mounts_and_env_when_enabled() {
         workdir.path(),
         Agent::Claude,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
             auth_proxy_runtime_dir: Some(auth_dir.path()),
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -1150,19 +997,12 @@ fn auth_proxy_mounts_and_env_when_enabled() {
     assert_eq!(shim_mount.unwrap().mode, MountMode::Ro);
 
     // Should have BROWSER and AGS_AUTH_PROXY_SOCK env vars
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
     assert_eq!(
-        find_env("AGS_AUTH_PROXY_SOCK"),
+        find_plan_env(&plan, "AGS_AUTH_PROXY_SOCK"),
         Some("/run/ags-auth-proxy/auth-proxy.sock".to_owned())
     );
     assert_eq!(
-        find_env("BROWSER"),
+        find_plan_env(&plan, "BROWSER"),
         Some("/home/dev/.local/bin/auth-proxy-shim".to_owned())
     );
 }
@@ -1173,19 +1013,12 @@ fn no_auth_proxy_env_when_disabled() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
 
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
     assert!(
-        find_env("AGS_AUTH_PROXY_SOCK").is_none(),
+        find_plan_env(&plan, "AGS_AUTH_PROXY_SOCK").is_none(),
         "no auth proxy env when disabled"
     );
     assert!(
-        find_env("BROWSER").is_none(),
+        find_plan_env(&plan, "BROWSER").is_none(),
         "BROWSER should not be set without auth proxy"
     );
 }
@@ -1203,18 +1036,9 @@ fn host_ui_mounts_runtime_dir_and_env_when_enabled() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
             host_ui_runtime_dir: Some(runtime_dir.path()),
             host_ui_session_id: Some("ags-pi-test"),
-            webview_relay_runtime_dir: None,
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -1229,21 +1053,20 @@ fn host_ui_mounts_runtime_dir_and_env_when_enabled() {
     );
     assert_eq!(runtime_mount.unwrap().mode, MountMode::Rw);
 
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
     assert_eq!(
-        find_env("AGS_HOST_UI_SOCK"),
+        find_plan_env(&plan, "AGS_HOST_UI_SOCK"),
         Some("/run/ags-host-ui/host-ui.sock".to_owned())
     );
-    assert_eq!(find_env("AGS_HOST_UI_PROTOCOL"), Some("1".to_owned()));
-    assert_eq!(find_env("AGS_HOST_UI_TRANSPORT"), Some("socket".to_owned()));
     assert_eq!(
-        find_env("AGS_HOST_UI_SESSION_ID"),
+        find_plan_env(&plan, "AGS_HOST_UI_PROTOCOL"),
+        Some("1".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "AGS_HOST_UI_TRANSPORT"),
+        Some("socket".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "AGS_HOST_UI_SESSION_ID"),
         Some("ags-pi-test".to_owned())
     );
 }
@@ -1272,18 +1095,8 @@ fn webview_relay_mounts_helper_and_env_when_enabled() {
         workdir.path(),
         Agent::Pi,
         BuildLaunchPlanOptions {
-            browser_mode: false,
-            tmux_mode: false,
-            guard_enabled: true,
-            ssh_auth_sock: None,
-            resolved_secrets: &secrets,
-            auth_proxy_runtime_dir: None,
-            host_ui_runtime_dir: None,
-            host_ui_session_id: None,
             webview_relay_runtime_dir: Some(relay_dir.path()),
-            psp_socket: None,
-            psp_session_id: None,
-            extra_mount_dirs: &[],
+            ..default_options(&secrets)
         },
     )
     .unwrap();
@@ -1308,23 +1121,16 @@ fn webview_relay_mounts_helper_and_env_when_enabled() {
     );
     assert_eq!(helper_mount.unwrap().mode, MountMode::Ro);
 
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
     assert_eq!(
-        find_env("AGS_WEBVIEW_RELAY_SOCKET"),
+        find_plan_env(&plan, "AGS_WEBVIEW_RELAY_SOCKET"),
         Some("/run/ags-webview-relay/relay.sock".to_owned())
     );
     assert_eq!(
-        find_env("AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET"),
+        find_plan_env(&plan, "AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET"),
         Some("/run/ags-webview-relay/upstream.sock".to_owned())
     );
     assert_eq!(
-        find_env("AGS_WEBVIEW_URL_HELPER"),
+        find_plan_env(&plan, "AGS_WEBVIEW_URL_HELPER"),
         Some("/home/dev/.local/bin/ags-webview-url".to_owned())
     );
 }
@@ -1335,18 +1141,11 @@ fn no_webview_relay_env_when_disabled() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
 
-    let find_env = |key: &str| -> Option<String> {
-        plan.env
-            .inline
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-    };
-    assert!(find_env("AGS_HOST_UI_SOCK").is_none());
-    assert!(find_env("AGS_HOST_UI_PROTOCOL").is_none());
-    assert!(find_env("AGS_HOST_UI_TRANSPORT").is_none());
-    assert!(find_env("AGS_HOST_UI_SESSION_ID").is_none());
-    assert!(find_env("AGS_WEBVIEW_RELAY_SOCKET").is_none());
-    assert!(find_env("AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET").is_none());
-    assert!(find_env("AGS_WEBVIEW_URL_HELPER").is_none());
+    assert!(find_plan_env(&plan, "AGS_HOST_UI_SOCK").is_none());
+    assert!(find_plan_env(&plan, "AGS_HOST_UI_PROTOCOL").is_none());
+    assert!(find_plan_env(&plan, "AGS_HOST_UI_TRANSPORT").is_none());
+    assert!(find_plan_env(&plan, "AGS_HOST_UI_SESSION_ID").is_none());
+    assert!(find_plan_env(&plan, "AGS_WEBVIEW_RELAY_SOCKET").is_none());
+    assert!(find_plan_env(&plan, "AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET").is_none());
+    assert!(find_plan_env(&plan, "AGS_WEBVIEW_URL_HELPER").is_none());
 }

@@ -103,7 +103,6 @@ pub struct SecurityConfig {
     pub security_opts: Vec<String>,
     pub cap_drop: String,
     pub pids_limit: u32,
-    pub pull: String,
 }
 
 impl Default for SecurityConfig {
@@ -113,7 +112,6 @@ impl Default for SecurityConfig {
             security_opts: vec!["no-new-privileges".to_owned(), "label=disable".to_owned()],
             cap_drop: "all".to_owned(),
             pids_limit: 4096,
-            pull: "never".to_owned(),
         }
     }
 }

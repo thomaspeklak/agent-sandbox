@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{self, BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use crate::config::ValidatedConfig;
@@ -19,7 +19,7 @@ pub fn run(config: &ValidatedConfig) -> Result<(), SetupError> {
     print_pub_key("Signing key (SSH signing key)", sign_key)?;
 
     ensure_pi_assets(config)?;
-    ensure_claude_assets(config)?;
+    ensure_claude_assets(config);
 
     if !crate::util::has_command("secret-tool") {
         println!(
@@ -99,7 +99,7 @@ fn ensure_pi_assets(config: &ValidatedConfig) -> Result<(), SetupError> {
     Ok(())
 }
 
-fn ensure_claude_assets(config: &ValidatedConfig) -> Result<(), SetupError> {
+fn ensure_claude_assets(config: &ValidatedConfig) {
     let hooks_dir = config.sandbox.cache_dir.join("ags-hooks");
     if let Err(e) = crate::assets::ensure_claude_guard_hook(&hooks_dir) {
         eprintln!("warning: could not write Claude guard hook: {e}");
@@ -107,7 +107,6 @@ fn ensure_claude_assets(config: &ValidatedConfig) -> Result<(), SetupError> {
     if let Err(e) = crate::assets::ensure_claude_guard_skill(&hooks_dir) {
         eprintln!("warning: could not write Claude guard skill: {e}");
     }
-    Ok(())
 }
 
 // --- SSH key generation ---
@@ -139,7 +138,7 @@ fn generate_key_if_missing(key_path: &Path, comment: &str) -> Result<(), SetupEr
 }
 
 fn print_pub_key(label: &str, key_path: &Path) -> Result<(), SetupError> {
-    let pub_path = pub_key_path(key_path);
+    let pub_path = super::doctor_util::pub_key_path(key_path);
     println!("{label}:");
     if pub_path.exists() {
         let content = fs::read_to_string(&pub_path)?;
@@ -225,8 +224,3 @@ fn store_secrets_interactive(config: &ValidatedConfig) -> Result<(), SetupError>
     Ok(())
 }
 
-fn pub_key_path(key_path: &Path) -> PathBuf {
-    let mut p = key_path.as_os_str().to_owned();
-    p.push(".pub");
-    PathBuf::from(p)
-}

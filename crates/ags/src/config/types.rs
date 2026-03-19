@@ -125,7 +125,7 @@ pub enum SecretSource {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BrowserConfig {
     pub enabled: bool,
     pub command: String,
@@ -133,19 +133,6 @@ pub struct BrowserConfig {
     pub debug_port: u16,
     pub pi_skill_path: String,
     pub command_args: Vec<String>,
-}
-
-impl Default for BrowserConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            command: String::new(),
-            profile_dir: PathBuf::new(),
-            debug_port: 0,
-            pi_skill_path: String::new(),
-            command_args: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

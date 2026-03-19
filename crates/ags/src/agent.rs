@@ -5,6 +5,7 @@ const HOST_SERVICE_PROMPT_HINT: &str =
     "Sandbox: use host.containers.internal (localhost is container-local).";
 
 /// Agent-specific launch profile: command, args, env, and boot behavior.
+#[derive(Default)]
 pub struct AgentProfile {
     pub command: String,
     pub command_args: Vec<String>,
@@ -53,11 +54,9 @@ fn pi_profile(config: &ValidatedConfig, guard_enabled: bool) -> AgentProfile {
     AgentProfile {
         command: "pi".to_owned(),
         command_args,
-        extra_env: vec![],
-        extra_boot_dirs: vec![],
-        entrypoint_setup: String::new(),
         browser_skill_flag: Some("--skill".to_owned()),
         browser_skill_path: config.browser.pi_skill_path.clone(),
+        ..AgentProfile::default()
     }
 }
 
@@ -81,11 +80,7 @@ fn claude_profile(guard_enabled: bool) -> AgentProfile {
     AgentProfile {
         command: "claude".to_owned(),
         command_args,
-        extra_env: vec![],
-        extra_boot_dirs: vec![],
-        entrypoint_setup: String::new(),
-        browser_skill_flag: None,
-        browser_skill_path: String::new(),
+        ..AgentProfile::default()
     }
 }
 
@@ -99,11 +94,7 @@ fn codex_profile() -> AgentProfile {
                 toml_basic_string(HOST_SERVICE_PROMPT_HINT)
             ),
         ],
-        extra_env: vec![],
-        extra_boot_dirs: vec![],
-        entrypoint_setup: String::new(),
-        browser_skill_flag: None,
-        browser_skill_path: String::new(),
+        ..AgentProfile::default()
     }
 }
 
@@ -111,44 +102,34 @@ fn toml_basic_string(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+const OPENCODE_BOOT_DIRS: &[&str] = &[
+    "/home/dev/.local/share/opencode",
+    "/home/dev/.cache/opencode",
+];
+
+fn opencode_boot_dirs() -> Vec<String> {
+    OPENCODE_BOOT_DIRS.iter().map(|s| (*s).to_owned()).collect()
+}
+
 fn gemini_profile() -> AgentProfile {
     AgentProfile {
         command: "gemini".to_owned(),
-        command_args: vec![],
-        extra_env: vec![],
-        extra_boot_dirs: vec![],
-        entrypoint_setup: String::new(),
-        browser_skill_flag: None,
-        browser_skill_path: String::new(),
+        ..AgentProfile::default()
     }
 }
 
 fn shell_profile() -> AgentProfile {
     AgentProfile {
         command: "bash".to_owned(),
-        command_args: vec![],
-        extra_env: vec![],
-        extra_boot_dirs: vec![
-            "/home/dev/.local/share/opencode".to_owned(),
-            "/home/dev/.cache/opencode".to_owned(),
-        ],
-        entrypoint_setup: String::new(),
-        browser_skill_flag: None,
-        browser_skill_path: String::new(),
+        extra_boot_dirs: opencode_boot_dirs(),
+        ..AgentProfile::default()
     }
 }
 
 fn opencode_profile() -> AgentProfile {
     AgentProfile {
         command: "opencode".to_owned(),
-        command_args: vec![],
-        extra_env: vec![],
-        extra_boot_dirs: vec![
-            "/home/dev/.local/share/opencode".to_owned(),
-            "/home/dev/.cache/opencode".to_owned(),
-        ],
-        entrypoint_setup: String::new(),
-        browser_skill_flag: None,
-        browser_skill_path: String::new(),
+        extra_boot_dirs: opencode_boot_dirs(),
+        ..AgentProfile::default()
     }
 }

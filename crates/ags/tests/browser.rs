@@ -18,9 +18,7 @@ fn make_config(enabled: bool, port: u16) -> BrowserConfig {
 #[test]
 fn start_returns_none_when_browser_mode_off() {
     let config = make_config(true, 9222);
-    let result = browser::start_if_needed(false, &config);
-    assert!(result.is_ok());
-    assert!(result.unwrap().is_none());
+    assert!(browser::start_if_needed(false, &config).unwrap().is_none());
 }
 
 #[test]

@@ -10,7 +10,7 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
     let mut args: Vec<String> = Vec::with_capacity(64);
 
     // Base flags
-    args.extend(["run", "--rm", "-it", "--pull=never"].map(into));
+    args.extend(["run", "--rm", "-it", "--pull=never"].map(String::from));
     args.push(format!("--userns={}", plan.security.userns));
 
     for opt in &plan.security.security_opts {
@@ -78,6 +78,3 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
     args
 }
 
-fn into(s: &str) -> String {
-    s.to_owned()
-}

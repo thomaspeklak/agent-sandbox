@@ -204,10 +204,7 @@ fn write_wrapper(path: &Path, command: &str) -> Result<(), CreateAliasesError> {
 }
 
 fn file_contains_marker(path: &Path, marker: &str) -> bool {
-    fs::read(path)
-        .ok()
-        .map(|bytes| String::from_utf8_lossy(&bytes).contains(marker))
-        .unwrap_or(false)
+    fs::read(path).is_ok_and(|bytes| String::from_utf8_lossy(&bytes).contains(marker))
 }
 
 fn upsert_shell_alias_block(path: &Path, shell: Shell) -> Result<bool, CreateAliasesError> {
@@ -227,7 +224,7 @@ fn upsert_shell_alias_block(path: &Path, shell: Shell) -> Result<bool, CreateAli
     Ok(true)
 }
 
-fn render_alias_block(shell: Shell) -> String {
+fn render_alias_block(_shell: Shell) -> String {
     let mut out = String::new();
     out.push_str(BLOCK_START);
     out.push('\n');
@@ -235,11 +232,7 @@ fn render_alias_block(shell: Shell) -> String {
 
     for spec in ALIASES {
         let escaped = spec.command.replace('\'', "'\\''");
-        match shell {
-            Shell::Fish | Shell::Zsh | Shell::Bash => {
-                out.push_str(&format!("alias {}='{}'\n", spec.name, escaped));
-            }
-        }
+        out.push_str(&format!("alias {}='{}'\n", spec.name, escaped));
     }
 
     out.push_str(BLOCK_END);

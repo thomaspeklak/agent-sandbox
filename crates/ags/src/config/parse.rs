@@ -333,19 +333,22 @@ fn validate_tool(
     Ok((tool, mounts, secrets))
 }
 
+/// Resolve a binary name: expand paths containing '/' or '~', otherwise keep bare name.
+fn resolve_binary_name(raw: &str, ctx: &str) -> Result<String, ConfigError> {
+    let name = require_non_empty(raw, ctx)?;
+    if name.contains('/') || name.starts_with('~') {
+        Ok(expand_path(name, ctx)?.to_string_lossy().into_owned())
+    } else {
+        Ok(name.to_owned())
+    }
+}
+
 fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {
     if !raw.enabled {
         return Ok(BrowserConfig::default());
     }
 
-    let command_str = require_non_empty(&raw.command, "[browser].command")?;
-    let command = if command_str.contains('/') || command_str.starts_with('~') {
-        expand_path(command_str, "[browser].command")?
-            .to_string_lossy()
-            .into_owned()
-    } else {
-        command_str.to_owned()
-    };
+    let command = resolve_binary_name(&raw.command, "[browser].command")?;
 
     require_non_empty(&raw.profile_dir, "[browser].profile_dir")?;
     let profile_dir = expand_path(&raw.profile_dir, "[browser].profile_dir")?;
@@ -369,14 +372,7 @@ fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {
 fn validate_host_ui(raw: &RawHostUi) -> Result<HostUiConfig, ConfigError> {
     let renderer = require_non_empty(&raw.renderer, "[host_ui].renderer")?.to_owned();
     let log_level = require_non_empty(&raw.log_level, "[host_ui].log_level")?.to_owned();
-    let binary_str = require_non_empty(&raw.binary, "[host_ui].binary")?;
-    let binary = if binary_str.contains('/') || binary_str.starts_with('~') {
-        expand_path(binary_str, "[host_ui].binary")?
-            .to_string_lossy()
-            .into_owned()
-    } else {
-        binary_str.to_owned()
-    };
+    let binary = resolve_binary_name(&raw.binary, "[host_ui].binary")?;
     let renderer_bin = if raw.renderer_bin.trim().is_empty() {
         None
     } else {

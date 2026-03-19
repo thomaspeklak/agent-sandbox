@@ -109,13 +109,16 @@ fn build_podman_build_args(
         image.to_owned(),
         "-f".to_owned(),
         containerfile.display().to_string(),
-        "--build-arg".to_owned(),
-        format!("BR_VERSION={br_version}"),
-        "--build-arg".to_owned(),
-        format!("BV_VERSION={bv_version}"),
-        "--build-arg".to_owned(),
-        format!("DCG_VERSION={dcg_version}"),
     ];
+
+    for (name, version) in [
+        ("BR_VERSION", br_version),
+        ("BV_VERSION", bv_version),
+        ("DCG_VERSION", dcg_version),
+    ] {
+        args.push("--build-arg".to_owned());
+        args.push(format!("{name}={version}"));
+    }
 
     if pull {
         args.push("--pull".to_owned());

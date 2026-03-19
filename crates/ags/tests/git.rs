@@ -126,71 +126,16 @@ fn discover_external_mounts_normal_repo() {
 
 #[test]
 fn discover_external_mounts_worktree() {
-    let base = tempdir();
-    let main_repo = base.join("main");
-    let worktree = base.join("worktree");
-
-    // Create main repo with a commit
-    let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
+    let Some((_base, main_repo, worktree)) = setup_worktree() else {
+        return;
     };
 
-    if git(&["init", &main_repo.to_string_lossy()]).is_none() {
-        eprintln!("git not available, skipping");
-        return;
-    }
-
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "config",
-        "user.email",
-        "test@test.com",
-    ]);
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "config",
-        "user.name",
-        "Test",
-    ]);
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "commit",
-        "--allow-empty",
-        "-m",
-        "init",
-    ]);
-
-    // Create a worktree
-    let wt_result = git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "worktree",
-        "add",
-        &worktree.to_string_lossy(),
-        "-b",
-        "test-branch",
-    ]);
-
-    if wt_result.is_none() {
-        eprintln!("git worktree not available, skipping");
-        return;
-    }
-
     let result = git::discover_external_git_mounts(&worktree);
-    // Worktree metadata lives under main_repo/.git, which is outside the worktree
     assert!(
         !result.paths.is_empty(),
         "Expected external mounts for worktree, got none"
     );
 
-    // The mounted path(s) should be under the main repo
     let main_repo_canonical = main_repo.canonicalize().unwrap();
     for mount_path in &result.paths {
         assert!(
@@ -236,60 +181,9 @@ fn worktree_parent_repo_dir_none_for_normal_repo() {
 
 #[test]
 fn repo_root_for_linked_worktree_returns_worktree_root() {
-    let base = tempdir();
-    let main_repo = base.join("main");
-    let worktree = base.join("worktree");
-
-    let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
+    let Some((_base, _main_repo, worktree)) = setup_worktree() else {
+        return;
     };
-
-    if git(&["init", &main_repo.to_string_lossy()]).is_none() {
-        eprintln!("git not available, skipping");
-        return;
-    }
-
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "config",
-        "user.email",
-        "test@test.com",
-    ]);
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "config",
-        "user.name",
-        "Test",
-    ]);
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "commit",
-        "--allow-empty",
-        "-m",
-        "init",
-    ]);
-
-    let wt_result = git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "worktree",
-        "add",
-        &worktree.to_string_lossy(),
-        "-b",
-        "test-branch",
-    ]);
-
-    if wt_result.is_none() {
-        eprintln!("git worktree not available, skipping");
-        return;
-    }
 
     let root = git::repo_root(&worktree).expect("expected worktree root");
     assert_eq!(
@@ -300,6 +194,19 @@ fn repo_root_for_linked_worktree_returns_worktree_root() {
 
 #[test]
 fn worktree_parent_repo_dir_for_linked_worktree() {
+    let Some((_base, main_repo, worktree)) = setup_worktree() else {
+        return;
+    };
+
+    let parent = git::worktree_parent_repo_dir(&worktree).expect("expected parent repo dir");
+    assert_eq!(
+        parent.canonicalize().unwrap(),
+        main_repo.canonicalize().unwrap()
+    );
+}
+
+/// Create a git repo with a linked worktree. Returns `None` if git is unavailable.
+fn setup_worktree() -> Option<(PathBuf, PathBuf, PathBuf)> {
     let base = tempdir();
     let main_repo = base.join("main");
     let worktree = base.join("worktree");
@@ -314,52 +221,22 @@ fn worktree_parent_repo_dir_for_linked_worktree() {
 
     if git(&["init", &main_repo.to_string_lossy()]).is_none() {
         eprintln!("git not available, skipping");
-        return;
+        return None;
     }
 
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "config",
-        "user.email",
-        "test@test.com",
-    ]);
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "config",
-        "user.name",
-        "Test",
-    ]);
-    git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "commit",
-        "--allow-empty",
-        "-m",
-        "init",
-    ]);
+    git(&["-C", &main_repo.to_string_lossy(), "config", "user.email", "test@test.com"]);
+    git(&["-C", &main_repo.to_string_lossy(), "config", "user.name", "Test"]);
+    git(&["-C", &main_repo.to_string_lossy(), "commit", "--allow-empty", "-m", "init"]);
 
-    let wt_result = git(&[
-        "-C",
-        &main_repo.to_string_lossy(),
-        "worktree",
-        "add",
-        &worktree.to_string_lossy(),
-        "-b",
-        "test-branch",
-    ]);
-
-    if wt_result.is_none() {
+    if git(&[
+        "-C", &main_repo.to_string_lossy(),
+        "worktree", "add", &worktree.to_string_lossy(), "-b", "test-branch",
+    ]).is_none() {
         eprintln!("git worktree not available, skipping");
-        return;
+        return None;
     }
 
-    let parent = git::worktree_parent_repo_dir(&worktree).expect("expected parent repo dir");
-    assert_eq!(
-        parent.canonicalize().unwrap(),
-        main_repo.canonicalize().unwrap()
-    );
+    Some((base, main_repo, worktree))
 }
 
 fn tempdir() -> PathBuf {

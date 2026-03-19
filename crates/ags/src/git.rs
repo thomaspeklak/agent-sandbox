@@ -125,46 +125,7 @@ pub fn repo_root(workdir: &Path) -> Option<PathBuf> {
     if !is_inside_work_tree(workdir) {
         return None;
     }
-
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &workdir.to_string_lossy(),
-            "rev-parse",
-            "--path-format=absolute",
-            "--show-toplevel",
-        ])
-        .output()
-        .ok()?;
-
-    if output.status.success()
-        && let Some(p) = parse_trimmed_path(&output.stdout)
-        && p.is_absolute()
-    {
-        return Some(p);
-    }
-
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &workdir.to_string_lossy(),
-            "rev-parse",
-            "--show-toplevel",
-        ])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let raw = parse_trimmed_path(&output.stdout)?;
-    if raw.is_absolute() {
-        return Some(raw);
-    }
-
-    let resolved = workdir.join(&raw);
-    resolved.canonicalize().ok().or(Some(resolved))
+    git_rev_parse_path(workdir, &["--show-toplevel"])
 }
 
 /// If `workdir` is a linked git worktree, return the parent repository root.
@@ -213,69 +174,29 @@ fn is_inside_work_tree(workdir: &Path) -> bool {
         .is_some_and(|o| o.status.success())
 }
 
-fn resolve_absolute_git_dir(workdir: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &workdir.to_string_lossy(),
-            "rev-parse",
-            "--path-format=absolute",
-            "--absolute-git-dir",
-        ])
-        .output()
-        .ok()?;
+/// Run `git -C <workdir> rev-parse` with the given args, trying first with
+/// `--path-format=absolute` and falling back without it (for older git).
+/// If the result is relative, resolves it against `workdir`.
+fn git_rev_parse_path(workdir: &Path, args: &[&str]) -> Option<PathBuf> {
+    let workdir_str = workdir.to_string_lossy();
 
-    if !output.status.success() {
-        // Fallback without --path-format (older git)
-        let output = Command::new("git")
-            .args([
-                "-C",
-                &workdir.to_string_lossy(),
-                "rev-parse",
-                "--absolute-git-dir",
-            ])
-            .output()
-            .ok()?;
+    // Try with --path-format=absolute first
+    let mut full_args = vec!["-C", &workdir_str, "rev-parse", "--path-format=absolute"];
+    full_args.extend_from_slice(args);
+    let output = Command::new("git").args(&full_args).output().ok()?;
 
-        if !output.status.success() {
-            return None;
+    if output.status.success() {
+        if let Some(p) = parse_trimmed_path(&output.stdout) {
+            if p.is_absolute() {
+                return Some(p);
+            }
         }
-        return parse_trimmed_path(&output.stdout);
-    }
-
-    parse_trimmed_path(&output.stdout)
-}
-
-fn resolve_common_dir(workdir: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &workdir.to_string_lossy(),
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-common-dir",
-        ])
-        .output()
-        .ok()?;
-
-    if output.status.success()
-        && let Some(p) = parse_trimmed_path(&output.stdout)
-        && p.is_absolute()
-    {
-        return Some(p);
     }
 
     // Fallback without --path-format
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &workdir.to_string_lossy(),
-            "rev-parse",
-            "--git-common-dir",
-        ])
-        .output()
-        .ok()?;
-
+    let mut fallback_args = vec!["-C", &workdir_str, "rev-parse"];
+    fallback_args.extend_from_slice(args);
+    let output = Command::new("git").args(&fallback_args).output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -285,17 +206,25 @@ fn resolve_common_dir(workdir: &Path) -> Option<PathBuf> {
         return Some(raw);
     }
 
-    // Relative common_dir: resolve against workdir
     let resolved = workdir.join(&raw);
     resolved.canonicalize().ok().or(Some(resolved))
 }
 
+fn resolve_absolute_git_dir(workdir: &Path) -> Option<PathBuf> {
+    git_rev_parse_path(workdir, &["--absolute-git-dir"])
+}
+
+fn resolve_common_dir(workdir: &Path) -> Option<PathBuf> {
+    git_rev_parse_path(workdir, &["--git-common-dir"])
+}
+
 fn parse_trimmed_path(bytes: &[u8]) -> Option<PathBuf> {
-    let s = String::from_utf8_lossy(bytes).trim().to_owned();
-    if s.is_empty() {
+    let s = String::from_utf8_lossy(bytes);
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
         None
     } else {
-        Some(PathBuf::from(s))
+        Some(PathBuf::from(trimmed))
     }
 }
 
@@ -330,14 +259,9 @@ fn try_add_mount(set: &mut BTreeSet<PathBuf>, candidate: &Path, workdir: &Path) 
     let workdir_resolved = workdir
         .canonicalize()
         .unwrap_or_else(|_| workdir.to_path_buf());
-    if path_is_within(&candidate, &workdir_resolved) {
+    if candidate.starts_with(&workdir_resolved) {
         return;
     }
 
     set.insert(candidate);
-}
-
-/// Check if `child` is the same as or a descendant of `parent`.
-fn path_is_within(child: &Path, parent: &Path) -> bool {
-    child == parent || child.starts_with(parent)
 }

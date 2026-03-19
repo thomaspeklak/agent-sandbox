@@ -36,6 +36,17 @@ pub fn runtime_dir() -> PathBuf {
         .unwrap_or_else(|_| std::env::temp_dir())
 }
 
+/// Shell-quote a value using single quotes if it contains special characters.
+pub fn shell_quote(s: &str) -> String {
+    if s.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'-' | b'_'))
+    {
+        s.to_owned()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
 /// Poll `check` every `interval` until it returns `Break(T)` or `timeout` elapses.
 ///
 /// Returns `Some(T)` if `check` broke early, `None` on timeout.

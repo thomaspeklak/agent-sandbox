@@ -1,27 +1,7 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::process::Command;
 
 use crate::config::{SecretSource, ValidatedSecret};
-
-#[derive(Debug)]
-pub enum SecretError {
-    /// All sources for a required secret failed.
-    Unresolved { env: String, sources_tried: usize },
-}
-
-impl fmt::Display for SecretError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unresolved { env, sources_tried } => write!(
-                f,
-                "secret '{env}' unresolved after {sources_tried} source(s)"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for SecretError {}
 
 /// Abstraction over secret backends so tests can mock secret-tool.
 pub trait SecretBackend {

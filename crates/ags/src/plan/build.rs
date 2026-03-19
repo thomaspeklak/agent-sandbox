@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use crate::config::{
 use crate::git;
 use crate::host_ui::HostUiGuard;
 use crate::plan::types::*;
+use crate::util::shell_quote;
 use crate::webview_relay::WebviewRelayGuard;
 
 // Container-side path constants.
@@ -38,16 +39,19 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub extra_mount_dirs: &'a [PathBuf],
 }
 
-struct BuildEnvOptions<'a> {
+/// Intermediate env-assembly context. Sidecar fields mirror
+/// [`BuildLaunchPlanOptions`] as `Option` references so `build_env` can derive
+/// enabled-flags via `.is_some()` rather than receiving pre-computed booleans.
+struct BuildEnvContext<'a> {
     wayland: &'a Option<WaylandInfo>,
     read_roots: &'a [String],
     write_roots: &'a [String],
     resolved_secrets: &'a HashMap<String, String>,
-    auth_proxy_enabled: bool,
-    host_ui_enabled: bool,
+    auth_proxy_runtime_dir: Option<&'a Path>,
+    host_ui_runtime_dir: Option<&'a Path>,
     host_ui_session_id: Option<&'a str>,
-    webview_relay_enabled: bool,
-    psp_enabled: bool,
+    webview_relay_runtime_dir: Option<&'a Path>,
+    psp_socket: Option<&'a Path>,
     psp_session_id: Option<&'a str>,
     guard_enabled: bool,
 }
@@ -124,14 +128,14 @@ pub fn build_launch_plan(
     // Git metadata mounts (external worktree/submodule dirs)
     let git_mounts = git::discover_external_git_mounts(&workdir_mapping.host);
     for path in &git_mounts.paths {
-        let path_str = path.to_string_lossy().to_string();
+        let container = path.to_string_lossy().to_string();
         mounts.push(PlanMount {
             host: path.clone(),
-            container: path_str.clone(),
+            container: container.clone(),
             mode: MountMode::Rw,
         });
-        read_roots.push(path_str.clone());
-        write_roots.push(path_str);
+        read_roots.push(container.clone());
+        write_roots.push(container);
     }
 
     // Config mounts (filtered by when, optional/create handled)
@@ -223,16 +227,16 @@ pub fn build_launch_plan(
     let env = build_env(
         config,
         &profile,
-        BuildEnvOptions {
+        BuildEnvContext {
             wayland: &wayland,
             read_roots: &read_roots,
             write_roots: &write_roots,
             resolved_secrets,
-            auth_proxy_enabled: auth_proxy_runtime_dir.is_some(),
-            host_ui_enabled: host_ui_runtime_dir.is_some(),
+            auth_proxy_runtime_dir,
+            host_ui_runtime_dir,
             host_ui_session_id,
-            webview_relay_enabled: webview_relay_runtime_dir.is_some(),
-            psp_enabled: psp_socket.is_some(),
+            webview_relay_runtime_dir,
+            psp_socket,
             psp_session_id,
             guard_enabled,
         },
@@ -294,10 +298,10 @@ fn build_container_name(workdir: &Path) -> String {
 }
 
 fn short_path_slug(path: &Path) -> String {
-    let mut parts: Vec<String> = path
+    let parts: Vec<_> = path
         .components()
         .filter_map(|c| match c {
-            std::path::Component::Normal(os) => Some(os.to_string_lossy().to_string()),
+            std::path::Component::Normal(os) => Some(os.to_string_lossy()),
             _ => None,
         })
         .collect();
@@ -306,44 +310,28 @@ fn short_path_slug(path: &Path) -> String {
         return "work".to_owned();
     }
 
-    // Keep only the tail to avoid very long names.
-    if parts.len() > 3 {
-        parts = parts.split_off(parts.len() - 3);
-    }
-
-    let raw = parts.join("-");
+    let tail = if parts.len() > 3 { &parts[parts.len() - 3..] } else { &parts };
+    let raw = tail.join("-");
     let mut slug = String::with_capacity(raw.len());
     let mut prev_dash = false;
     for ch in raw.chars() {
-        let out = if ch.is_ascii_alphanumeric() {
-            ch.to_ascii_lowercase()
-        } else {
-            '-'
-        };
-
-        if out == '-' {
-            if prev_dash {
-                continue;
-            }
+        if ch.is_ascii_alphanumeric() {
+            prev_dash = false;
+            slug.push(ch.to_ascii_lowercase());
+        } else if !prev_dash {
             prev_dash = true;
             slug.push('-');
-        } else {
-            prev_dash = false;
-            slug.push(out);
         }
     }
 
-    let slug = slug.trim_matches('-');
-    if slug.is_empty() {
-        return "work".to_owned();
-    }
-
     const MAX_SLUG_LEN: usize = 40;
-    if slug.len() <= MAX_SLUG_LEN {
-        slug.to_owned()
+    let slug = slug.trim_matches('-');
+    let slug = if slug.len() > MAX_SLUG_LEN {
+        slug[..MAX_SLUG_LEN].trim_matches('-')
     } else {
-        slug[..MAX_SLUG_LEN].trim_matches('-').to_owned()
-    }
+        slug
+    };
+    if slug.is_empty() { "work".to_owned() } else { slug.to_owned() }
 }
 
 fn short_id4() -> String {
@@ -575,21 +563,21 @@ fn clipboard_enabled() -> Result<bool, PlanError> {
 fn build_env(
     config: &ValidatedConfig,
     profile: &AgentProfile,
-    options: BuildEnvOptions<'_>,
+    ctx: BuildEnvContext<'_>,
 ) -> PlanEnv {
-    let BuildEnvOptions {
+    let BuildEnvContext {
         wayland,
         read_roots,
         write_roots,
         resolved_secrets,
-        auth_proxy_enabled,
-        host_ui_enabled,
+        auth_proxy_runtime_dir,
+        host_ui_runtime_dir,
         host_ui_session_id,
-        webview_relay_enabled,
-        psp_enabled,
+        webview_relay_runtime_dir,
+        psp_socket,
         psp_session_id,
         guard_enabled,
-    } = options;
+    } = ctx;
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
         (
@@ -609,15 +597,14 @@ fn build_env(
         ),
     ];
 
-    for (key, value) in &profile.extra_env {
-        inline.push((key.clone(), value.clone()));
-    }
+    inline.extend(profile.extra_env.iter().cloned());
 
-    for (_, container_path, env_var) in CACHE_MOUNTS {
-        if !env_var.is_empty() {
-            inline.push((env_var.to_string(), container_path.to_string()));
-        }
-    }
+    inline.extend(
+        CACHE_MOUNTS
+            .iter()
+            .filter(|(_, _, env_var)| !env_var.is_empty())
+            .map(|(_, container_path, env_var)| (env_var.to_string(), container_path.to_string())),
+    );
 
     if !guard_enabled {
         inline.push(("AGS_GUARD_YOLO".to_owned(), "1".to_owned()));
@@ -628,7 +615,7 @@ fn build_env(
         inline.push(("XDG_RUNTIME_DIR".to_owned(), "/tmp".to_owned()));
     }
 
-    if auth_proxy_enabled {
+    if auth_proxy_runtime_dir.is_some() {
         inline.push((
             "AGS_AUTH_PROXY_SOCK".to_owned(),
             AuthProxyGuard::container_socket_path().to_owned(),
@@ -639,7 +626,7 @@ fn build_env(
         ));
     }
 
-    if host_ui_enabled {
+    if host_ui_runtime_dir.is_some() {
         inline.push((
             "AGS_HOST_UI_SOCK".to_owned(),
             HostUiGuard::container_socket_path().to_owned(),
@@ -655,7 +642,7 @@ fn build_env(
         }
     }
 
-    if webview_relay_enabled {
+    if webview_relay_runtime_dir.is_some() {
         inline.push((
             "AGS_WEBVIEW_RELAY_SOCKET".to_owned(),
             WebviewRelayGuard::container_socket_path().to_owned(),
@@ -670,7 +657,7 @@ fn build_env(
         ));
     }
 
-    if psp_enabled {
+    if psp_socket.is_some() {
         inline.push((
             "DOCKER_HOST".to_owned(),
             format!("unix://{}", crate::psp::PspGuard::container_socket_path()),
@@ -684,18 +671,15 @@ fn build_env(
         }
     }
 
-    let passthrough_names = vec![
-        "TERM".to_owned(),
-        "COLORTERM".to_owned(),
-        "EDITOR".to_owned(),
-        "VISUAL".to_owned(),
-    ];
+    let passthrough_names = ["TERM", "COLORTERM", "EDITOR", "VISUAL"]
+        .into_iter()
+        .map(String::from)
+        .collect();
 
-    // Env file: resolved secrets + host passthrough vars
-    let mut env_file_entries: Vec<(String, String)> = Vec::new();
-    for (key, value) in resolved_secrets {
-        env_file_entries.push((key.clone(), value.clone()));
-    }
+    let mut env_file_entries: Vec<(String, String)> = resolved_secrets
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     for env_name in &config.sandbox.passthrough_env {
         if resolved_secrets.contains_key(env_name) {
             continue;
@@ -728,16 +712,14 @@ fn build_entrypoint(
 ) -> String {
     let mut script = String::new();
 
-    // Combine config boot_dirs with agent-specific dirs
-    let all_dirs: Vec<&str> = boot_dirs
+    let all_dirs: Vec<String> = boot_dirs
         .iter()
         .chain(profile.extra_boot_dirs.iter())
-        .map(String::as_str)
+        .map(|d| shell_quote(d))
         .collect();
 
     if !all_dirs.is_empty() {
-        let dirs: Vec<String> = all_dirs.iter().map(|d| shell_quote(d)).collect();
-        script.push_str(&format!("mkdir -p {}; ", dirs.join(" ")));
+        script.push_str(&format!("mkdir -p {}; ", all_dirs.join(" ")));
     }
 
     if !profile.entrypoint_setup.is_empty() {
@@ -754,15 +736,16 @@ fn build_entrypoint(
     }
 
     if webview_relay_enabled {
-        script.push_str(
-            "if [ -n \"${AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET:-}\" ]; then \
-                if command -v python3 >/dev/null 2>&1; then \
-                    python3 /run/ags-webview-relay/webview-relay-shim >/tmp/ags-webview-relay.log 2>&1 & \
-                else \
-                    echo '[ags] warning: python3 is missing; sandbox webview relay will not work in this sandbox.' >&2; \
-                fi; \
-            fi; ",
-        );
+        script.push_str(concat!(
+            "if [ -n \"${AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET:-}\" ]; then ",
+            "if command -v python3 >/dev/null 2>&1; then ",
+            "python3 /run/ags-webview-relay/webview-relay-shim ",
+            ">/tmp/ags-webview-relay.log 2>&1 & ",
+            "else ",
+            "echo '[ags] warning: python3 is missing; ",
+            "sandbox webview relay will not work in this sandbox.' >&2; ",
+            "fi; fi; ",
+        ));
     }
 
     script.push_str(&format!(
@@ -810,26 +793,9 @@ fn build_agent_exec(profile: &AgentProfile, browser: &BrowserConfig, browser_mod
     command
 }
 
-fn shell_quote(s: &str) -> String {
-    if s.bytes()
-        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'-' | b'_'))
-    {
-        s.to_owned()
-    } else {
-        format!("'{}'", s.replace('\'', "'\\''"))
-    }
-}
-
 // --- JSON helpers ---
 
 fn json_string_array(items: &[String]) -> String {
-    let mut unique: Vec<&str> = items.iter().map(|s| s.as_str()).collect();
-    unique.sort();
-    unique.dedup();
-    unique.retain(|s| !s.is_empty());
-    let escaped: Vec<String> = unique
-        .iter()
-        .map(|s| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
-        .collect();
-    format!("[{}]", escaped.join(","))
+    let unique: BTreeSet<&str> = items.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+    serde_json::to_string(&unique).expect("string array serialization cannot fail")
 }

@@ -38,7 +38,7 @@ pub fn image_exists(image: &str) -> bool {
 pub fn image_has_binary(image: &str, binary: &str) -> Result<bool, PodmanError> {
     let status = Command::new("podman")
         .args(["run", "--rm", "--entrypoint", "bash", image, "-lc"])
-        .arg(format!("command -v {} >/dev/null 2>&1", shell_word(binary)))
+        .arg(format!("command -v {} >/dev/null 2>&1", crate::util::shell_quote(binary)))
         .status()
         .map_err(PodmanError::SpawnFailed)?;
     Ok(status.success())
@@ -133,13 +133,3 @@ fn run_container(
     Ok(status.code().unwrap_or(1) as u8)
 }
 
-fn shell_word(value: &str) -> String {
-    if value
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
-    {
-        value.to_owned()
-    } else {
-        format!("'{}'", value.replace('\'', "'\\''"))
-    }
-}

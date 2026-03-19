@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -510,30 +510,21 @@ fn multiple_concurrent_sessions() {
                 let mut reader = BufReader::new(stream);
 
                 let session_id = format!("session-{i}");
-                let msg = ShimMessage::OpenUrl {
-                    session_id: session_id.clone(),
-                    url: format!("https://example.com/{i}"),
-                    callback_port: None,
-                };
-                let json = serde_json::to_string(&msg).unwrap();
-                writer.write_all(json.as_bytes()).unwrap();
-                writer.write_all(b"\n").unwrap();
-                writer.flush().unwrap();
+                send_shim_msg(
+                    &mut writer,
+                    &ShimMessage::OpenUrl {
+                        session_id: session_id.clone(),
+                        url: format!("https://example.com/{i}"),
+                        callback_port: None,
+                    },
+                );
 
-                // Read prompt result
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                let msg: HostMessage = serde_json::from_str(line.trim()).unwrap();
-                match msg {
+                match recv_host_msg(&mut reader) {
                     HostMessage::PromptResult { allowed, .. } => assert!(allowed),
                     other => panic!("session {i}: expected PromptResult, got: {other:?}"),
                 }
 
-                // Read session complete
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                let msg: HostMessage = serde_json::from_str(line.trim()).unwrap();
-                match msg {
+                match recv_host_msg(&mut reader) {
                     HostMessage::SessionComplete { session_id: sid } => {
                         assert_eq!(sid, session_id);
                     }
@@ -589,5 +580,3 @@ fn container_paths_are_stable() {
         "/run/ags-auth-proxy/auth-proxy.sock"
     );
 }
-
-use std::io::Read;

@@ -85,12 +85,6 @@ fn pi_profile_no_config_dir_env() {
 }
 
 #[test]
-fn pi_profile_has_no_implicit_mounts() {
-    let config = minimal_config();
-    let _profile = profile_for(Agent::Pi, &config);
-}
-
-#[test]
 fn pi_profile_has_browser_skill_flag() {
     let config = minimal_config_with_browser(true);
     let profile = profile_for(Agent::Pi, &config);
@@ -178,12 +172,6 @@ fn claude_profile_no_config_dir_env() {
             .iter()
             .any(|(k, _)| k == "CLAUDE_CONFIG_DIR")
     );
-}
-
-#[test]
-fn claude_profile_has_no_implicit_mounts() {
-    let config = minimal_config();
-    let _profile = profile_for(Agent::Claude, &config);
 }
 
 #[test]

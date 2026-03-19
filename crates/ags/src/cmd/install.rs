@@ -122,12 +122,17 @@ fn ensure_agent_mounts_block(config_path: &Path) -> Result<(), InstallError> {
     }
 
     let content = fs::read_to_string(config_path)?;
-    if content.contains("container = \"/home/dev/.pi\"")
-        && content.contains("container = \"/home/dev/.claude\"")
-        && content.contains("container = \"/home/dev/.claude.json\"")
-        && content.contains("container = \"/home/dev/.codex\"")
-        && content.contains("container = \"/home/dev/.gemini\"")
-        && content.contains("container = \"/home/dev/.config/opencode\"")
+    let required_containers = [
+        "/home/dev/.pi",
+        "/home/dev/.claude",
+        "/home/dev/.claude.json",
+        "/home/dev/.codex",
+        "/home/dev/.gemini",
+        "/home/dev/.config/opencode",
+    ];
+    if required_containers
+        .iter()
+        .all(|c| content.contains(&format!("container = \"{c}\"")))
     {
         println!("Agent mounts already present in {}", config_path.display());
         return Ok(());
@@ -188,49 +193,47 @@ fn link_self_executable(link_path: &Path, force: bool) -> Result<(), InstallErro
     }
 
     if let Ok(meta) = fs::symlink_metadata(link_path) {
-        if meta.file_type().is_symlink() {
-            if let Ok(existing_target) = fs::read_link(link_path) {
-                let existing_abs = if existing_target.is_absolute() {
-                    existing_target
-                } else {
-                    link_path
-                        .parent()
-                        .unwrap_or_else(|| Path::new("."))
-                        .join(existing_target)
-                };
-                if let Ok(existing_canon) = fs::canonicalize(existing_abs)
-                    && existing_canon == current
-                {
-                    println!("Self-link already up to date: {}", link_path.display());
-                    return Ok(());
-                }
-            }
-
-            if !force {
-                eprintln!(
-                    "warning: existing symlink at {} (use --force to replace)",
-                    link_path.display()
-                );
-                return Ok(());
-            }
-            fs::remove_file(link_path)?;
-        } else {
-            if !force {
-                eprintln!(
-                    "warning: existing non-symlink at {} (use --force to replace)",
-                    link_path.display()
-                );
-                return Ok(());
-            }
-            if meta.is_dir() {
-                eprintln!(
-                    "warning: {} is a directory; refusing to replace",
-                    link_path.display()
-                );
-                return Ok(());
-            }
-            fs::remove_file(link_path)?;
+        if meta.is_dir() {
+            eprintln!(
+                "warning: {} is a directory; refusing to replace",
+                link_path.display()
+            );
+            return Ok(());
         }
+
+        // Check if an existing symlink already points at the current binary
+        if meta.file_type().is_symlink()
+            && let Ok(existing_target) = fs::read_link(link_path)
+        {
+            let existing_abs = if existing_target.is_absolute() {
+                existing_target
+            } else {
+                link_path
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join(existing_target)
+            };
+            if let Ok(existing_canon) = fs::canonicalize(existing_abs)
+                && existing_canon == current
+            {
+                println!("Self-link already up to date: {}", link_path.display());
+                return Ok(());
+            }
+        }
+
+        if !force {
+            let kind = if meta.file_type().is_symlink() {
+                "symlink"
+            } else {
+                "non-symlink"
+            };
+            eprintln!(
+                "warning: existing {kind} at {} (use --force to replace)",
+                link_path.display()
+            );
+            return Ok(());
+        }
+        fs::remove_file(link_path)?;
     }
 
     #[cfg(unix)]

@@ -4,7 +4,7 @@ use ags::cli::{
 };
 
 fn args(items: &[&str]) -> Vec<String> {
-    items.iter().map(|item| (*item).to_owned()).collect()
+    items.iter().map(|s| s.to_string()).collect()
 }
 
 #[test]

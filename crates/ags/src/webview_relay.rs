@@ -148,13 +148,15 @@ struct Registration {
     base_path: String,
 }
 
-fn accept_register_loop(
-    listener: UnixListener,
-    runtime_dir: &Path,
+/// Accepts connections from a listener in a loop, spawning `handler` for each.
+/// Stops when `shutdown` is set. `S` is the stream type yielded by the listener.
+fn accept_loop<S: Send + 'static>(
+    incoming: impl Iterator<Item = io::Result<S>>,
     shutdown: &AtomicBool,
-    listeners: &Arc<Mutex<Vec<AppListenerGuard>>>,
+    label: &str,
+    mut handler: impl FnMut(S),
 ) {
-    for stream in listener.incoming() {
+    for stream in incoming {
         if shutdown.load(Ordering::Relaxed) {
             break;
         }
@@ -163,22 +165,33 @@ fn accept_register_loop(
                 if shutdown.load(Ordering::Relaxed) {
                     break;
                 }
-                let runtime_dir = runtime_dir.to_owned();
-                let listeners = Arc::clone(listeners);
-                thread::spawn(move || {
-                    if let Err(err) = handle_register_client(stream, &runtime_dir, &listeners) {
-                        eprintln!("[ags webview-relay] register client error: {err}");
-                    }
-                });
+                handler(stream);
             }
             Err(err) => {
                 if shutdown.load(Ordering::Relaxed) {
                     break;
                 }
-                eprintln!("[ags webview-relay] register accept error: {err}");
+                eprintln!("[ags webview-relay] {label} accept error: {err}");
             }
         }
     }
+}
+
+fn accept_register_loop(
+    listener: UnixListener,
+    runtime_dir: &Path,
+    shutdown: &AtomicBool,
+    listeners: &Arc<Mutex<Vec<AppListenerGuard>>>,
+) {
+    accept_loop(listener.incoming(), shutdown, "register", |stream| {
+        let runtime_dir = runtime_dir.to_owned();
+        let listeners = Arc::clone(listeners);
+        thread::spawn(move || {
+            if let Err(err) = handle_register_client(stream, &runtime_dir, &listeners) {
+                eprintln!("[ags webview-relay] register client error: {err}");
+            }
+        });
+    });
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,6 +215,28 @@ struct RegisterResponse {
     base_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
+}
+
+impl RegisterResponse {
+    fn success(host_port: u16, base_path: String, url: String) -> Self {
+        Self {
+            ok: true,
+            error: None,
+            host_port: Some(host_port),
+            base_path: Some(base_path),
+            url: Some(url),
+        }
+    }
+
+    fn error(msg: impl Into<String>) -> Self {
+        Self {
+            ok: false,
+            error: Some(msg.into()),
+            host_port: None,
+            base_path: None,
+            url: None,
+        }
+    }
 }
 
 pub(crate) fn register_local_app(
@@ -244,61 +279,41 @@ fn handle_register_client(
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
     reader.read_line(&mut line)?;
-    let response = match serde_json::from_str::<RegisterRequest>(line.trim()) {
-        Ok(RegisterRequest::Register { port, base_path }) => {
-            if port == 0 {
-                RegisterResponse {
-                    ok: false,
-                    error: Some("invalid port".to_owned()),
-                    host_port: None,
-                    base_path: None,
-                    url: None,
-                }
-            } else {
-                let registration = Registration {
-                    sandbox_port: port,
-                    base_path: normalize_base_path(&base_path),
-                };
-                match start_app_listener(runtime_dir, registration.clone()) {
-                    Ok(listener) => {
-                        let host_port = listener.port;
-                        if let Ok(mut guards) = listeners.lock() {
-                            guards.push(listener);
-                        }
-                        RegisterResponse {
-                            ok: true,
-                            error: None,
-                            host_port: Some(host_port),
-                            url: Some(format!(
-                                "http://127.0.0.1:{host_port}{}",
-                                registration.base_path
-                            )),
-                            base_path: Some(registration.base_path),
-                        }
-                    }
-                    Err(err) => RegisterResponse {
-                        ok: false,
-                        error: Some(format!("failed to allocate host listener: {err}")),
-                        host_port: None,
-                        base_path: None,
-                        url: None,
-                    },
-                }
-            }
-        }
-        Err(err) => RegisterResponse {
-            ok: false,
-            error: Some(format!("invalid request: {err}")),
-            host_port: None,
-            base_path: None,
-            url: None,
-        },
-    };
-
+    let response = process_register_request(line.trim(), runtime_dir, listeners);
     let body = serde_json::to_string(&response)
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
     writeln!(stream, "{body}")?;
     stream.flush()
+}
+
+fn process_register_request(
+    raw: &str,
+    runtime_dir: &Path,
+    listeners: &Arc<Mutex<Vec<AppListenerGuard>>>,
+) -> RegisterResponse {
+    let (port, base_path) = match serde_json::from_str::<RegisterRequest>(raw) {
+        Ok(RegisterRequest::Register { port, base_path }) => (port, base_path),
+        Err(err) => return RegisterResponse::error(format!("invalid request: {err}")),
+    };
+    if port == 0 {
+        return RegisterResponse::error("invalid port");
+    }
+    let registration = Registration {
+        sandbox_port: port,
+        base_path: normalize_base_path(&base_path),
+    };
+    let listener = match start_app_listener(runtime_dir, registration.clone()) {
+        Ok(l) => l,
+        Err(err) => {
+            return RegisterResponse::error(format!("failed to allocate host listener: {err}"));
+        }
+    };
+    let host_port = listener.port;
+    if let Ok(mut guards) = listeners.lock() {
+        guards.push(listener);
+    }
+    let url = format!("http://127.0.0.1:{host_port}{}", registration.base_path);
+    RegisterResponse::success(host_port, registration.base_path, url)
 }
 
 fn normalize_base_path(value: &str) -> String {
@@ -306,15 +321,13 @@ fn normalize_base_path(value: &str) -> String {
     if trimmed.is_empty() || trimmed == "/" {
         return "/".to_owned();
     }
-    let mut normalized = if trimmed.starts_with('/') {
-        trimmed.to_owned()
+    let with_slash = if trimmed.starts_with('/') {
+        trimmed
     } else {
-        format!("/{trimmed}")
+        return format!("/{}", trimmed.trim_end_matches('/'));
     };
-    while normalized.len() > 1 && normalized.ends_with('/') {
-        normalized.pop();
-    }
-    normalized
+    let stripped = with_slash.trim_end_matches('/');
+    if stripped.is_empty() { "/".to_owned() } else { stripped.to_owned() }
 }
 
 fn start_app_listener(
@@ -344,31 +357,15 @@ fn accept_http_loop(
     registration: &Registration,
     shutdown: &AtomicBool,
 ) {
-    for stream in listener.incoming() {
-        if shutdown.load(Ordering::Relaxed) {
-            break;
-        }
-        match stream {
-            Ok(stream) => {
-                if shutdown.load(Ordering::Relaxed) {
-                    break;
-                }
-                let runtime_dir = runtime_dir.to_owned();
-                let registration = registration.clone();
-                thread::spawn(move || {
-                    if let Err(err) = handle_http_client(stream, &runtime_dir, &registration) {
-                        eprintln!("[ags webview-relay] client error: {err}");
-                    }
-                });
+    accept_loop(listener.incoming(), shutdown, "http", |stream| {
+        let runtime_dir = runtime_dir.to_owned();
+        let registration = registration.clone();
+        thread::spawn(move || {
+            if let Err(err) = handle_http_client(stream, &runtime_dir, &registration) {
+                eprintln!("[ags webview-relay] client error: {err}");
             }
-            Err(err) => {
-                if shutdown.load(Ordering::Relaxed) {
-                    break;
-                }
-                eprintln!("[ags webview-relay] accept error: {err}");
-            }
-        }
-    }
+        });
+    });
 }
 
 #[derive(Debug)]
@@ -448,7 +445,7 @@ fn handle_http_client(
         .and_then(|b| base64::engine::general_purpose::STANDARD.decode(b).ok())
         .unwrap_or_default();
     let headers = relay_response.headers.unwrap_or_default();
-    write_http_response_owned(&mut stream, status, &reason, &headers, &body)
+    write_http_response(&mut stream, status, &reason, &headers, &body)
 }
 
 fn is_websocket_upgrade(headers: &[(String, String)]) -> bool {
@@ -539,31 +536,19 @@ fn find_header_end(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
-fn write_http_response(
+fn write_http_response<N: AsRef<str>, V: AsRef<str>>(
     stream: &mut TcpStream,
     status: u16,
     reason: &str,
-    headers: &[(&str, &str)],
-    body: &[u8],
-) -> io::Result<()> {
-    let headers_owned: Vec<(String, String)> = headers
-        .iter()
-        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-        .collect();
-    write_http_response_owned(stream, status, reason, &headers_owned, body)
-}
-
-fn write_http_response_owned(
-    stream: &mut TcpStream,
-    status: u16,
-    reason: &str,
-    headers: &[(String, String)],
+    headers: &[(N, V)],
     body: &[u8],
 ) -> io::Result<()> {
     write!(stream, "HTTP/1.1 {status} {reason}\r\n")?;
     write!(stream, "Content-Length: {}\r\n", body.len())?;
     write!(stream, "Connection: close\r\n")?;
     for (name, value) in headers {
+        let name = name.as_ref();
+        let value = value.as_ref();
         if is_hop_by_hop_header(name) || name.eq_ignore_ascii_case("content-length") {
             continue;
         }
@@ -573,18 +558,21 @@ fn write_http_response_owned(
     stream.write_all(body)
 }
 
+const HOP_BY_HOP_HEADERS: &[&str] = &[
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+];
+
 fn is_hop_by_hop_header(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "connection"
-            | "keep-alive"
-            | "proxy-authenticate"
-            | "proxy-authorization"
-            | "te"
-            | "trailer"
-            | "transfer-encoding"
-            | "upgrade"
-    )
+    HOP_BY_HOP_HEADERS
+        .iter()
+        .any(|h| name.eq_ignore_ascii_case(h))
 }
 
 fn reason_phrase(status: u16) -> &'static str {
@@ -641,8 +629,7 @@ fn send_relay_request(sock_path: &Path, msg: &RelayRequest) -> io::Result<RelayR
     stream.set_read_timeout(Some(Duration::from_secs(15))).ok();
     let line = serde_json::to_string(msg)
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
-    stream.write_all(line.as_bytes())?;
-    stream.write_all(b"\n")?;
+    writeln!(stream, "{line}")?;
     stream.flush()?;
 
     let mut reader = BufReader::new(stream);
@@ -666,7 +653,7 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::PathBuf;
-    use std::process::{Command, Stdio};
+    use std::process::{Child, Command, Stdio};
     use std::sync::mpsc;
     use std::thread::{self, JoinHandle};
     use std::time::Duration;
@@ -686,9 +673,12 @@ mod tests {
         let header_text = String::from_utf8_lossy(&buf[..header_end]);
         let mut lines = header_text.split("\r\n");
         let status_line = lines.next().unwrap();
-        let mut parts = status_line.split_whitespace();
-        let _http = parts.next().unwrap();
-        let status = parts.next().unwrap().parse::<u16>().unwrap();
+        let status = status_line
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse::<u16>()
+            .unwrap();
         let body = buf[header_end + 4..].to_vec();
         (status, header_text.into_owned(), body)
     }
@@ -867,31 +857,30 @@ mod tests {
         drop(guard);
     }
 
-    #[test]
-    fn interview_style_root_absolute_requests_work_unchanged() {
-        let app_listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let app_port = app_listener.local_addr().unwrap().port();
-        let (app_tx, app_rx) = mpsc::channel();
-        let app_thread = thread::spawn(move || {
-            for _ in 0..4 {
-                let (mut stream, _) = app_listener.accept().unwrap();
+    fn spawn_echo_app(count: usize) -> (u16, mpsc::Receiver<String>, JoinHandle<()>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            for _ in 0..count {
+                let (mut stream, _) = listener.accept().unwrap();
                 let request = super::read_http_request(&mut stream).unwrap();
-                app_tx.send(request.target.clone()).unwrap();
+                tx.send(request.target.clone()).unwrap();
                 let body = b"ok";
-                let response = format!(
+                write!(
+                    stream,
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n",
                     body.len()
-                );
-                stream.write_all(response.as_bytes()).unwrap();
+                ).unwrap();
                 stream.write_all(body).unwrap();
             }
         });
+        (port, rx, handle)
+    }
 
-        let dir = tempfile::tempdir().unwrap();
-        let runtime_dir = dir.path().join("relay-runtime");
-        fs::create_dir_all(&runtime_dir).unwrap();
+    fn start_shim(runtime_dir: &std::path::Path) -> Child {
         let upstream_socket = runtime_dir.join(UPSTREAM_SOCKET_NAME);
-        let mut shim = Command::new("python3")
+        let child = Command::new("python3")
             .arg(app_server_script_path())
             .env("AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET", &upstream_socket)
             .stdout(Stdio::null())
@@ -909,6 +898,23 @@ mod tests {
             upstream_socket.exists(),
             "shim did not create upstream socket"
         );
+        child
+    }
+
+    fn collect_targets(rx: &mpsc::Receiver<String>, count: usize) -> Vec<String> {
+        (0..count)
+            .map(|_| rx.recv_timeout(Duration::from_secs(2)).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn interview_style_root_absolute_requests_work_unchanged() {
+        let (app_port, app_rx, app_thread) = spawn_echo_app(4);
+
+        let dir = tempfile::tempdir().unwrap();
+        let runtime_dir = dir.path().join("relay-runtime");
+        fs::create_dir_all(&runtime_dir).unwrap();
+        let mut shim = start_shim(&runtime_dir);
 
         let guard = start(&runtime_dir).unwrap();
         let response = register_app(&runtime_dir, app_port, "/");
@@ -925,17 +931,9 @@ mod tests {
             assert_eq!(String::from_utf8(body).unwrap(), "ok");
         }
 
-        let received: Vec<String> = (0..4)
-            .map(|_| app_rx.recv_timeout(Duration::from_secs(2)).unwrap())
-            .collect();
         assert_eq!(
-            received,
-            vec![
-                "/".to_owned(),
-                "/styles.css".to_owned(),
-                "/submit".to_owned(),
-                "/media?path=image.png&session=abc123".to_owned(),
-            ]
+            collect_targets(&app_rx, 4),
+            ["/", "/styles.css", "/submit", "/media?path=image.png&session=abc123"],
         );
 
         drop(guard);
@@ -946,46 +944,12 @@ mod tests {
 
     #[test]
     fn base_path_registrations_keep_root_absolute_assets_working() {
-        let app_listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let app_port = app_listener.local_addr().unwrap().port();
-        let (app_tx, app_rx) = mpsc::channel();
-        let app_thread = thread::spawn(move || {
-            for _ in 0..3 {
-                let (mut stream, _) = app_listener.accept().unwrap();
-                let request = super::read_http_request(&mut stream).unwrap();
-                app_tx.send(request.target.clone()).unwrap();
-                let body = b"ok";
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n",
-                    body.len()
-                );
-                stream.write_all(response.as_bytes()).unwrap();
-                stream.write_all(body).unwrap();
-            }
-        });
+        let (app_port, app_rx, app_thread) = spawn_echo_app(3);
 
         let dir = tempfile::tempdir().unwrap();
         let runtime_dir = dir.path().join("relay-runtime");
         fs::create_dir_all(&runtime_dir).unwrap();
-        let upstream_socket = runtime_dir.join(UPSTREAM_SOCKET_NAME);
-        let mut shim = Command::new("python3")
-            .arg(app_server_script_path())
-            .env("AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET", &upstream_socket)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-
-        for _ in 0..50 {
-            if upstream_socket.exists() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(20));
-        }
-        assert!(
-            upstream_socket.exists(),
-            "shim did not create upstream socket"
-        );
+        let mut shim = start_shim(&runtime_dir);
 
         let guard = start(&runtime_dir).unwrap();
         let response = register_app(&runtime_dir, app_port, "/app");
@@ -1002,16 +966,9 @@ mod tests {
             assert_eq!(String::from_utf8(body).unwrap(), "ok");
         }
 
-        let received: Vec<String> = (0..3)
-            .map(|_| app_rx.recv_timeout(Duration::from_secs(2)).unwrap())
-            .collect();
         assert_eq!(
-            received,
-            vec![
-                "/app?session=abc123".to_owned(),
-                "/app/styles.css".to_owned(),
-                "/app/media?path=a.png&session=abc123".to_owned(),
-            ]
+            collect_targets(&app_rx, 3),
+            ["/app?session=abc123", "/app/styles.css", "/app/media?path=a.png&session=abc123"],
         );
 
         drop(guard);
