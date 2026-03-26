@@ -491,36 +491,27 @@ pub fn help_text() -> &'static str {
      \x20 create-aliases  Create managed wrapper scripts and/or shell aliases\n\
      \x20 completions     Print shell completion script to stdout\n\
      \n\
-     run flags:\n\
-     \x20 --browser         Start browser sidecar and browser skill wiring\n\
-     \x20 --tmux            Start the agent inside tmux in the sandbox\n\
-     \x20 --psp             Enable podman-socket-proxy for Docker/Testcontainers flows\n\
-     \x20 --psp-keep        Keep PSP-created containers after session exit\n\
-     \x20 --yolo            Disable AGS Pi/Claude guard integrations for this run\n\
-     \x20 --stop-when-done  Exit container when agent finishes (tmux mode)\n\
-     \x20 --config <path>   Use an alternate AGS config file\n\
-     \x20 --add-dir, -d     Add an extra host directory mount for this run\n\
-     \n\
-     install flags:\n\
-     \x20 --link-self        Link current ags executable to ~/.local/bin/ags\n\
-     \x20 --force            Replace existing ~/.local/bin/ags when used with --link-self\n\
-     \x20 --add-agent-mounts Append default [[agent_mount]] entries to ~/.config/ags/config.toml\n\
-     \n\
-     create-aliases flags:\n\
-     \x20 --shell <name>    Target shell for alias blocks (fish|zsh|bash; autodetect if omitted)\n\
-     \x20 --mode <kind>     wrappers|aliases|both (default: wrappers)\n\
-     \x20 --force           Replace existing non-managed targets\n\
-     \n\
-     completions flags:\n\
-     \x20 --shell <name>    Shell to generate completion script for (fish|zsh|bash)\n\
-     \n\
      Run flags:\n\
-     \x20 --agent <name>    Agent to run (required), or 'shell' for interactive bash\n\
-     \x20 --browser         Enable browser sidecar\n\
-     \x20 --tmux            Launch the agent inside a tmux session (opt-in)\n\
-     \x20 --psp             Enable podman-socket-proxy mode (auto-starts psp sidecar)\n\
-     \x20 --psp-keep        Keep PSP-managed containers on exit (debug mode)\n\
-     \x20 --stop-when-done  Exit container when agent finishes (tmux mode)\n\
-     \x20 --config <path>   Override config file path\n\
-     \x20 --add-dir, -d <path>  Add an extra same-path directory mount for this run (repeatable)\n"
+     \x20 --agent <name>       Agent to run (required), or 'shell' for interactive bash\n\
+     \x20 --browser            Start browser sidecar and browser skill wiring\n\
+     \x20 --tmux               Launch the agent inside a tmux session\n\
+     \x20 --psp                Enable podman-socket-proxy for Docker/Testcontainers flows\n\
+     \x20 --psp-keep           Keep PSP-created containers after session exit\n\
+     \x20 --yolo               Disable AGS Pi/Claude guard integrations for this run\n\
+     \x20 --stop-when-done     Exit container when agent finishes (tmux mode)\n\
+     \x20 --config <path>      Use an alternate AGS config file\n\
+     \x20 --add-dir, -d <path> Add an extra host directory mount (repeatable)\n\
+     \n\
+     Install flags:\n\
+     \x20 --link-self          Link current ags executable to ~/.local/bin/ags\n\
+     \x20 --force              Replace existing ~/.local/bin/ags when used with --link-self\n\
+     \x20 --add-agent-mounts   Append default [[agent_mount]] entries to ~/.config/ags/config.toml\n\
+     \n\
+     Create-aliases flags:\n\
+     \x20 --shell <name>       Target shell for alias blocks (fish|zsh|bash; autodetect if omitted)\n\
+     \x20 --mode <kind>        wrappers|aliases|both (default: wrappers)\n\
+     \x20 --force              Replace existing non-managed targets\n\
+     \n\
+     Completions flags:\n\
+     \x20 --shell <name>       Shell to generate completion script for (fish|zsh|bash)\n"
 }
