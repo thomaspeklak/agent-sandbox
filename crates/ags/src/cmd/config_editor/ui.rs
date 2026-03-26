@@ -223,10 +223,7 @@ impl App {
             state.local_exists = false;
         }
 
-        let agent_host_status_cache = KNOWN_AGENTS
-            .iter()
-            .map(|agent| compute_host_status(agent))
-            .collect();
+        let agent_host_status_cache = KNOWN_AGENTS.iter().map(compute_host_status).collect();
 
         Ok(Self {
             running: true,
@@ -409,11 +406,11 @@ impl App {
 
     fn normalize_selection_for_filters(&mut self) {
         let visible_sections = self.filtered_section_indices();
-        if let Some(first) = visible_sections.first().copied() {
-            if !visible_sections.contains(&self.selected_section) {
-                self.selected_section = first;
-                self.selected_field = 0;
-            }
+        if let Some(first) = visible_sections.first().copied()
+            && !visible_sections.contains(&self.selected_section)
+        {
+            self.selected_section = first;
+            self.selected_field = 0;
         }
 
         let max = self.current_item_count();
@@ -1391,22 +1388,22 @@ impl App {
         } = &self.edit_mode
         {
             let info = &SECTIONS[self.selected_section];
-            if section_key == info.toml_key {
-                if let Some(i) = fields.iter().position(|f| f.key == *field_key) {
-                    let y = area.y + i as u16;
-                    let value_x = area.x + (max_key + 2) as u16 + 3;
-                    let value_width = area.width.saturating_sub((max_key + 2) as u16 + 3 + 6);
-                    let input_area = Rect::new(value_x, y, value_width, 1);
+            if section_key == info.toml_key
+                && let Some(i) = fields.iter().position(|f| f.key == *field_key)
+            {
+                let y = area.y + i as u16;
+                let value_x = area.x + (max_key + 2) as u16 + 3;
+                let value_width = area.width.saturating_sub((max_key + 2) as u16 + 3 + 6);
+                let input_area = Rect::new(value_x, y, value_width, 1);
 
-                    let scroll = input.visual_scroll(value_width.saturating_sub(1) as usize);
-                    let display = Paragraph::new(input.value())
-                        .scroll((0, scroll as u16))
-                        .style(Style::default().fg(Color::White).bg(Color::DarkGray));
-                    frame.render_widget(display, input_area);
+                let scroll = input.visual_scroll(value_width.saturating_sub(1) as usize);
+                let display = Paragraph::new(input.value())
+                    .scroll((0, scroll as u16))
+                    .style(Style::default().fg(Color::White).bg(Color::DarkGray));
+                frame.render_widget(display, input_area);
 
-                    let cursor_x = value_x + (input.visual_cursor().saturating_sub(scroll)) as u16;
-                    frame.set_cursor_position((cursor_x, y));
-                }
+                let cursor_x = value_x + (input.visual_cursor().saturating_sub(scroll)) as u16;
+                frame.set_cursor_position((cursor_x, y));
             }
         }
     }
@@ -2071,10 +2068,10 @@ impl App {
             _ => {}
         }
 
-        if let Some(request) = key_to_input_request(key.code, true) {
-            if let EditMode::EditingField { input, .. } = &mut self.edit_mode {
-                input.handle(request);
-            }
+        if let Some(request) = key_to_input_request(key.code, true)
+            && let EditMode::EditingField { input, .. } = &mut self.edit_mode
+        {
+            input.handle(request);
         }
     }
 
@@ -2105,10 +2102,9 @@ impl App {
                     fields,
                     ..
                 } = &mut self.edit_mode
+                    && *active_field + 1 < fields.len()
                 {
-                    if *active_field + 1 < fields.len() {
-                        *active_field += 1;
-                    }
+                    *active_field += 1;
                 }
                 return;
             }
@@ -2166,17 +2162,15 @@ impl App {
         }
 
         // Forward text-editing keys to the active field's input
-        if kind_is_text {
-            if let Some(request) = key_to_input_request(key.code, false) {
-                if let EditMode::AddingEntry {
-                    fields,
-                    active_field,
-                    ..
-                } = &mut self.edit_mode
-                {
-                    fields[*active_field].input.handle(request);
-                }
-            }
+        if kind_is_text
+            && let Some(request) = key_to_input_request(key.code, false)
+            && let EditMode::AddingEntry {
+                fields,
+                active_field,
+                ..
+            } = &mut self.edit_mode
+        {
+            fields[*active_field].input.handle(request);
         }
     }
 
@@ -2219,10 +2213,10 @@ impl App {
             _ => {}
         }
 
-        if let Some(request) = key_to_input_request(key.code, true) {
-            if let EditMode::Search { input } = &mut self.edit_mode {
-                input.handle(request);
-            }
+        if let Some(request) = key_to_input_request(key.code, true)
+            && let EditMode::Search { input } = &mut self.edit_mode
+        {
+            input.handle(request);
         }
     }
 
@@ -2495,10 +2489,10 @@ fn serialize_flattened_table_entry(
     let mut parts = Vec::new();
 
     for key in preferred_scalar_keys {
-        if let Some(item) = table.get(*key) {
-            if let Some(part) = serialize_flattened_scalar_part(key, item) {
-                parts.push(part);
-            }
+        if let Some(item) = table.get(key)
+            && let Some(part) = serialize_flattened_scalar_part(key, item)
+        {
+            parts.push(part);
         }
     }
 
@@ -2512,7 +2506,7 @@ fn serialize_flattened_table_entry(
     }
 
     for key in preferred_inline_keys {
-        if let Some(inline) = table.get(*key).and_then(|item| item.as_inline_table()) {
+        if let Some(inline) = table.get(key).and_then(|item| item.as_inline_table()) {
             parts.extend(serialize_inline_table_parts(key, inline));
         }
     }
@@ -3005,7 +2999,7 @@ fn apply_scalar_value(
             doc[section_key][field_key] = toml_edit::value(new_text);
         }
         ScalarFieldKind::Enum(options) => {
-            if !options.iter().any(|option| *option == new_text) {
+            if !options.contains(&new_text) {
                 return Err(format!(
                     "{section_key}.{field_key} must be one of: {}",
                     options.join(", ")
@@ -3125,10 +3119,10 @@ fn edit_target_label(target: EditTarget) -> &'static str {
 }
 
 fn expand_home_path(path: &str) -> std::path::PathBuf {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest);
     }
     std::path::PathBuf::from(path)
 }

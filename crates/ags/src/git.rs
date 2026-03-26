@@ -185,12 +185,11 @@ fn git_rev_parse_path(workdir: &Path, args: &[&str]) -> Option<PathBuf> {
     full_args.extend_from_slice(args);
     let output = Command::new("git").args(&full_args).output().ok()?;
 
-    if output.status.success() {
-        if let Some(p) = parse_trimmed_path(&output.stdout) {
-            if p.is_absolute() {
-                return Some(p);
-            }
-        }
+    if output.status.success()
+        && let Some(p) = parse_trimmed_path(&output.stdout)
+        && p.is_absolute()
+    {
+        return Some(p);
     }
 
     // Fallback without --path-format

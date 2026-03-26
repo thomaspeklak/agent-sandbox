@@ -100,13 +100,14 @@ fn ensure_configs_parse(config_path: &Path) -> Result<bool, Box<dyn std::error::
             continue;
         }
 
-        if repo_local_available && local_path.exists() {
-            if let Err(error) = parse_document(&local_path) {
-                if !recover_broken_config(&local_path, &error, false)? {
-                    return Ok(false);
-                }
-                continue;
+        if repo_local_available
+            && local_path.exists()
+            && let Err(error) = parse_document(&local_path)
+        {
+            if !recover_broken_config(&local_path, &error, false)? {
+                return Ok(false);
             }
+            continue;
         }
 
         return Ok(true);

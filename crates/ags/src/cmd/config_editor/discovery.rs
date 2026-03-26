@@ -108,12 +108,12 @@ pub fn discover_path_binaries() -> Vec<String> {
                 continue;
             }
 
-            if let Ok(ft) = entry.file_type() {
-                if ft.is_file() {
-                    let path = entry.path();
-                    if is_executable(&path) {
-                        names.insert(name.into_owned());
-                    }
+            if let Ok(ft) = entry.file_type()
+                && ft.is_file()
+            {
+                let path = entry.path();
+                if is_executable(&path) {
+                    names.insert(name.into_owned());
                 }
             }
         }
@@ -144,12 +144,11 @@ pub fn discover_home_dirs() -> Vec<String> {
     for root in &sub_roots {
         if let Ok(entries) = fs::read_dir(root) {
             for entry in entries.flatten() {
-                if let Ok(ft) = entry.file_type() {
-                    if ft.is_dir() {
-                        if let Some(s) = entry.path().to_str() {
-                            results.push(s.to_string());
-                        }
-                    }
+                if let Ok(ft) = entry.file_type()
+                    && ft.is_dir()
+                    && let Some(s) = entry.path().to_str()
+                {
+                    results.push(s.to_string());
                 }
             }
         }
@@ -160,14 +159,14 @@ pub fn discover_home_dirs() -> Vec<String> {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name.starts_with('.') && name.len() > 1 && name != ".." {
-                if let Ok(ft) = entry.file_type() {
-                    if ft.is_dir() || ft.is_file() {
-                        if let Some(s) = entry.path().to_str() {
-                            results.push(s.to_string());
-                        }
-                    }
-                }
+            if name.starts_with('.')
+                && name.len() > 1
+                && name != ".."
+                && let Ok(ft) = entry.file_type()
+                && (ft.is_dir() || ft.is_file())
+                && let Some(s) = entry.path().to_str()
+            {
+                results.push(s.to_string());
             }
         }
     }
