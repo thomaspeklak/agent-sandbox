@@ -71,6 +71,10 @@ fn root_mode_omits_userns_and_cap_drop() {
         "root mode should not set --userns"
     );
     assert!(
+        args.contains(&"--user=root".to_owned()),
+        "root mode should run as root user"
+    );
+    assert!(
         !args.iter().any(|a| a.starts_with("--cap-drop=")),
         "root mode should not drop capabilities"
     );

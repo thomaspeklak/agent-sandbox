@@ -100,6 +100,7 @@ pub struct PlanEnv {
 #[derive(Debug, Clone)]
 pub struct SecurityConfig {
     pub userns: Option<String>,
+    pub user: Option<String>,
     pub security_opts: Vec<String>,
     pub cap_drop: Option<String>,
     pub pids_limit: u32,
@@ -109,6 +110,7 @@ impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
             userns: Some("keep-id".to_owned()),
+            user: None,
             security_opts: vec!["no-new-privileges".to_owned(), "label=disable".to_owned()],
             cap_drop: Some("all".to_owned()),
             pids_limit: 4096,
@@ -125,6 +127,7 @@ impl SecurityConfig {
     pub fn root() -> Self {
         Self {
             userns: None,
+            user: Some("root".to_owned()),
             security_opts: vec!["label=disable".to_owned()],
             cap_drop: None,
             pids_limit: 4096,

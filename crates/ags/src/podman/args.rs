@@ -14,6 +14,9 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
     if let Some(ref userns) = plan.security.userns {
         args.push(format!("--userns={userns}"));
     }
+    if let Some(ref user) = plan.security.user {
+        args.push(format!("--user={user}"));
+    }
 
     for opt in &plan.security.security_opts {
         args.push(format!("--security-opt={opt}"));
