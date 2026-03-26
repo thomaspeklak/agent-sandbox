@@ -84,6 +84,15 @@ fn parses_yolo_flag() {
 }
 
 #[test]
+fn parses_root_flag() {
+    let cmd = parse_args(args(&["ags", "--agent", "claude", "--root"])).unwrap();
+    match cmd {
+        Command::Run(opts) => assert!(opts.root),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
 fn parses_config_flag() {
     let cmd = parse_args(args(&["ags", "--agent", "pi", "--config", "/tmp/c.toml"])).unwrap();
     match cmd {

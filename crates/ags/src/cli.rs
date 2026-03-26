@@ -59,6 +59,7 @@ pub struct RunOptions {
     pub psp: bool,
     pub psp_keep: bool,
     pub yolo: bool,
+    pub root: bool,
     pub stop_when_done: bool,
     pub config_path: Option<PathBuf>,
     pub add_dirs: Vec<PathBuf>,
@@ -243,6 +244,7 @@ where
         psp: state.psp,
         psp_keep: state.psp_keep,
         yolo: state.yolo,
+        root: state.root,
         stop_when_done: state.stop_when_done,
         config_path: state.config_path,
         add_dirs: state.add_dirs,
@@ -258,6 +260,7 @@ struct RunParseState {
     psp: bool,
     psp_keep: bool,
     yolo: bool,
+    root: bool,
     stop_when_done: bool,
     config_path: Option<PathBuf>,
     add_dirs: Vec<PathBuf>,
@@ -308,6 +311,11 @@ fn parse_run_arg<I: Iterator<Item = String>>(
 
     if arg == "--yolo" {
         state.yolo = true;
+        return Ok(());
+    }
+
+    if arg == "--root" {
+        state.root = true;
         return Ok(());
     }
 
@@ -498,6 +506,7 @@ pub fn help_text() -> &'static str {
      \x20 --psp                Enable podman-socket-proxy for Docker/Testcontainers flows\n\
      \x20 --psp-keep           Keep PSP-created containers after session exit\n\
      \x20 --yolo               Disable AGS Pi/Claude guard integrations for this run\n\
+     \x20 --root               Run agent with root access inside the sandbox\n\
      \x20 --stop-when-done     Exit container when agent finishes (tmux mode)\n\
      \x20 --config <path>      Use an alternate AGS config file\n\
      \x20 --add-dir, -d <path> Add an extra host directory mount (repeatable)\n\

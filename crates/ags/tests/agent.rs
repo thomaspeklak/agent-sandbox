@@ -102,7 +102,7 @@ fn pi_profile_no_extra_boot_dirs() {
 #[test]
 fn pi_profile_omits_guard_extension_when_guards_disabled() {
     let config = minimal_config();
-    let profile = profile_for_with_guards(Agent::Pi, &config, false);
+    let profile = profile_for_with_guards(Agent::Pi, &config, false, false);
     assert_eq!(profile.command, "pi");
     assert_eq!(
         profile.command_args,
@@ -201,7 +201,7 @@ fn claude_profile_no_browser_skill() {
 #[test]
 fn claude_profile_omits_guard_hook_when_guards_disabled() {
     let config = minimal_config();
-    let profile = profile_for_with_guards(Agent::Claude, &config, false);
+    let profile = profile_for_with_guards(Agent::Claude, &config, false, false);
     assert_eq!(profile.command, "claude");
     assert_eq!(
         profile.command_args,
@@ -210,6 +210,25 @@ fn claude_profile_omits_guard_hook_when_guards_disabled() {
             "--append-system-prompt",
             "Sandbox: use host.containers.internal (localhost is container-local)."
         ]
+    );
+}
+
+#[test]
+fn claude_profile_root_mode_appends_system_prompt() {
+    let config = minimal_config();
+    let profile = profile_for_with_guards(Agent::Claude, &config, true, true);
+    // Root mode should add an extra --append-system-prompt with a root hint
+    let prompt_indices: Vec<_> = profile
+        .command_args
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| *a == "--append-system-prompt")
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(prompt_indices.len(), 2, "should have two --append-system-prompt flags");
+    assert!(
+        profile.command_args[prompt_indices[1] + 1].contains("root"),
+        "second system prompt should mention root access"
     );
 }
 

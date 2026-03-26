@@ -32,6 +32,7 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         psp_session_id: None,
         extra_mount_dirs: &[],
         stop_when_done: false,
+        root_mode: false,
     }
 }
 
@@ -255,8 +256,8 @@ fn security_defaults() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
 
-    assert_eq!(plan.security.userns, "keep-id");
-    assert_eq!(plan.security.cap_drop, "all");
+    assert_eq!(plan.security.userns.as_deref(), Some("keep-id"));
+    assert_eq!(plan.security.cap_drop.as_deref(), Some("all"));
     assert_eq!(plan.security.pids_limit, 4096);
     assert!(
         plan.security
@@ -267,6 +268,35 @@ fn security_defaults() {
         plan.security
             .security_opts
             .contains(&"label=disable".to_owned())
+    );
+}
+
+#[test]
+fn root_mode_security_config() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Claude,
+        BuildLaunchPlanOptions {
+            root_mode: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert!(plan.security.userns.is_none(), "root mode should not set userns");
+    assert!(plan.security.cap_drop.is_none(), "root mode should not drop capabilities");
+    assert!(
+        !plan.security.security_opts.contains(&"no-new-privileges".to_owned()),
+        "root mode should allow new privileges"
+    );
+    assert!(
+        plan.security.security_opts.contains(&"label=disable".to_owned()),
+        "root mode should still disable SELinux labels"
     );
 }
 

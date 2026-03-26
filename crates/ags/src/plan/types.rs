@@ -99,18 +99,34 @@ pub struct PlanEnv {
 /// Podman security flags.
 #[derive(Debug, Clone)]
 pub struct SecurityConfig {
-    pub userns: String,
+    pub userns: Option<String>,
     pub security_opts: Vec<String>,
-    pub cap_drop: String,
+    pub cap_drop: Option<String>,
     pub pids_limit: u32,
 }
 
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
-            userns: "keep-id".to_owned(),
+            userns: Some("keep-id".to_owned()),
             security_opts: vec!["no-new-privileges".to_owned(), "label=disable".to_owned()],
-            cap_drop: "all".to_owned(),
+            cap_drop: Some("all".to_owned()),
+            pids_limit: 4096,
+        }
+    }
+}
+
+impl SecurityConfig {
+    /// Security config for root-capable sessions.
+    ///
+    /// Omits `keep-id` so UID 0 in the container maps to the host user
+    /// (rootless podman default). Drops the `no-new-privileges` restriction
+    /// and keeps all capabilities so the agent can install packages.
+    pub fn root() -> Self {
+        Self {
+            userns: None,
+            security_opts: vec!["label=disable".to_owned()],
+            cap_drop: None,
             pids_limit: 4096,
         }
     }

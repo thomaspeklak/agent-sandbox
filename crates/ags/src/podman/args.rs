@@ -11,13 +11,17 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
 
     // Base flags
     args.extend(["run", "--rm", "-it", "--pull=never"].map(String::from));
-    args.push(format!("--userns={}", plan.security.userns));
+    if let Some(ref userns) = plan.security.userns {
+        args.push(format!("--userns={userns}"));
+    }
 
     for opt in &plan.security.security_opts {
         args.push(format!("--security-opt={opt}"));
     }
 
-    args.push(format!("--cap-drop={}", plan.security.cap_drop));
+    if let Some(ref cap_drop) = plan.security.cap_drop {
+        args.push(format!("--cap-drop={cap_drop}"));
+    }
     args.push(format!("--pids-limit={}", plan.security.pids_limit));
     args.push("--network".into());
     args.push(plan.network_mode.clone());

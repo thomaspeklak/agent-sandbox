@@ -312,6 +312,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             psp_session_id: psp_session_id.as_deref(),
             extra_mount_dirs: &opts.add_dirs,
             stop_when_done: opts.stop_when_done,
+            root_mode: opts.root,
         },
     ) {
         Ok(p) => p,
@@ -322,6 +323,9 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     };
 
     if matches!(opts.agent, Agent::Pi | Agent::Claude) {
+        if opts.root {
+            eprintln!("warning: --root grants root access inside the sandbox for this run");
+        }
         if opts.yolo {
             eprintln!(
                 "warning: --yolo disables AGS {} guards for this run",

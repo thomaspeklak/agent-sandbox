@@ -38,6 +38,7 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub psp_session_id: Option<&'a str>,
     pub extra_mount_dirs: &'a [PathBuf],
     pub stop_when_done: bool,
+    pub root_mode: bool,
 }
 
 /// Intermediate env-assembly context. Sidecar fields mirror
@@ -91,8 +92,9 @@ pub fn build_launch_plan(
         psp_session_id,
         extra_mount_dirs,
         stop_when_done,
+        root_mode,
     } = options;
-    let profile = agent::profile_for_with_guards(agent, config, guard_enabled);
+    let profile = agent::profile_for_with_guards(agent, config, guard_enabled, root_mode);
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);
     let cache_dir = &config.sandbox.cache_dir;
@@ -270,7 +272,11 @@ pub fn build_launch_plan(
         workdir: workdir_mapping,
         mounts,
         env,
-        security: SecurityConfig::default(),
+        security: if root_mode {
+            SecurityConfig::root()
+        } else {
+            SecurityConfig::default()
+        },
         network_mode,
         boot_dirs: config.sandbox.container_boot_dirs.clone(),
         entrypoint,

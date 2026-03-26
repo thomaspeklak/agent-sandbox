@@ -62,6 +62,29 @@ fn args_include_security_flags() {
 }
 
 #[test]
+fn root_mode_omits_userns_and_cap_drop() {
+    let mut plan = minimal_plan();
+    plan.security = SecurityConfig::root();
+    let args = build_run_args(&plan, Path::new("/tmp/env"));
+    assert!(
+        !args.iter().any(|a| a.starts_with("--userns=")),
+        "root mode should not set --userns"
+    );
+    assert!(
+        !args.iter().any(|a| a.starts_with("--cap-drop=")),
+        "root mode should not drop capabilities"
+    );
+    assert!(
+        args.contains(&"--security-opt=label=disable".to_owned()),
+        "root mode should still disable SELinux labels"
+    );
+    assert!(
+        !args.contains(&"--security-opt=no-new-privileges".to_owned()),
+        "root mode should allow new privileges"
+    );
+}
+
+#[test]
 fn args_include_network_mode() {
     let plan = minimal_plan();
     let args = build_run_args(&plan, Path::new("/tmp/env"));
