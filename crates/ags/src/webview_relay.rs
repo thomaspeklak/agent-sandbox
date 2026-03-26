@@ -327,7 +327,11 @@ fn normalize_base_path(value: &str) -> String {
         return format!("/{}", trimmed.trim_end_matches('/'));
     };
     let stripped = with_slash.trim_end_matches('/');
-    if stripped.is_empty() { "/".to_owned() } else { stripped.to_owned() }
+    if stripped.is_empty() {
+        "/".to_owned()
+    } else {
+        stripped.to_owned()
+    }
 }
 
 fn start_app_listener(
@@ -933,7 +937,12 @@ mod tests {
 
         assert_eq!(
             collect_targets(&app_rx, 4),
-            ["/", "/styles.css", "/submit", "/media?path=image.png&session=abc123"],
+            [
+                "/",
+                "/styles.css",
+                "/submit",
+                "/media?path=image.png&session=abc123"
+            ],
         );
 
         drop(guard);
@@ -968,7 +977,11 @@ mod tests {
 
         assert_eq!(
             collect_targets(&app_rx, 3),
-            ["/app?session=abc123", "/app/styles.css", "/app/media?path=a.png&session=abc123"],
+            [
+                "/app?session=abc123",
+                "/app/styles.css",
+                "/app/media?path=a.png&session=abc123"
+            ],
         );
 
         drop(guard);

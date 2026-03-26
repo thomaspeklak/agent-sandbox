@@ -42,7 +42,9 @@ pub fn profile_for_with_guards(
         Agent::Shell => shell_profile(),
     };
     if root_mode && matches!(agent, Agent::Pi | Agent::Claude) {
-        profile.command_args.push("--append-system-prompt".to_owned());
+        profile
+            .command_args
+            .push("--append-system-prompt".to_owned());
         profile
             .command_args
             .push("You have root access. Install any packages you need with dnf/pip.".to_owned());

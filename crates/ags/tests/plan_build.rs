@@ -288,15 +288,30 @@ fn root_mode_security_config() {
     )
     .unwrap();
 
-    assert!(plan.security.userns.is_none(), "root mode should not set userns");
-    assert_eq!(plan.security.user.as_deref(), Some("root"), "root mode should set user to root");
-    assert!(plan.security.cap_drop.is_none(), "root mode should not drop capabilities");
     assert!(
-        !plan.security.security_opts.contains(&"no-new-privileges".to_owned()),
+        plan.security.userns.is_none(),
+        "root mode should not set userns"
+    );
+    assert_eq!(
+        plan.security.user.as_deref(),
+        Some("root"),
+        "root mode should set user to root"
+    );
+    assert!(
+        plan.security.cap_drop.is_none(),
+        "root mode should not drop capabilities"
+    );
+    assert!(
+        !plan
+            .security
+            .security_opts
+            .contains(&"no-new-privileges".to_owned()),
         "root mode should allow new privileges"
     );
     assert!(
-        plan.security.security_opts.contains(&"label=disable".to_owned()),
+        plan.security
+            .security_opts
+            .contains(&"label=disable".to_owned()),
         "root mode should still disable SELinux labels"
     );
 }

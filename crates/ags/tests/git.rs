@@ -224,14 +224,40 @@ fn setup_worktree() -> Option<(PathBuf, PathBuf, PathBuf)> {
         return None;
     }
 
-    git(&["-C", &main_repo.to_string_lossy(), "config", "user.email", "test@test.com"]);
-    git(&["-C", &main_repo.to_string_lossy(), "config", "user.name", "Test"]);
-    git(&["-C", &main_repo.to_string_lossy(), "commit", "--allow-empty", "-m", "init"]);
+    git(&[
+        "-C",
+        &main_repo.to_string_lossy(),
+        "config",
+        "user.email",
+        "test@test.com",
+    ]);
+    git(&[
+        "-C",
+        &main_repo.to_string_lossy(),
+        "config",
+        "user.name",
+        "Test",
+    ]);
+    git(&[
+        "-C",
+        &main_repo.to_string_lossy(),
+        "commit",
+        "--allow-empty",
+        "-m",
+        "init",
+    ]);
 
     if git(&[
-        "-C", &main_repo.to_string_lossy(),
-        "worktree", "add", &worktree.to_string_lossy(), "-b", "test-branch",
-    ]).is_none() {
+        "-C",
+        &main_repo.to_string_lossy(),
+        "worktree",
+        "add",
+        &worktree.to_string_lossy(),
+        "-b",
+        "test-branch",
+    ])
+    .is_none()
+    {
         eprintln!("git worktree not available, skipping");
         return None;
     }

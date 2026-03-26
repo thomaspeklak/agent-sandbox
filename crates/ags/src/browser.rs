@@ -176,7 +176,11 @@ fn spawn_browser(config: &BrowserConfig) -> Result<Child, BrowserError> {
         .args(&config.command_args)
         .arg(format!("--remote-debugging-port={}", config.debug_port))
         .arg(format!("--user-data-dir={}", config.profile_dir.display()))
-        .args(["--no-first-run", "--no-default-browser-check", "about:blank"])
+        .args([
+            "--no-first-run",
+            "--no-default-browser-check",
+            "about:blank",
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

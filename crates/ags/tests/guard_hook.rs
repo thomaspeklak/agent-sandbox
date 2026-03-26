@@ -144,7 +144,8 @@ fn guard_hook_denies_sensitive_read_path() {
         return;
     }
 
-    let input = r#"{"tool_name":"Read","tool_input":{"file_path":"/home/dev/.ssh/id_ed25519.pub"}}"#;
+    let input =
+        r#"{"tool_name":"Read","tool_input":{"file_path":"/home/dev/.ssh/id_ed25519.pub"}}"#;
     let (stdout, stderr, exit_code, _temp) = run_guard(input, |_| {});
 
     assert_eq!(exit_code, 2, "stdout: {stdout}\nstderr: {stderr}");

@@ -354,16 +354,24 @@ fn handle_open_url(
         OpenDecision::OpenOriginal | OpenDecision::Cancel => url.to_owned(),
         OpenDecision::Proxy => {
             if !can_proxy {
-                send_error(writer, session_id, "proxy option is unavailable for this URL".to_owned())?;
+                send_error(
+                    writer,
+                    session_id,
+                    "proxy option is unavailable for this URL".to_owned(),
+                )?;
                 return Ok(());
             }
             match host.resolve_proxy_url(url) {
-            Ok(resolved) => resolved,
-            Err(e) => {
-                send_error(writer, session_id, format!("failed to resolve proxied URL: {e}"))?;
-                return Ok(());
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    send_error(
+                        writer,
+                        session_id,
+                        format!("failed to resolve proxied URL: {e}"),
+                    )?;
+                    return Ok(());
+                }
             }
-        }
         }
     };
 
@@ -376,7 +384,11 @@ fn handle_open_url(
             host.open_browser(&target_url)
         };
         if let Err(e) = open_result {
-            send_error(writer, session_id, format!("failed to open target URL: {e}"))?;
+            send_error(
+                writer,
+                session_id,
+                format!("failed to open target URL: {e}"),
+            )?;
             return Ok(());
         }
         send_session_complete(writer, session_id)?;
@@ -633,10 +645,16 @@ fn write_http_response(
     for (key, value) in headers {
         write!(stream, "{key}: {value}\r\n")?;
     }
-    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-length")) {
+    if !headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+    {
         write!(stream, "Content-Length: {}\r\n", body.len())?;
     }
-    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("connection")) {
+    if !headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("connection"))
+    {
         write!(stream, "Connection: close\r\n")?;
     }
     write!(stream, "\r\n")?;
@@ -771,7 +789,14 @@ fn try_kdialog(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDec
             "Cancel",
         ]);
     } else {
-        cmd.args(["--yesno", &text, "--yes-label", "Open", "--no-label", "Cancel"]);
+        cmd.args([
+            "--yesno",
+            &text,
+            "--yes-label",
+            "Open",
+            "--no-label",
+            "Cancel",
+        ]);
     }
 
     let output = cmd

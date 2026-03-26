@@ -223,4 +223,3 @@ fn store_secrets_interactive(config: &ValidatedConfig) -> Result<(), SetupError>
 
     Ok(())
 }
-

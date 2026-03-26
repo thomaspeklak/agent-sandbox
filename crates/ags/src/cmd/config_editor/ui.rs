@@ -470,7 +470,10 @@ impl App {
         self.ensure_suggestion_caches();
         let binaries = self.cached_binaries.as_deref().unwrap_or(&[]);
         let home_dirs = self.cached_home_dirs.as_deref().unwrap_or(&[]);
-        let cache = SuggestionCache { binaries, home_dirs };
+        let cache = SuggestionCache {
+            binaries,
+            home_dirs,
+        };
         match &mut self.edit_mode {
             EditMode::EditingField {
                 input, field_key, ..
@@ -727,9 +730,7 @@ impl App {
 
     /// Resolve the currently selected scalar field for editing. Returns the
     /// section index, field key, and schema, or sets a status message and returns `None`.
-    fn resolve_editable_scalar(
-        &mut self,
-    ) -> Option<(usize, String, &'static ScalarFieldSchema)> {
+    fn resolve_editable_scalar(&mut self) -> Option<(usize, String, &'static ScalarFieldSchema)> {
         if self.reject_if_merged() {
             return None;
         }
@@ -2301,9 +2302,7 @@ impl App {
                         let doctor = crate::cmd::doctor::summarize(&config);
                         let prefix = match self.state.edit_target {
                             EditTarget::Global => "Restored from backup. Validation passed.",
-                            EditTarget::Local => {
-                                "Restored from backup. Layered validation passed."
-                            }
+                            EditTarget::Local => "Restored from backup. Layered validation passed.",
                         };
                         self.set_doctor_status(prefix, doctor);
                     }
@@ -2737,7 +2736,11 @@ fn build_entry_form_fields(section_key: &str, table: Option<&toml_edit::Table>) 
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn suggestion_for_field(field_key: &str, input: &str, cache: &SuggestionCache<'_>) -> Option<String> {
+fn suggestion_for_field(
+    field_key: &str,
+    input: &str,
+    cache: &SuggestionCache<'_>,
+) -> Option<String> {
     let query = input.trim();
     if query.is_empty() {
         return None;
@@ -2749,12 +2752,10 @@ fn suggestion_for_field(field_key: &str, input: &str, cache: &SuggestionCache<'_
             .next()
             .map(|s| s.value),
         "host" | "path" | "containerfile" | "cache_dir" | "gitconfig_path" | "auth_key"
-        | "sign_key" | "profile_dir" | "renderer_bin" => {
-            suggest_paths_from(query, cache.home_dirs)
-                .into_iter()
-                .next()
-                .map(|s| s.value)
-        }
+        | "sign_key" | "profile_dir" | "renderer_bin" => suggest_paths_from(query, cache.home_dirs)
+            .into_iter()
+            .next()
+            .map(|s| s.value),
         _ => None,
     }
 }
@@ -3586,9 +3587,10 @@ kind = "dir"
             }],
         };
 
-        assert!(
-            matches!(super::compute_host_status(&agent), super::HostStatus::Missing)
-        );
+        assert!(matches!(
+            super::compute_host_status(&agent),
+            super::HostStatus::Missing
+        ));
     }
 
     #[test]
@@ -3917,7 +3919,10 @@ sign_key = "/tmp/sign"
             super::suggestion_for_field(
                 "command",
                 "gh",
-                &super::SuggestionCache { binaries: &[], home_dirs: &[] },
+                &super::SuggestionCache {
+                    binaries: &[],
+                    home_dirs: &[]
+                },
             ),
             Some("gh".to_string())
         );
@@ -3929,7 +3934,10 @@ sign_key = "/tmp/sign"
             super::suggestion_for_field(
                 "host",
                 "gitconfig",
-                &super::SuggestionCache { binaries: &[], home_dirs: &[] },
+                &super::SuggestionCache {
+                    binaries: &[],
+                    home_dirs: &[]
+                },
             ),
             Some("~/.gitconfig".to_string())
         );

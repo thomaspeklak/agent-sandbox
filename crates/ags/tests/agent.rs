@@ -186,7 +186,9 @@ fn claude_profile_symlinks_binary_to_home_local_bin() {
     let config = minimal_config();
     let profile = profile_for(Agent::Claude, &config);
     assert!(
-        profile.entrypoint_setup.contains("ln -sf /opt/claude-home/.local/bin/claude /home/dev/.local/bin/claude"),
+        profile
+            .entrypoint_setup
+            .contains("ln -sf /opt/claude-home/.local/bin/claude /home/dev/.local/bin/claude"),
         "entrypoint should symlink claude binary to prevent native-install warning"
     );
 }
@@ -225,7 +227,11 @@ fn claude_profile_root_mode_appends_system_prompt() {
         .filter(|(_, a)| *a == "--append-system-prompt")
         .map(|(i, _)| i)
         .collect();
-    assert_eq!(prompt_indices.len(), 2, "should have two --append-system-prompt flags");
+    assert_eq!(
+        prompt_indices.len(),
+        2,
+        "should have two --append-system-prompt flags"
+    );
     assert!(
         profile.command_args[prompt_indices[1] + 1].contains("root"),
         "second system prompt should mention root access"
