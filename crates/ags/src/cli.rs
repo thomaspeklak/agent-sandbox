@@ -1,3 +1,8 @@
+#[path = "cli_help.rs"]
+mod help;
+
+use help::HELP_TEXT;
+
 use std::fmt;
 use std::path::PathBuf;
 
@@ -487,40 +492,5 @@ where
 }
 
 pub fn help_text() -> &'static str {
-    "Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|shell> [flags] -- [args...]\n\
-     \n\
-     Commands:\n\
-     \x20 setup          Generate SSH keys and configure secrets\n\
-     \x20 doctor         Run health checks on sandbox configuration\n\
-     \x20 update-image   Rebuild container image and refresh bundled br/bv/dcg\n\
-     \x20 update-agents  Install/update agents in persistent volumes\n\
-     \x20 install         Install config/assets (optional self-link)\n\
-     \x20 uninstall       Reserved (currently no-op)\n\
-     \x20 create-aliases  Create managed wrapper scripts and/or shell aliases\n\
-     \x20 completions     Print shell completion script to stdout\n\
-     \n\
-     Run flags:\n\
-     \x20 --agent <name>       Agent to run (required), or 'shell' for interactive bash\n\
-     \x20 --browser            Start browser sidecar and browser skill wiring\n\
-     \x20 --tmux               Launch the agent inside a tmux session\n\
-     \x20 --psp                Enable podman-socket-proxy for Docker/Testcontainers flows\n\
-     \x20 --psp-keep           Keep PSP-created containers after session exit\n\
-     \x20 --yolo               Disable AGS Pi/Claude guard integrations for this run\n\
-     \x20 --root               Run agent with root access inside the sandbox\n\
-     \x20 --stop-when-done     Exit container when agent finishes (tmux mode)\n\
-     \x20 --config <path>      Use an alternate AGS config file\n\
-     \x20 --add-dir, -d <path> Add an extra host directory mount (repeatable)\n\
-     \n\
-     Install flags:\n\
-     \x20 --link-self          Link current ags executable to ~/.local/bin/ags\n\
-     \x20 --force              Replace existing ~/.local/bin/ags when used with --link-self\n\
-     \x20 --add-agent-mounts   Append default [[agent_mount]] entries to ~/.config/ags/config.toml\n\
-     \n\
-     Create-aliases flags:\n\
-     \x20 --shell <name>       Target shell for alias blocks (fish|zsh|bash; autodetect if omitted)\n\
-     \x20 --mode <kind>        wrappers|aliases|both (default: wrappers)\n\
-     \x20 --force              Replace existing non-managed targets\n\
-     \n\
-     Completions flags:\n\
-     \x20 --shell <name>       Shell to generate completion script for (fish|zsh|bash)\n"
+    HELP_TEXT
 }
