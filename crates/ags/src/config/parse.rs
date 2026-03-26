@@ -104,7 +104,7 @@ fn merge_toml_value(base: &mut Value, overlay: Value, path: &[&str]) {
 }
 
 fn is_additive_array_key(path: &[&str], key: &str) -> bool {
-    path.is_empty() && matches!(key, "mount" | "agent_mount" | "tool" | "secret")
+    path.is_empty() && super::ADDITIVE_ARRAY_KEYS.contains(&key)
 }
 
 fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, ConfigError> {

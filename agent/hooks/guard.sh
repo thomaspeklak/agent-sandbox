@@ -4,20 +4,19 @@
 #
 # Blocks tool calls that:
 #   - Access sensitive paths (SSH keys, credentials, etc.)
-#   - Read/write outside allowed sandbox roots
 #   - Write to secret-like files (.env, .pem, .key, id_*)
 #   - Reference sensitive host paths from Bash commands
 #
 # For Bash command classification, this hook intentionally delegates to
 # destructive_command_guard (dcg) when available instead of maintaining a
-# separate AGS regex denylist.
+# broad AGS regex denylist.
 #
 # Exit codes:
 #   0 — allow the tool call (or pass through dcg's allow/deny JSON)
 #   2 — block the tool call (reason printed to stderr)
 #
 # If dcg is unavailable or errors, this wrapper fails open and relies on the
-# sandbox plus the AGS-specific path protections above.
+# sandbox plus the AGS-specific sensitive-path and secret-write protections above.
 
 set -euo pipefail
 
@@ -32,15 +31,6 @@ TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty')
 # ─── Configuration ────────────────────────────────────────────────────
 
 HOME_DIR="${HOME:-/home/dev}"
-
-# Allowed roots (set by ags plan builder via env, fall back to cwd + /tmp)
-_read_json="${AGS_GUARD_READ_ROOTS_JSON:-}"
-_write_json="${AGS_GUARD_WRITE_ROOTS_JSON:-}"
-[[ -z "$_read_json" ]]  && _read_json="[\"${PWD}\",\"/tmp\"]"
-[[ -z "$_write_json" ]] && _write_json="[\"${PWD}\",\"/tmp\"]"
-
-mapfile -t READ_ROOTS  < <(printf '%s' "$_read_json"  | jq -r '.[]')
-mapfile -t WRITE_ROOTS < <(printf '%s' "$_write_json" | jq -r '.[]')
 
 SENSITIVE_PATHS=(
   "$HOME_DIR/.ssh"
@@ -82,16 +72,6 @@ is_sensitive() {
   return 1
 }
 
-# Check whether target falls inside any of the supplied roots.
-# Usage: in_roots "$target" "${ROOTS_ARRAY[@]}"
-in_roots() {
-  local target="$1"; shift
-  for root in "$@"; do
-    is_inside "$target" "$(resolve_path "$root")" && return 0
-  done
-  return 1
-}
-
 # Extract the filesystem path from tool_input.
 # Read/Write/Edit use "file_path"; Grep/Glob use "path".
 get_path() {
@@ -112,8 +92,6 @@ case "$TOOL_NAME" in
     if [[ -n "$target" ]]; then
       is_sensitive "$target" \
         && deny "Sensitive path is not readable: $target"
-      in_roots "$target" "${READ_ROOTS[@]}" \
-        || deny "Read outside sandbox roots denied: $target"
     fi
     ;;
 
@@ -124,8 +102,6 @@ case "$TOOL_NAME" in
 
     is_sensitive "$target" \
       && deny "Sensitive path is not writable: $target"
-    in_roots "$target" "${WRITE_ROOTS[@]}" \
-      || deny "Write outside sandbox roots denied: $target"
 
     # Deny writes to secret-like files
     if printf '%s' "$target" | grep -qEi '\.(env(\..+)?|pem|key)$'; then
@@ -145,6 +121,12 @@ case "$TOOL_NAME" in
     for sp in "${SENSITIVE_PATHS[@]}"; do
       [[ "$cmd" == *"$sp"* ]] \
         && deny "Command references sensitive host path"
+      if [[ "$sp" == "$HOME_DIR/"* ]]; then
+        suffix=${sp#"$HOME_DIR"/}
+        rel="~/$suffix"
+        [[ "$cmd" == *"$rel"* ]] \
+          && deny "Command references sensitive host path"
+      fi
     done
 
     # Delegate shell command classification to dcg using the original hook

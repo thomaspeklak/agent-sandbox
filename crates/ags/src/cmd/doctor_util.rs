@@ -8,6 +8,7 @@ pub struct Checker {
     pub warn_count: u32,
     pub fail_count: u32,
     use_color: bool,
+    emit_output: bool,
 }
 
 impl Checker {
@@ -17,10 +18,24 @@ impl Checker {
             warn_count: 0,
             fail_count: 0,
             use_color: atty_stdout(),
+            emit_output: true,
+        }
+    }
+
+    pub fn quiet() -> Self {
+        Self {
+            ok_count: 0,
+            warn_count: 0,
+            fail_count: 0,
+            use_color: false,
+            emit_output: false,
         }
     }
 
     pub fn section(&self, title: &str) {
+        if !self.emit_output {
+            return;
+        }
         if self.use_color {
             println!("\n\x1b[36m== {title} ==\x1b[0m");
         } else {
@@ -44,6 +59,9 @@ impl Checker {
     }
 
     pub fn print_summary(&self) {
+        if !self.emit_output {
+            return;
+        }
         if self.use_color {
             println!(
                 "\n\x1b[36mSummary:\x1b[0m \
@@ -61,6 +79,9 @@ impl Checker {
     }
 
     fn emit(&self, color: &str, tag: &str, msg: &str) {
+        if !self.emit_output {
+            return;
+        }
         if self.use_color {
             println!("{color}{tag}\x1b[0m {msg}");
         } else {
@@ -161,7 +182,11 @@ pub fn secret_tool_has_value(attributes: &std::collections::BTreeMap<String, Str
         return false;
     }
     let args: Vec<&str> = std::iter::once("lookup")
-        .chain(attributes.iter().flat_map(|(k, v)| [k.as_str(), v.as_str()]))
+        .chain(
+            attributes
+                .iter()
+                .flat_map(|(k, v)| [k.as_str(), v.as_str()]),
+        )
         .collect();
     Command::new("secret-tool")
         .args(&args)

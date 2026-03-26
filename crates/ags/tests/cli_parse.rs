@@ -1,6 +1,6 @@
 use ags::cli::{
     Agent, AliasMode, CliError, Command, CompletionsOptions, CreateAliasesOptions, InstallOptions,
-    Shell, SubCommand, parse_args,
+    Shell, SubCommand, help_text, parse_args,
 };
 
 fn args(items: &[&str]) -> Vec<String> {
@@ -99,13 +99,21 @@ fn parses_subcommands() {
     for (arg, expected) in [
         ("setup", SubCommand::Setup),
         ("doctor", SubCommand::Doctor),
-        ("update", SubCommand::Update),
+        ("update-image", SubCommand::UpdateImage),
+        ("update", SubCommand::UpdateDeprecated),
         ("update-agents", SubCommand::UpdateAgents),
         ("uninstall", SubCommand::Uninstall),
     ] {
         let cmd = parse_args(args(&["ags", arg])).unwrap();
         assert_eq!(cmd, Command::Sub(expected));
     }
+}
+
+#[test]
+fn help_shows_update_image_but_not_deprecated_update_alias() {
+    let help = help_text();
+    assert!(help.contains("update-image"));
+    assert!(!help.contains("\n     \x20 update         Rebuild container image"));
 }
 
 #[test]

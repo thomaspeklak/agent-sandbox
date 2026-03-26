@@ -12,7 +12,10 @@ fn main() -> ExitCode {
     let code = match cli::parse_args(std::env::args()) {
         Ok(Command::Run(opts)) => run_agent(opts),
         Ok(Command::Sub(sub)) => {
-            let skip_notice = matches!(sub, SubCommand::Completions(_) | SubCommand::Update);
+            let skip_notice = matches!(
+                sub,
+                SubCommand::Completions(_) | SubCommand::UpdateImage | SubCommand::UpdateDeprecated
+            );
             let code = run_subcommand(sub);
             if skip_notice {
                 return code;
@@ -56,7 +59,15 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
         SubCommand::Completions(ref opts) => {
             return try_sub("completions", ags::cmd::completions::run(opts));
         }
-        SubCommand::Setup | SubCommand::Doctor | SubCommand::Update | SubCommand::UpdateAgents => {}
+        SubCommand::Config => {
+            let config_path = ags::config::default_config_path();
+            return try_sub("config", ags::cmd::config_editor::run(&config_path));
+        }
+        SubCommand::Setup
+        | SubCommand::Doctor
+        | SubCommand::UpdateImage
+        | SubCommand::UpdateDeprecated
+        | SubCommand::UpdateAgents => {}
     }
 
     let config = match load_config(None) {
@@ -73,18 +84,21 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 ExitCode::FAILURE
             }
         }
-        SubCommand::Update => {
+        SubCommand::UpdateImage | SubCommand::UpdateDeprecated => {
+            if matches!(sub, SubCommand::UpdateDeprecated) {
+                eprintln!("warning: `ags update` is deprecated; use `ags update-image` instead.");
+            }
             if let Err(e) = ags::assets::ensure_containerfile(&config.sandbox.containerfile) {
-                eprintln!("update error: could not write Containerfile: {e}");
+                eprintln!("update-image error: could not write Containerfile: {e}");
                 return ExitCode::FAILURE;
             }
             let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
             if let Err(e) = ags::assets::ensure_tmux_conf(&tmux_conf) {
-                eprintln!("update error: could not write tmux config: {e}");
+                eprintln!("update-image error: could not write tmux config: {e}");
                 return ExitCode::FAILURE;
             }
             try_sub(
-                "update",
+                "update-image",
                 ags::cmd::update::run(&config, &ags::cmd::update::UpdateOptions::default()),
             )
         }
@@ -98,7 +112,8 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
         SubCommand::Install(_)
         | SubCommand::Uninstall
         | SubCommand::CreateAliases(_)
-        | SubCommand::Completions(_) => {
+        | SubCommand::Completions(_)
+        | SubCommand::Config => {
             unreachable!()
         }
     }
@@ -287,12 +302,8 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             guard_enabled: !opts.yolo,
             ssh_auth_sock: ssh_sock.as_deref(),
             resolved_secrets: &resolved_secrets,
-            auth_proxy_runtime_dir: _auth_proxy_guard
-                .as_ref()
-                .map(|g| g.runtime_dir.as_path()),
-            host_ui_runtime_dir: _host_ui_guard
-                .as_ref()
-                .map(|g| g.runtime_dir.as_path()),
+            auth_proxy_runtime_dir: _auth_proxy_guard.as_ref().map(|g| g.runtime_dir.as_path()),
+            host_ui_runtime_dir: _host_ui_guard.as_ref().map(|g| g.runtime_dir.as_path()),
             host_ui_session_id: _host_ui_guard.as_ref().map(|g| g.session_id.as_str()),
             webview_relay_runtime_dir: _webview_relay_guard
                 .as_ref()
@@ -324,7 +335,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             match ags::podman::image_has_binary(&plan.image, "dcg") {
                 Ok(true) => {}
                 Ok(false) => eprintln!(
-                    "warning: destructive_command_guard (dcg) is missing in the sandbox image; AGS {} Bash guards will fail open. Run `ags doctor` or `ags update`.",
+                    "warning: destructive_command_guard (dcg) is missing in the sandbox image; AGS {} Bash guards will fail open. Run `ags doctor` or `ags update-image`.",
                     opts.agent.as_str()
                 ),
                 Err(e) => eprintln!(
@@ -347,10 +358,10 @@ fn run_agent(opts: RunOptions) -> ExitCode {
 fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, ExitCode> {
     let config_path = override_path
         .map(PathBuf::from)
-        .unwrap_or_else(default_config_path);
+        .unwrap_or_else(ags::config::default_config_path);
 
     if !config_path.exists() {
-        if let Err(e) = create_default_config(&config_path) {
+        if let Err(e) = ags::config::create_default_config(&config_path) {
             eprintln!("error: could not create default config: {e}");
             return Err(ExitCode::from(2));
         }
@@ -380,77 +391,4 @@ fn same_existing_path(a: &Path, b: &Path) -> bool {
         return false;
     };
     a == b
-}
-
-fn create_default_config(path: &Path) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, DEFAULT_CONFIG)
-}
-
-const DEFAULT_CONFIG: &str = r#"[sandbox]
-image = "localhost/agent-sandbox:latest"
-containerfile = "~/.config/ags/Containerfile"
-cache_dir = "~/.cache/ags"
-gitconfig_path = "~/.config/ags/gitconfig-agent"
-auth_key = "~/.ssh/ags-agent-auth"
-sign_key = "~/.ssh/ags-agent-signing"
-bootstrap_files = ["auth.json", "models.json"]
-container_boot_dirs = [
-  "/home/dev/.ssh",
-]
-passthrough_env = [
-  "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY",
-  "GEMINI_API_KEY",
-  "OPENROUTER_API_KEY",
-  "AI_GATEWAY_API_KEY",
-  "OPENCODE_API_KEY",
-]
-
-[[mount]]
-host = "~/.ssh/known_hosts"
-container = "/home/dev/.ssh/known_hosts"
-mode = "ro"
-kind = "file"
-optional = true
-
-[[agent_mount]]
-host = "~/.claude.json"
-container = "/home/dev/.claude.json"
-kind = "file"
-
-[[agent_mount]]
-host = "~/.claude"
-container = "/home/dev/.claude"
-
-[[agent_mount]]
-host = "~/.codex"
-container = "/home/dev/.codex"
-
-[[agent_mount]]
-host = "~/.pi"
-container = "/home/dev/.pi"
-
-[[agent_mount]]
-host = "~/.config/opencode"
-container = "/home/dev/.config/opencode"
-
-[[agent_mount]]
-host = "~/.gemini"
-container = "/home/dev/.gemini"
-
-[host_ui]
-enabled = false
-binary = "glimpse-host-ui"
-renderer = "stub"
-idle_timeout_ms = 30000
-log_level = "info"
-"#;
-
-fn default_config_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("ags/config.toml")
 }

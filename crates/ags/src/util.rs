@@ -47,6 +47,15 @@ pub fn shell_quote(s: &str) -> String {
     }
 }
 
+/// Capitalize the first character of a string.
+pub fn capitalize_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
 /// Poll `check` every `interval` until it returns `Break(T)` or `timeout` elapses.
 ///
 /// Returns `Some(T)` if `check` broke early, `None` on timeout.

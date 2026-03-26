@@ -71,6 +71,21 @@ function parseRootsFromEnv(envName: string): string[] | undefined {
 	}
 }
 
+function commandReferencesSensitivePath(command: string, home: string): boolean {
+	for (const prefix of SENSITIVE_PATH_PREFIXES) {
+		if (command.includes(prefix)) {
+			return true;
+		}
+		if (prefix.startsWith(`${home}/`)) {
+			const homeRelative = `~/${prefix.slice(home.length + 1)}`;
+			if (command.includes(homeRelative)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 function asAbsolutePath(inputPath: string, cwd: string, home: string): string {
 	const expanded = expandHome(inputPath, home);
 	const absolute = isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
@@ -164,28 +179,14 @@ export default function (pi: ExtensionAPI) {
 
 		const home = process.env.HOME ?? "/home/dev";
 		const cwd = ctx.cwd;
-		const workspace = normalize(cwd);
-
-		const readRootsFromEnv = parseRootsFromEnv("AGS_GUARD_READ_ROOTS_JSON");
-		const writeRootsFromEnv = parseRootsFromEnv("AGS_GUARD_WRITE_ROOTS_JSON");
-
-		const allowedReadRoots = (readRootsFromEnv ?? [workspace, "/tmp", "/home/dev/.pi/agent"]).map((p) => asAbsolutePath(p, cwd, home));
-
-		const allowedWriteRoots = (writeRootsFromEnv ?? [workspace, "/tmp", "/home/dev/.pi/agent"]).map((p) => asAbsolutePath(p, cwd, home));
-
 		const inputPath =
 			typeof event.input === "object" && event.input !== null && "path" in event.input && typeof event.input.path === "string"
 				? asAbsolutePath(event.input.path, cwd, home)
 				: undefined;
 
 		if (event.toolName === "read" || event.toolName === "grep" || event.toolName === "find" || event.toolName === "ls") {
-			if (inputPath) {
-				if (isSensitivePath(inputPath)) {
-					return { block: true, reason: `Sensitive path is not readable: ${inputPath}` };
-				}
-				if (!allowedReadRoots.some((root) => isPathInside(inputPath, root))) {
-					return { block: true, reason: `Read outside sandbox roots denied: ${inputPath}` };
-				}
+			if (inputPath && isSensitivePath(inputPath)) {
+				return { block: true, reason: `Sensitive path is not readable: ${inputPath}` };
 			}
 		}
 
@@ -196,9 +197,6 @@ export default function (pi: ExtensionAPI) {
 			if (isSensitivePath(inputPath)) {
 				return { block: true, reason: `Sensitive path is not writable: ${inputPath}` };
 			}
-			if (!allowedWriteRoots.some((root) => isPathInside(inputPath, root))) {
-				return { block: true, reason: `Write outside sandbox roots denied: ${inputPath}` };
-			}
 			if (matchesDeniedWrite(inputPath)) {
 				return { block: true, reason: `Refusing writes to secret-like file: ${inputPath}` };
 			}
@@ -206,6 +204,9 @@ export default function (pi: ExtensionAPI) {
 
 		if (isToolCallEventType("bash", event)) {
 			const command = event.input.command;
+			if (commandReferencesSensitivePath(command, home)) {
+				return { block: true, reason: "Command references sensitive host path" };
+			}
 			const dcgReason = await maybeRunDcg(pi, command);
 			if (dcgReason) {
 				return { block: true, reason: dcgReason };
@@ -216,10 +217,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("guard", {
-		description: "Show active sandbox guard roots",
+		description: "Show sandbox guard status",
 		handler: async (_args, ctx) => {
-			const readRoots = parseRootsFromEnv("AGS_GUARD_READ_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi/agent"];
-			const writeRoots = parseRootsFromEnv("AGS_GUARD_WRITE_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi/agent"];
+			const readRoots = parseRootsFromEnv("AGS_GUARD_READ_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi"];
+			const writeRoots = parseRootsFromEnv("AGS_GUARD_WRITE_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi"];
 			const yolo = yoloModeEnabled();
 			const dcgState = yolo ? "disabled by --yolo" : (await detectDcgAvailability(pi)) ? "available" : "missing";
 
@@ -230,6 +231,7 @@ export default function (pi: ExtensionAPI) {
 					`Detection source: ${SANDBOX_DETECTION.source}`,
 					`dcg: ${dcgState}`,
 					`Workspace root: ${ctx.cwd}`,
+					"Configured read/write roots are informational only; the guard now focuses on sensitive paths, secret-like writes, and dcg for Bash.",
 					`Read roots: ${readRoots.join(", ")}`,
 					`Write roots: ${writeRoots.join(", ")}`,
 				].join("\n"),

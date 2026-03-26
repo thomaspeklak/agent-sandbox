@@ -58,6 +58,7 @@ fn run_guard_with_env(
         .current_dir(root)
         .env("PATH", path_env)
         .env("HOME", "/home/dev")
+        .env("AGS_GUARD_YOLO", "0")
         .env(
             "AGS_GUARD_READ_ROOTS_JSON",
             format!("[\"{}\",\"/tmp\"]", root.display()),
@@ -98,7 +99,7 @@ fn run_guard(input: &str, setup: impl FnOnce(&Path)) -> (String, String, i32, te
 }
 
 #[test]
-fn pi_guard_extension_uses_dcg_without_ags_bash_string_heuristics() {
+fn pi_guard_extension_uses_dcg_without_broad_ags_bash_regexes() {
     let content = fs::read_to_string(pi_guard_extension_path()).unwrap();
 
     assert!(
@@ -114,12 +115,8 @@ fn pi_guard_extension_uses_dcg_without_ags_bash_string_heuristics() {
         "Pi guard should not maintain a broad AGS Bash denylist"
     );
     assert!(
-        !content.contains("command.includes(p)"),
-        "Pi guard should not inspect raw Bash command strings for sensitive paths"
-    );
-    assert!(
-        !content.contains("Command references sensitive host path"),
-        "Pi guard should no longer block Bash purely on a substring path match"
+        content.contains("Command references sensitive host path"),
+        "Pi guard should block obvious Bash references to sensitive host paths"
     );
     assert!(
         content.contains("AGS_GUARD_YOLO"),
@@ -142,7 +139,24 @@ fn guard_hook_allows_commit_message_with_shutdown_word() {
 }
 
 #[test]
-fn guard_hook_denies_read_outside_allowed_roots() {
+fn guard_hook_denies_sensitive_read_path() {
+    if !require_shell_tools() {
+        return;
+    }
+
+    let input = r#"{"tool_name":"Read","tool_input":{"file_path":"/home/dev/.ssh/id_ed25519.pub"}}"#;
+    let (stdout, stderr, exit_code, _temp) = run_guard(input, |_| {});
+
+    assert_eq!(exit_code, 2, "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.trim().is_empty(), "stdout: {stdout}");
+    assert!(
+        stderr.contains("Sensitive path is not readable"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn guard_hook_allows_non_sensitive_read_outside_previous_roots_model() {
     if !require_shell_tools() {
         return;
     }
@@ -150,12 +164,9 @@ fn guard_hook_denies_read_outside_allowed_roots() {
     let input = r#"{"tool_name":"Read","tool_input":{"file_path":"/etc/passwd"}}"#;
     let (stdout, stderr, exit_code, _temp) = run_guard(input, |_| {});
 
-    assert_eq!(exit_code, 2, "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(exit_code, 0, "stdout: {stdout}\nstderr: {stderr}");
     assert!(stdout.trim().is_empty(), "stdout: {stdout}");
-    assert!(
-        stderr.contains("Read outside sandbox roots denied"),
-        "stderr: {stderr}"
-    );
+    assert!(stderr.trim().is_empty(), "stderr: {stderr}");
 }
 
 #[test]

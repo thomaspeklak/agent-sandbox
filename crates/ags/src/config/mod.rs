@@ -1,10 +1,15 @@
+mod defaults;
 mod error;
 mod parse;
 mod raw;
 mod types;
 
+pub use defaults::{DEFAULT_CONFIG, create_default_config, default_config_path};
 pub use error::ConfigError;
 pub use parse::{parse_and_validate, parse_and_validate_with_overlay, parse_toml_str};
+
+/// Root-level TOML keys whose arrays are concatenated (not replaced) during overlay merge.
+pub const ADDITIVE_ARRAY_KEYS: &[&str] = &["mount", "agent_mount", "tool", "secret"];
 pub use raw::RawConfig;
 pub use types::{
     AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,

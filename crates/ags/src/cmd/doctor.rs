@@ -10,23 +10,48 @@ use super::doctor_util::{
     socket_exists,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DoctorSummary {
+    pub ok_count: u32,
+    pub warn_count: u32,
+    pub fail_count: u32,
+}
+
+impl DoctorSummary {
+    pub fn all_clear(self) -> bool {
+        self.fail_count == 0 && self.warn_count == 0
+    }
+}
+
 /// Run the doctor command: health-check the sandbox environment.
 /// Returns `true` if no failures were found.
 pub fn run(config: &ValidatedConfig) -> bool {
     let mut ck = Checker::new();
-
-    check_tooling(&mut ck);
-    check_config_files(&mut ck, config);
-    check_integrations(&mut ck, config);
-    check_container_image(&mut ck, config);
-    check_keys_and_agent(&mut ck, config);
-    check_secrets(&mut ck, config);
-    check_sessions(&mut ck, config);
-    check_browser(&mut ck, config);
-    check_host_ui(&mut ck, config);
-
+    run_checks(&mut ck, config);
     ck.print_summary();
     ck.fail_count == 0
+}
+
+pub fn summarize(config: &ValidatedConfig) -> DoctorSummary {
+    let mut ck = Checker::quiet();
+    run_checks(&mut ck, config);
+    DoctorSummary {
+        ok_count: ck.ok_count,
+        warn_count: ck.warn_count,
+        fail_count: ck.fail_count,
+    }
+}
+
+fn run_checks(ck: &mut Checker, config: &ValidatedConfig) {
+    check_tooling(ck);
+    check_config_files(ck, config);
+    check_integrations(ck, config);
+    check_container_image(ck, config);
+    check_keys_and_agent(ck, config);
+    check_secrets(ck, config);
+    check_sessions(ck, config);
+    check_browser(ck, config);
+    check_host_ui(ck, config);
 }
 
 fn check_tooling(ck: &mut Checker) {
@@ -165,7 +190,7 @@ fn check_container_image(ck: &mut Checker, config: &ValidatedConfig) {
         match crate::podman::image_has_binary(image, "dcg") {
             Ok(true) => ck.ok("bundled dcg available inside sandbox image"),
             Ok(false) => ck.fail(
-                "bundled dcg missing inside sandbox image; Pi/Claude Bash guards will fail open (run 'ags update')",
+                "bundled dcg missing inside sandbox image; Pi/Claude Bash guards will fail open (run 'ags update-image')",
             ),
             Err(err) => ck.warn(&format!(
                 "could not verify bundled dcg inside sandbox image: {err}"
@@ -173,7 +198,7 @@ fn check_container_image(ck: &mut Checker, config: &ValidatedConfig) {
         }
     } else {
         ck.warn(&format!(
-            "image not built yet: {image} (run 'ags update' to build)"
+            "image not built yet: {image} (run 'ags update-image' to build)"
         ));
         ck.warn("cannot verify bundled dcg until the sandbox image is built");
     }
@@ -343,13 +368,21 @@ fn check_binary(ck: &mut Checker, binary: &str, label: &str, required: bool) -> 
             return true;
         }
         let msg = format!("{label} missing or not executable: {binary}");
-        if required { ck.fail(&msg); } else { ck.warn(&msg); }
+        if required {
+            ck.fail(&msg);
+        } else {
+            ck.warn(&msg);
+        }
     } else if crate::util::has_command(binary) {
         ck.ok(&format!("{label} available on PATH: {binary}"));
         return true;
     } else {
         let msg = format!("{label} not found on PATH: {binary}");
-        if required { ck.fail(&msg); } else { ck.warn(&msg); }
+        if required {
+            ck.fail(&msg);
+        } else {
+            ck.warn(&msg);
+        }
     }
     false
 }

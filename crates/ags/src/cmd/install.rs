@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::assets;
 use crate::cli::InstallOptions;
+use crate::cmd::config_editor::agents::KNOWN_AGENTS;
 
 #[derive(Debug)]
 pub enum InstallError {
@@ -122,14 +123,13 @@ fn ensure_agent_mounts_block(config_path: &Path) -> Result<(), InstallError> {
     }
 
     let content = fs::read_to_string(config_path)?;
-    let required_containers = [
-        "/home/dev/.pi",
-        "/home/dev/.claude",
-        "/home/dev/.claude.json",
-        "/home/dev/.codex",
-        "/home/dev/.gemini",
-        "/home/dev/.config/opencode",
-    ];
+
+    // Build required containers list from KNOWN_AGENTS.
+    let required_containers: Vec<&str> = KNOWN_AGENTS
+        .iter()
+        .flat_map(|a| a.mounts.iter().map(|m| m.container))
+        .collect();
+
     if required_containers
         .iter()
         .all(|c| content.contains(&format!("container = \"{c}\"")))
@@ -138,39 +138,27 @@ fn ensure_agent_mounts_block(config_path: &Path) -> Result<(), InstallError> {
         return Ok(());
     }
 
-    let block = r#"
-# Added by `ags install --add-agent-mounts`
-[[agent_mount]]
-host = "~/.claude.json"
-container = "/home/dev/.claude.json"
-kind = "file"
-
-[[agent_mount]]
-host = "~/.claude"
-container = "/home/dev/.claude"
-
-[[agent_mount]]
-host = "~/.codex"
-container = "/home/dev/.codex"
-
-[[agent_mount]]
-host = "~/.pi"
-container = "/home/dev/.pi"
-
-[[agent_mount]]
-host = "~/.config/opencode"
-container = "/home/dev/.config/opencode"
-
-[[agent_mount]]
-host = "~/.gemini"
-container = "/home/dev/.gemini"
-"#;
+    // Build TOML block programmatically from KNOWN_AGENTS.
+    let mut block = String::from("\n# Added by `ags install --add-agent-mounts`\n");
+    let all_mounts: Vec<_> = KNOWN_AGENTS.iter().flat_map(|a| a.mounts.iter()).collect();
+    for (i, m) in all_mounts.iter().enumerate() {
+        block.push_str("[[agent_mount]]\n");
+        block.push_str(&format!("host = \"{}\"\n", m.host));
+        block.push_str(&format!("container = \"{}\"\n", m.container));
+        if m.kind != crate::config::MountKind::Dir {
+            block.push_str(&format!("kind = \"{}\"\n", m.kind));
+        }
+        // Blank separator line between entries, but not after the last one.
+        if i + 1 < all_mounts.len() {
+            block.push('\n');
+        }
+    }
 
     let mut updated = content;
     if !updated.ends_with('\n') {
         updated.push('\n');
     }
-    updated.push_str(block);
+    updated.push_str(&block);
 
     fs::write(config_path, updated)?;
     println!("Appended default agent mounts to {}", config_path.display());

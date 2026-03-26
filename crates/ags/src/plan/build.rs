@@ -313,7 +313,11 @@ fn short_path_slug(path: &Path) -> String {
         return "work".to_owned();
     }
 
-    let tail = if parts.len() > 3 { &parts[parts.len() - 3..] } else { &parts };
+    let tail = if parts.len() > 3 {
+        &parts[parts.len() - 3..]
+    } else {
+        &parts
+    };
     let raw = tail.join("-");
     let mut slug = String::with_capacity(raw.len());
     let mut prev_dash = false;
@@ -334,7 +338,11 @@ fn short_path_slug(path: &Path) -> String {
     } else {
         slug
     };
-    if slug.is_empty() { "work".to_owned() } else { slug.to_owned() }
+    if slug.is_empty() {
+        "work".to_owned()
+    } else {
+        slug.to_owned()
+    }
 }
 
 fn short_id4() -> String {
@@ -761,7 +769,7 @@ fn build_entrypoint(
 
     if tmux_mode {
         script.push_str(
-            "if ! command -v tmux >/dev/null 2>&1; then echo '[ags] tmux is not available in the sandbox image. Run `ags update` to rebuild the image with tmux support.' >&2; exit 127; fi; ",
+            "if ! command -v tmux >/dev/null 2>&1; then echo '[ags] tmux is not available in the sandbox image. Run `ags update-image` to rebuild the image with tmux support.' >&2; exit 127; fi; ",
         );
         script.push_str("cat > /tmp/ags-run-in-tmux.sh <<'EOF'\n#!/usr/bin/env bash\n");
         if stop_when_done {
@@ -810,6 +818,10 @@ fn build_agent_exec(profile: &AgentProfile, browser: &BrowserConfig, browser_mod
 // --- JSON helpers ---
 
 fn json_string_array(items: &[String]) -> String {
-    let unique: BTreeSet<&str> = items.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+    let unique: BTreeSet<&str> = items
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|s| !s.is_empty())
+        .collect();
     serde_json::to_string(&unique).expect("string array serialization cannot fail")
 }

@@ -47,7 +47,7 @@ const BASH: &str = r#"_ags_completion() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
   fi
 
-  local commands="setup doctor update update-agents install uninstall create-aliases completions"
+  local commands="setup doctor update-image update-agents install uninstall create-aliases completions"
   local agents="pi claude codex gemini opencode shell"
   local shells="fish zsh bash"
   local modes="wrappers aliases both"
@@ -65,7 +65,7 @@ const BASH: &str = r#"_ags_completion() {
   fi
 
   case "${COMP_WORDS[1]}" in
-    setup|doctor|update|update-agents|uninstall)
+    setup|doctor|update-image|update-agents|uninstall)
       COMPREPLY=( $(compgen -W "-h --help" -- "$cur") )
       return 0
       ;;
@@ -163,20 +163,20 @@ complete -F _ags_completion ags
 const ZSH: &str = r#"#compdef ags
 
 local -a commands agents shells modes
-commands=(setup doctor update update-agents install uninstall create-aliases completions)
+commands=(setup doctor update-image update-agents install uninstall create-aliases completions)
 agents=(pi claude codex gemini opencode shell)
 shells=(fish zsh bash)
 modes=(wrappers aliases both)
 
 if (( CURRENT == 2 )); then
   _alternative \
-    'subcommand:subcommand:(setup doctor update update-agents install uninstall create-aliases completions)' \
+    'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions)' \
     'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --config --add-dir -d -h --help)'
   return
 fi
 
 case "$words[2]" in
-  setup|doctor|update|update-agents|uninstall)
+  setup|doctor|update-image|update-agents|uninstall)
     _values 'option' -h --help
     return
     ;;
@@ -218,7 +218,7 @@ _arguments -S \
 
 const FISH: &str = r#"complete -c ags -f
 
-set -l __ags_subcommands setup doctor update update-agents install uninstall create-aliases completions
+set -l __ags_subcommands setup doctor update-image update-agents install uninstall create-aliases completions
 set -l __ags_agents pi claude codex gemini opencode shell
 set -l __ags_shells fish zsh bash
 set -l __ags_modes wrappers aliases both
@@ -226,7 +226,7 @@ set -l __ags_modes wrappers aliases both
 # Top-level: subcommands + run-mode flags.
 complete -c ags -n "__fish_use_subcommand" -a setup -d "Generate SSH keys and configure secrets"
 complete -c ags -n "__fish_use_subcommand" -a doctor -d "Run environment and config health checks"
-complete -c ags -n "__fish_use_subcommand" -a update -d "Rebuild sandbox image"
+complete -c ags -n "__fish_use_subcommand" -a update-image -d "Rebuild sandbox image"
 complete -c ags -n "__fish_use_subcommand" -a update-agents -d "Install/update agent CLIs"
 complete -c ags -n "__fish_use_subcommand" -a install -d "Install assets/config layout"
 complete -c ags -n "__fish_use_subcommand" -a uninstall -d "Reserved no-op"
@@ -259,7 +259,7 @@ complete -c ags -n "__fish_seen_subcommand_from completions" -l shell -r -a "$__
 complete -c ags -n "__fish_seen_subcommand_from completions" -s h -l help -d "Show help"
 
 # simple subcommands
-for __ags_cmd in setup doctor update update-agents uninstall
+for __ags_cmd in setup doctor update-image update-agents uninstall
   complete -c ags -n "__fish_seen_subcommand_from $__ags_cmd" -s h -l help -d "Show help"
 end
 "#;

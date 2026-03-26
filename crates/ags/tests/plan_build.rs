@@ -31,6 +31,7 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         psp_socket: None,
         psp_session_id: None,
         extra_mount_dirs: &[],
+        stop_when_done: false,
     }
 }
 
@@ -189,10 +190,7 @@ fn env_has_required_inline_vars() {
         find_plan_env(&plan, "SSH_AUTH_SOCK"),
         Some("/ssh-agent".to_owned())
     );
-    assert_eq!(
-        find_plan_env(&plan, "AGS_SANDBOX"),
-        Some("1".to_owned())
-    );
+    assert_eq!(find_plan_env(&plan, "AGS_SANDBOX"), Some("1".to_owned()));
     assert_eq!(
         find_plan_env(&plan, "AGS_HOST_SERVICES_HOST"),
         Some("host.containers.internal".to_owned())
@@ -370,13 +368,58 @@ fn tmux_mode_wraps_agent_command() {
     .unwrap();
 
     assert!(plan.entrypoint.contains("command -v tmux"));
-    assert!(plan.entrypoint.contains("Run `ags update`"));
+    assert!(plan.entrypoint.contains("Run `ags update-image`"));
     assert!(plan.entrypoint.contains("/tmp/ags-run-in-tmux.sh"));
     assert!(plan.entrypoint.contains("exec tmux new-session -A -s ags"));
-    assert!(plan.entrypoint.contains("exec pi -e"));
+    // Default (stop_when_done=false): agent runs without exec, shell kept alive
+    assert!(
+        plan.entrypoint.contains("pi -e"),
+        "entrypoint should contain agent command: {}",
+        plan.entrypoint
+    );
+    assert!(
+        plan.entrypoint.contains("AGS_EXIT=$?"),
+        "entrypoint should capture exit code: {}",
+        plan.entrypoint
+    );
+    assert!(
+        plan.entrypoint.contains("exec bash"),
+        "entrypoint should drop to shell: {}",
+        plan.entrypoint
+    );
     assert!(
         !plan.entrypoint.contains("--no-extensions"),
         "pi should not disable extensions in tmux mode: {}",
+        plan.entrypoint
+    );
+}
+
+#[test]
+fn tmux_stop_when_done_uses_exec() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            tmux_mode: true,
+            stop_when_done: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert!(
+        plan.entrypoint.contains("exec pi -e"),
+        "stop_when_done should exec the agent: {}",
+        plan.entrypoint
+    );
+    assert!(
+        !plan.entrypoint.contains("AGS_EXIT"),
+        "stop_when_done should not capture exit code: {}",
         plan.entrypoint
     );
 }

@@ -1,4 +1,5 @@
 pub mod completions;
+pub mod config_editor;
 pub mod create_aliases;
 pub mod doctor;
 mod doctor_util;

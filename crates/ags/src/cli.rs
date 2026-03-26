@@ -47,7 +47,7 @@ impl fmt::Display for Agent {
 pub enum Command {
     /// Run an agent inside the sandbox.
     Run(RunOptions),
-    /// Subcommands: setup, doctor, update, update-agents, install, uninstall, create-aliases, completions.
+    /// Subcommands: setup, doctor, update-image, update-agents, install, uninstall, create-aliases, completions.
     Sub(SubCommand),
 }
 
@@ -124,12 +124,14 @@ pub struct CompletionsOptions {
 pub enum SubCommand {
     Setup,
     Doctor,
-    Update,
+    UpdateImage,
+    UpdateDeprecated,
     UpdateAgents,
     Install(InstallOptions),
     Uninstall,
     CreateAliases(CreateAliasesOptions),
     Completions(CompletionsOptions),
+    Config,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,7 +195,8 @@ where
         "-h" | "--help" => return Err(CliError::HelpRequested),
         "setup" => return Ok(Command::Sub(SubCommand::Setup)),
         "doctor" => return Ok(Command::Sub(SubCommand::Doctor)),
-        "update" => return Ok(Command::Sub(SubCommand::Update)),
+        "update-image" => return Ok(Command::Sub(SubCommand::UpdateImage)),
+        "update" => return Ok(Command::Sub(SubCommand::UpdateDeprecated)),
         "update-agents" => return Ok(Command::Sub(SubCommand::UpdateAgents)),
         "install" => {
             let opts = parse_install_args(iter)?;
@@ -208,6 +211,7 @@ where
             let opts = parse_completions_args(iter)?;
             return Ok(Command::Sub(SubCommand::Completions(opts)));
         }
+        "config" => return Ok(Command::Sub(SubCommand::Config)),
         _ => {}
     }
 
@@ -480,7 +484,7 @@ pub fn help_text() -> &'static str {
      Commands:\n\
      \x20 setup          Generate SSH keys and configure secrets\n\
      \x20 doctor         Run health checks on sandbox configuration\n\
-     \x20 update         Rebuild container image and refresh bundled br/bv/dcg\n\
+     \x20 update-image   Rebuild container image and refresh bundled br/bv/dcg\n\
      \x20 update-agents  Install/update agents in persistent volumes\n\
      \x20 install         Install config/assets (optional self-link)\n\
      \x20 uninstall       Reserved (currently no-op)\n\
