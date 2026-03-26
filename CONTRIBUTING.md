@@ -76,6 +76,17 @@ cargo run -p ags -- --agent shell
 
 ---
 
+## Source file size policy
+
+- Rust implementation files have a hard limit of **500 lines**.
+- If a file is approaching the limit, split it before adding more behavior.
+- Keep tests out of the implementation file whenever possible.
+  - Prefer integration tests under `crates/ags/tests/`.
+  - For module-private coverage, prefer sibling `*_tests.rs` files instead of inline `#[cfg(test)] mod tests` blocks in the implementation file.
+- When touching an oversized file, treat reduction/splitting as part of the work instead of growing it further.
+
+---
+
 ## Documentation expectations
 
 If behavior changes, update relevant docs:
