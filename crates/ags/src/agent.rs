@@ -45,7 +45,7 @@ pub fn profile_for_with_guards(
         profile.command_args.push("--append-system-prompt".to_owned());
         profile
             .command_args
-            .push("You have root access. Install any packages you need with dnf/apt/pip.".to_owned());
+            .push("You have root access. Install any packages you need with dnf/pip.".to_owned());
     }
     profile
 }
