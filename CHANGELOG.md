@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.8.0] — 2026-03-26
+
+### Features
+
+- feat(cli): add --root run flag for root-capable agent sessions (fe02d15)
+- feat(config-editor): add TUI config editor (`ags config`) (fffa18d)
+- feat(ags): add --stop-when-done flag for tmux mode (49b92fb)
+- feat(auth-proxy): use host UI for proxied localhost URLs (fab1e12)
+- feat(auth-proxy): add localhost proxy choice for browser opens (f64aaf8)
+- feat(ags): add host UI and webview relay plumbing (1a6b635)
+
+### Bug Fixes
+
+- fix(root): add --user=root to podman args so root mode actually works (6c73314)
+- fix(agent): remove apt from root mode prompt hint (Fedora-based image) (71b5390)
+- fix(cli): merge duplicate run-flags sections in help output (4261ba6)
+- fix(agent): symlink claude binary to prevent native-install startup warning (5f6b0bc)
+- fix(auth-proxy): handle proxy dialog selection (529cd83)
+
+### Chores / Other
+
+- style: fix clippy warnings in config editor (38239ae)
+- style: apply cargo fmt formatting (74653b0)
+- refactor(ags): simplify and deduplicate across crate (-720 lines) (f22da62)
+
 ## [v0.7.0] — 2026-03-15
 
 ### Features
