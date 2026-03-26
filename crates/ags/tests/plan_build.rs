@@ -778,21 +778,23 @@ fn claude_agent_has_config_env() {
 }
 
 #[test]
-fn claude_agent_no_extra_boot_dirs() {
+fn claude_agent_entrypoint_setup() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Claude);
 
-    // Claude should not add extra_boot_dirs. Guard skill is loaded via --plugin-dir,
-    // not via symlink in the entrypoint.
+    // Guard skill is loaded via --plugin-dir.
     assert!(
         plan.entrypoint.contains("--plugin-dir"),
         "claude entrypoint should have --plugin-dir for guard skill: {}",
         plan.entrypoint
     );
+    // Binary symlinked from persistent install dir so Claude's native-install
+    // self-check finds the binary at $HOME/.local/bin/claude.
     assert!(
-        !plan.entrypoint.contains("ln -sf"),
-        "claude should not have symlink setup (uses --plugin-dir): {}",
+        plan.entrypoint
+            .contains("ln -sf /opt/claude-home/.local/bin/claude /home/dev/.local/bin/claude"),
+        "claude entrypoint should symlink binary to prevent startup warning: {}",
         plan.entrypoint
     );
 }

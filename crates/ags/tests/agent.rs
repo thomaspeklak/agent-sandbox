@@ -179,9 +179,15 @@ fn claude_profile_no_extra_boot_dirs() {
     let config = minimal_config();
     let profile = profile_for(Agent::Claude, &config);
     assert!(profile.extra_boot_dirs.is_empty());
+}
+
+#[test]
+fn claude_profile_symlinks_binary_to_home_local_bin() {
+    let config = minimal_config();
+    let profile = profile_for(Agent::Claude, &config);
     assert!(
-        profile.entrypoint_setup.is_empty(),
-        "skill loaded via --plugin-dir, no entrypoint setup needed"
+        profile.entrypoint_setup.contains("ln -sf /opt/claude-home/.local/bin/claude /home/dev/.local/bin/claude"),
+        "entrypoint should symlink claude binary to prevent native-install warning"
     );
 }
 

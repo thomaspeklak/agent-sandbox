@@ -80,6 +80,8 @@ fn claude_profile(guard_enabled: bool) -> AgentProfile {
     AgentProfile {
         command: "claude".to_owned(),
         command_args,
+        entrypoint_setup: "ln -sf /opt/claude-home/.local/bin/claude /home/dev/.local/bin/claude"
+            .to_owned(),
         ..AgentProfile::default()
     }
 }
