@@ -39,6 +39,8 @@ Run flags:
 \
   --stop-when-done     Exit container when agent finishes (tmux mode)
 \
+  --defaults, -D       Apply AGS-managed defaults for the selected agent harness
+\
   --config <path>      Use an alternate AGS config file
 \
   --add-dir, -d <path> Add an extra host directory mount (repeatable)

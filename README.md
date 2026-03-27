@@ -226,7 +226,10 @@ Pass arguments through to the underlying agent CLI using `--`:
 ```bash
 ags --agent pi -- --continue
 ags --agent claude -- --model sonnet
+ags --agent claude --defaults -- --model opus
 ```
+
+Use `--defaults` / `-D` to prepend AGS-managed passthrough defaults for the selected harness. Today that means Claude gets `--strict-mcp-config --dangerously-skip-permissions`, Gemini gets `--yolo`, and other agents currently add nothing.
 
 ### tmux inside the sandbox
 
@@ -365,6 +368,7 @@ ags completions --shell fish > ~/.config/fish/completions/ags.fish
 
 - `--agent <pi|claude|codex|gemini|opencode|shell>` (required for run mode)
 - `--browser`
+- `--defaults` / `-D` (prepend AGS-managed passthrough defaults for the selected harness)
 - `--config <path>`
 - `--add-dir <path>` / `-d <path>` (repeatable, run only)
 

@@ -8,7 +8,7 @@ This document explains what each `ags` command does and what side effects to exp
 
 ```bash
 ags [command]
-ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--config PATH] [--add-dir PATH ...] -- [agent args...]
+ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--defaults|-D] [--config PATH] [--add-dir PATH ...] -- [agent args...]
 ```
 
 Subcommands:
@@ -33,6 +33,7 @@ Example:
 ```bash
 ags --agent pi
 ags --agent claude -- --model sonnet
+ags --agent claude --defaults -- --model opus
 ags --agent pi --browser
 ags --agent pi --tmux
 ags --agent pi --psp
@@ -58,6 +59,7 @@ ags --agent claude -d ~/code -d ~/Downloads
 ### Notes
 
 - Args after `--` are passed directly to agent CLI.
+- `--defaults` / `-D` prepends AGS-managed default passthrough args for the selected agent harness. Today that means Claude gets `--strict-mcp-config --dangerously-skip-permissions`, Gemini gets `--yolo`, and other agents currently add nothing.
 - `--add-dir <path>` / `-d <path>` adds an extra same-path directory mount for the current run only; repeat it to add multiple directories.
 - `--yolo` disables AGS-managed Pi/Claude guard integrations for that run. For Pi, the AGS guard extension sees `AGS_GUARD_YOLO=1` and becomes a no-op; for Claude, AGS omits its PreToolUse guard hook wiring.
 - Container runs with rootless user namespace (`keep-id`), dropped capabilities, and `no-new-privileges`.
@@ -230,6 +232,7 @@ ags create-aliases --mode wrappers --force
 ### Behavior
 
 - Wrappers go to `~/.local/bin/`.
+- Managed shortcuts use `--defaults` where applicable so direct launches and generated wrappers stay in sync.
 - Alias blocks are inserted/updated in shell rc files:
   - fish: `~/.config/fish/config.fish`
   - zsh: `~/.zshrc`

@@ -11,6 +11,7 @@ pub mod paths;
 pub mod plan;
 pub mod podman;
 pub mod psp;
+pub mod run_defaults;
 pub mod secrets;
 pub mod ssh;
 pub mod update_check;

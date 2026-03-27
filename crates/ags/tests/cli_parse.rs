@@ -93,6 +93,47 @@ fn parses_root_flag() {
 }
 
 #[test]
+fn parses_defaults_flag() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "--agent",
+        "claude",
+        "--defaults",
+        "--",
+        "--model",
+        "opus",
+    ]))
+    .unwrap();
+    match cmd {
+        Command::Run(opts) => {
+            assert_eq!(opts.agent, Agent::Claude);
+            assert_eq!(
+                opts.passthrough_args,
+                vec![
+                    "--strict-mcp-config",
+                    "--dangerously-skip-permissions",
+                    "--model",
+                    "opus"
+                ]
+            );
+        }
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn parses_defaults_short_flag() {
+    let cmd = parse_args(args(&["ags", "--agent", "gemini", "-D"])).unwrap();
+    match cmd {
+        Command::Run(opts) => {
+            assert_eq!(opts.agent, Agent::Gemini);
+            assert_eq!(opts.passthrough_args, vec!["--yolo"]);
+        }
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
 fn parses_config_flag() {
     let cmd = parse_args(args(&["ags", "--agent", "pi", "--config", "/tmp/c.toml"])).unwrap();
     match cmd {

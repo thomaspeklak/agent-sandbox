@@ -3,7 +3,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::cli::{AliasMode, CreateAliasesOptions, Shell};
+use crate::cli::{Agent, AliasMode, CreateAliasesOptions, Shell};
+use crate::run_defaults;
 
 const WRAPPER_MARKER: &str = "# AGS_MANAGED_ALIAS";
 const BLOCK_START: &str = "# >>> ags managed aliases >>>";
@@ -33,67 +34,82 @@ impl std::error::Error for CreateAliasesError {}
 #[derive(Clone, Copy)]
 struct AliasSpec {
     name: &'static str,
-    command: &'static str,
+    agent: Agent,
+    extra_passthrough_args: &'static [&'static str],
 }
 
 const ALIASES: &[AliasSpec] = &[
     // Short names
     AliasSpec {
         name: "asco",
-        command: "ags --agent claude -- --model opus --strict-mcp-config --dangerously-skip-permissions",
+        agent: Agent::Claude,
+        extra_passthrough_args: &["--model", "opus"],
     },
     AliasSpec {
         name: "ascs",
-        command: "ags --agent claude -- --model sonnet --strict-mcp-config --dangerously-skip-permissions",
+        agent: Agent::Claude,
+        extra_passthrough_args: &["--model", "sonnet"],
     },
     AliasSpec {
         name: "asch",
-        command: "ags --agent claude -- --model haiku --strict-mcp-config --dangerously-skip-permissions",
+        agent: Agent::Claude,
+        extra_passthrough_args: &["--model", "haiku"],
     },
     AliasSpec {
         name: "aspi",
-        command: "ags --agent pi --",
+        agent: Agent::Pi,
+        extra_passthrough_args: &[],
     },
     AliasSpec {
         name: "asoc",
-        command: "ags --agent opencode --",
+        agent: Agent::Opencode,
+        extra_passthrough_args: &[],
     },
     AliasSpec {
         name: "asx",
-        command: "ags --agent codex --",
+        agent: Agent::Codex,
+        extra_passthrough_args: &[],
     },
     AliasSpec {
         name: "asg",
-        command: "ags --agent gemini -- --yolo",
+        agent: Agent::Gemini,
+        extra_passthrough_args: &[],
     },
     // Long names
     AliasSpec {
         name: "ags-cc-opus",
-        command: "ags --agent claude -- --model opus --strict-mcp-config --dangerously-skip-permissions",
+        agent: Agent::Claude,
+        extra_passthrough_args: &["--model", "opus"],
     },
     AliasSpec {
         name: "ags-cc-sonnet",
-        command: "ags --agent claude -- --model sonnet --strict-mcp-config --dangerously-skip-permissions",
+        agent: Agent::Claude,
+        extra_passthrough_args: &["--model", "sonnet"],
     },
     AliasSpec {
         name: "ags-cc-haiku",
-        command: "ags --agent claude -- --model haiku --strict-mcp-config --dangerously-skip-permissions",
+        agent: Agent::Claude,
+        extra_passthrough_args: &["--model", "haiku"],
     },
     AliasSpec {
         name: "ags-pi",
-        command: "ags --agent pi --",
+        agent: Agent::Pi,
+        extra_passthrough_args: &[],
     },
     AliasSpec {
         name: "ags-oc",
-        command: "ags --agent opencode --",
+        agent: Agent::Opencode,
+        extra_passthrough_args: &[],
     },
     AliasSpec {
         name: "ags-cx",
-        command: "ags --agent codex --",
+        agent: Agent::Codex,
+        extra_passthrough_args: &[],
     },
     AliasSpec {
         name: "ags-gem-yolo",
-        command: "ags --agent gemini -- --yolo",
+        agent: Agent::Gemini,
+        extra_passthrough_args: &[],
     },
 ];
 
@@ -145,6 +161,7 @@ fn apply_wrappers(bin_dir: &Path, force: bool) -> Result<ApplySummary, CreateAli
     let mut summary = ApplySummary::default();
     for spec in ALIASES {
         let target = bin_dir.join(spec.name);
+        let command = render_alias_command(spec);
 
         let exists = target.symlink_metadata().is_ok();
         if exists {
@@ -168,14 +185,14 @@ fn apply_wrappers(bin_dir: &Path, force: bool) -> Result<ApplySummary, CreateAli
                     continue;
                 }
                 remove_file(&target)?;
-                write_wrapper(&target, spec.command)?;
+                write_wrapper(&target, &command)?;
                 summary.updated += 1;
                 continue;
             }
 
             let managed = file_contains_marker(&target, WRAPPER_MARKER);
             if managed || force {
-                write_wrapper(&target, spec.command)?;
+                write_wrapper(&target, &command)?;
                 summary.updated += 1;
             } else {
                 eprintln!(
@@ -185,12 +202,25 @@ fn apply_wrappers(bin_dir: &Path, force: bool) -> Result<ApplySummary, CreateAli
                 summary.skipped += 1;
             }
         } else {
-            write_wrapper(&target, spec.command)?;
+            write_wrapper(&target, &command)?;
             summary.created += 1;
         }
     }
 
     Ok(summary)
+}
+
+fn render_alias_command(spec: &AliasSpec) -> String {
+    let mut command = format!("ags --agent {}", spec.agent.as_str());
+    if !run_defaults::passthrough_args(spec.agent).is_empty() {
+        command.push_str(" --defaults");
+    }
+    command.push_str(" --");
+    for arg in spec.extra_passthrough_args {
+        command.push(' ');
+        command.push_str(arg);
+    }
+    command
 }
 
 fn write_wrapper(path: &Path, command: &str) -> Result<(), CreateAliasesError> {
@@ -231,7 +261,7 @@ fn render_alias_block(_shell: Shell) -> String {
     out.push_str("# Generated by `ags create-aliases`\n");
 
     for spec in ALIASES {
-        let escaped = spec.command.replace('\'', "'\\''");
+        let escaped = render_alias_command(spec).replace('\'', "'\\''");
         out.push_str(&format!("alias {}='{}'\n", spec.name, escaped));
     }
 
@@ -346,25 +376,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_aliases_use_ags_wrapper() {
+    fn claude_aliases_use_defaults_flag() {
         let block = render_alias_block(Shell::Bash);
-        assert!(block.contains("alias ags-cc-opus='ags --agent claude -- --model opus"));
-        assert!(block.contains("alias asco='ags --agent claude -- --model opus"));
+        assert!(
+            block.contains("alias ags-cc-opus='ags --agent claude --defaults -- --model opus'")
+        );
+        assert!(block.contains("alias asco='ags --agent claude --defaults -- --model opus'"));
         assert!(!block.contains("alias ags-cc-opus='claude --model opus"));
+    }
+
+    #[test]
+    fn gemini_alias_uses_defaults_flag() {
+        let block = render_alias_block(Shell::Bash);
+        assert!(block.contains("alias ags-gem-yolo='ags --agent gemini --defaults --'"));
+        assert!(block.contains("alias asg='ags --agent gemini --defaults --'"));
     }
 
     #[test]
     fn wrapper_exec_uses_ags_for_claude_alias() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("ags-cc-opus");
+        let spec = ALIASES
+            .iter()
+            .find(|spec| spec.name == "ags-cc-opus")
+            .expect("claude alias present");
 
-        write_wrapper(
-            &path,
-            "ags --agent claude -- --model opus --strict-mcp-config --dangerously-skip-permissions",
-        )
-        .unwrap();
+        write_wrapper(&path, &render_alias_command(spec)).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("exec ags --agent claude -- --model opus"));
+        assert!(content.contains("exec ags --agent claude --defaults -- --model opus"));
     }
 }

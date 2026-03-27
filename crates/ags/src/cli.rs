@@ -6,6 +6,8 @@ use help::HELP_TEXT;
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::run_defaults;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
     Pi,
@@ -191,7 +193,6 @@ where
     let mut iter = args.into_iter();
     let _program = iter.next();
 
-    // Peek at first arg for subcommands
     let first = match iter.next() {
         None => return Err(CliError::MissingAgent),
         Some(arg) => arg,
@@ -221,11 +222,8 @@ where
         _ => {}
     }
 
-    // Parse run command flags
     let mut state = RunParseState::default();
     let mut passthrough_args = Vec::new();
-
-    // Process the first arg we already consumed (handle `--` as passthrough separator)
     if first == "--" {
         passthrough_args.extend(iter);
     } else {
@@ -241,6 +239,9 @@ where
     }
 
     let agent = state.agent.ok_or(CliError::MissingAgent)?;
+    if state.use_defaults {
+        run_defaults::prepend_passthrough_args(agent, &mut passthrough_args);
+    }
 
     Ok(Command::Run(RunOptions {
         agent,
@@ -267,6 +268,7 @@ struct RunParseState {
     yolo: bool,
     root: bool,
     stop_when_done: bool,
+    use_defaults: bool,
     config_path: Option<PathBuf>,
     add_dirs: Vec<PathBuf>,
 }
@@ -326,6 +328,11 @@ fn parse_run_arg<I: Iterator<Item = String>>(
 
     if arg == "--stop-when-done" {
         state.stop_when_done = true;
+        return Ok(());
+    }
+
+    if arg == "--defaults" || arg == "-D" {
+        state.use_defaults = true;
         return Ok(());
     }
 
@@ -413,18 +420,15 @@ where
         if arg == "-h" || arg == "--help" {
             return Err(CliError::HelpRequested);
         }
-
         if arg == "--force" {
             force = true;
             continue;
         }
-
         if arg == "--shell" {
             let value = iter.next().ok_or(CliError::MissingShellValue)?;
             shell = Some(Shell::parse(&value)?);
             continue;
         }
-
         if let Some(value) = arg.strip_prefix("--shell=") {
             if value.is_empty() {
                 return Err(CliError::MissingShellValue);
@@ -432,13 +436,11 @@ where
             shell = Some(Shell::parse(value)?);
             continue;
         }
-
         if arg == "--mode" {
             let value = iter.next().ok_or(CliError::MissingAliasModeValue)?;
             mode = AliasMode::parse(&value)?;
             continue;
         }
-
         if let Some(value) = arg.strip_prefix("--mode=") {
             if value.is_empty() {
                 return Err(CliError::MissingAliasModeValue);
@@ -466,13 +468,11 @@ where
         if arg == "-h" || arg == "--help" {
             return Err(CliError::HelpRequested);
         }
-
         if arg == "--shell" {
             let value = iter.next().ok_or(CliError::MissingShellValue)?;
             shell = Some(Shell::parse(&value)?);
             continue;
         }
-
         if let Some(value) = arg.strip_prefix("--shell=") {
             if value.is_empty() {
                 return Err(CliError::MissingShellValue);
@@ -480,7 +480,6 @@ where
             shell = Some(Shell::parse(value)?);
             continue;
         }
-
         if arg.starts_with('-') {
             return Err(CliError::UnexpectedFlag(arg));
         }
