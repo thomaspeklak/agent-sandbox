@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.9.0] — 2026-03-28
+
+### Features
+
+- Add harness defaults flag for runs (97e0cdf)
+- feat(glimpse): route sandbox ui through host-ui shim (5c42f05)
+
+### Bug Fixes
+
+- fix(selinux): stop relabeling sandbox bind mounts (bd6efd8)
+
+### Chores / Other
+
+- docs(glimpse): add user-facing setup and troubleshooting guide (80582f7)
+- docs(policy): enforce 500-line source file limit (819455b)
+- refactor(core): split large cli config and plan files (c705b7b)
+- refactor(runtime): split auth proxy and webview relay files (552cbf2)
+- refactor(config-editor): split ui into focused files (5036818)
+
 ## [v0.8.0] — 2026-03-26
 
 ### Features
