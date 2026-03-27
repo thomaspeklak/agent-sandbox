@@ -56,20 +56,12 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     println!("  pnpm minimum-release-age: {release_age}");
 
     let status = Command::new("podman")
-        .args([
-            "run",
-            "--rm",
-            "-it",
-            "--userns=keep-id",
-            "-v",
-            &format!("{}:/usr/local/pnpm:rw,z", pnpm_home.display()),
-            "-v",
-            &format!("{}:/opt/claude-home:rw,z", claude_install.display()),
+        .args(build_podman_run_args(
             image,
-            "bash",
-            "-c",
+            &pnpm_home,
+            &claude_install,
             &script,
-        ])
+        ))
         .status()
         .map_err(|e| UpdateAgentsError::InstallFailed(e.to_string()))?;
 
@@ -82,6 +74,29 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     println!("\nDone. Agents updated in volumes.");
     println!("Verify with: ags --agent pi -- --version");
     Ok(())
+}
+
+fn build_podman_run_args(
+    image: &str,
+    pnpm_home: &std::path::Path,
+    claude_install: &std::path::Path,
+    script: &str,
+) -> Vec<String> {
+    vec![
+        "run".to_owned(),
+        "--rm".to_owned(),
+        "-it".to_owned(),
+        "--userns=keep-id".to_owned(),
+        "--security-opt=label=disable".to_owned(),
+        "-v".to_owned(),
+        format!("{}:/usr/local/pnpm:rw", pnpm_home.display()),
+        "-v".to_owned(),
+        format!("{}:/opt/claude-home:rw", claude_install.display()),
+        image.to_owned(),
+        "bash".to_owned(),
+        "-c".to_owned(),
+        script.to_owned(),
+    ]
 }
 
 fn build_install_script(pi_spec: &str, release_age: u32) -> String {
@@ -117,7 +132,33 @@ chmod +x /usr/local/pnpm/claude"#,
 
 #[cfg(test)]
 mod tests {
-    use super::build_install_script;
+    use std::path::Path;
+
+    use super::{build_install_script, build_podman_run_args};
+
+    #[test]
+    fn podman_run_args_disable_selinux_relabeling() {
+        let args = build_podman_run_args(
+            "localhost/agent-sandbox:latest",
+            Path::new("/tmp/pnpm-home"),
+            Path::new("/tmp/claude-home"),
+            "echo ok",
+        );
+
+        assert!(args.contains(&"--security-opt=label=disable".to_owned()));
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-v" && w[1] == "/tmp/pnpm-home:/usr/local/pnpm:rw")
+        );
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-v" && w[1] == "/tmp/claude-home:/opt/claude-home:rw")
+        );
+        assert!(
+            !args.iter().any(|arg| arg.contains(":rw,z")),
+            "update-agents should not relabel mounted cache dirs"
+        );
+    }
 
     #[test]
     fn claude_update_still_uses_persistent_install_home() {

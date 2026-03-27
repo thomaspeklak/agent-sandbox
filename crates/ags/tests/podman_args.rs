@@ -157,8 +157,11 @@ fn args_include_volume_mounts() {
 
     let has_volume = args
         .windows(2)
-        .any(|w| w[0] == "-v" && w[1] == "/home/user/project:/home/user/project:rw,z");
-    assert!(has_volume, "should have workdir volume mount");
+        .any(|w| w[0] == "-v" && w[1] == "/home/user/project:/home/user/project:rw");
+    assert!(
+        has_volume,
+        "should have workdir volume mount without SELinux relabel"
+    );
 }
 
 #[test]
