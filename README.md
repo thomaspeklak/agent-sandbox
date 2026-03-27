@@ -11,6 +11,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - `README.md` (this file): quick start + daily usage
 - `docs/COMMANDS.md`: detailed command behavior and side effects
 - `docs/CONFIG.md`: full config schema and semantics
+- `docs/GLIMPSE.md`: user-facing Glimpse/host UI setup and usage
 - `docs/TROUBLESHOOTING.md`: common problems and fixes
 - `docs/ARCHITECTURE.md`: internal architecture overview
 - `CONTRIBUTING.md`: contributor workflow and quality checklist
@@ -310,6 +311,15 @@ ags --agent shell -- -lc 'PGPASSWORD="${PGPASSWORD:-postgres}" psql -h "${AGS_HO
 ```
 
 Tip: add `PGPASSWORD`, `PGUSER`, `PGDATABASE`, and `PGPORT` to `[sandbox].passthrough_env` if you want host values to flow into the container automatically.
+
+### Host-owned Glimpse windows
+
+If you want sandboxed agent code to open Glimpse windows on your host desktop, enable `[host_ui]` in your config.
+
+Start here:
+
+- `docs/GLIMPSE.md` for setup and troubleshooting
+- `docs/CONFIG.md` for the `[host_ui]` field reference
 
 ---
 

@@ -123,6 +123,16 @@ debug_port = 9222
 pi_skill_path = "/home/dev/example-browser-skill"
 command_args = []
 
+# Optional host-owned Glimpse windows for sandboxed code.
+# Typical real setup uses renderer = "process" plus a renderer_bin path.
+[host_ui]
+enabled = false
+binary = "/path/to/glimpse_host_ui"
+renderer = "process"
+renderer_bin = "/path/to/glimpse"
+idle_timeout_ms = 30000
+log_level = "info"
+
 [update]
 pi_spec = "@mariozechner/pi-coding-agent"
 minimum_release_age = 1440

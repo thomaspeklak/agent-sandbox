@@ -120,6 +120,69 @@ ags --agent shell -- -lc 'tmux -V && test -f ~/.tmux.conf'
 
 ---
 
+## Glimpse falls back to Chromium / Chrome detection
+
+Symptoms:
+
+- logs mention `No Chromium or Chrome installation found`
+- sandboxed `glimpseui` code behaves like ordinary Chromium fallback mode instead of opening a host-owned window
+
+Cause:
+
+- AGS host UI is disabled or misconfigured
+- your `ags` binary is stale
+- your sandbox image is stale
+- you are still using an old AGS session
+
+### Fix
+
+Verify your config has a real `[host_ui]` setup, then rebuild and restart:
+
+```bash
+cargo build --release -p ags
+ags update-image
+ags doctor
+```
+
+Start a fresh session, then verify the runtime wiring:
+
+```bash
+ags --agent shell -- -lc 'echo "$AGS_HOST_UI_SOCK"; echo "$GLIMPSE_BINARY_PATH"; ls -l /opt/ags/glimpse-shim'
+```
+
+Expected:
+
+- `AGS_HOST_UI_SOCK=/run/ags-host-ui/host-ui.sock`
+- `GLIMPSE_BINARY_PATH=/opt/ags/glimpse-shim`
+- `/opt/ags/glimpse-shim` exists
+
+For a user-facing overview, see `docs/GLIMPSE.md`.
+
+---
+
+## SELinux alerts mentioning `pasta` and your source tree
+
+Symptoms:
+
+- host notifications or logs mention SELinux blocking `pasta`
+- messages refer to a directory like `code` or your repo path
+
+Cause:
+
+- a previously relabeled bind mount left the wrong SELinux context on part of your worktree
+
+### Fix
+
+Restore labels on the affected tree:
+
+```bash
+restorecon -RFv /home/$USER/code/agent-sandbox
+```
+
+If your repos live elsewhere, run `restorecon` on the appropriate parent path instead.
+
+---
+
 ## `missing or unsuitable terminal: xterm-kitty` in tmux
 
 Symptoms:

@@ -69,6 +69,7 @@ If an env var is undefined during expansion, the reference is left as-is.
 - `[[tool]]` (optional, repeatable)
 - `[[secret]]` (optional, repeatable)
 - `[browser]` (optional)
+- `[host_ui]` (optional)
 - `[update]` (optional)
 
 ---
@@ -335,6 +336,45 @@ command_args = []
   - Injected for Pi runs in browser mode (`--skill <path>`).
 - `command_args` (string array)
   - Extra args passed to browser command.
+
+---
+
+## `[host_ui]`
+
+Controls optional host-owned Glimpse windows for sandboxed code.
+
+```toml
+[host_ui]
+enabled = true
+binary = "/path/to/glimpse_host_ui"
+renderer = "process"
+renderer_bin = "/path/to/glimpse"
+idle_timeout_ms = 30000
+log_level = "info"
+```
+
+### Fields
+
+- `enabled` (bool, default `false`)
+  - Starts the AGS host UI sidecar for each run.
+- `binary` (string, default `glimpse-host-ui`)
+  - Path or command for the host UI service.
+- `renderer` (string, default `stub`)
+  - Renderer backend name passed to the host UI service.
+  - Use `process` for normal interactive Glimpse windows.
+  - `stub` is mainly useful for testing.
+- `renderer_bin` (path, optional)
+  - Required when the chosen renderer needs an external binary, such as `renderer = "process"`.
+- `idle_timeout_ms` (u64, default `30000`)
+  - Idle timeout passed to the host UI service.
+- `log_level` (string, default `info`)
+  - Logging level passed to the host UI service.
+
+Notes:
+
+- AGS handles the sandbox wiring automatically once `[host_ui].enabled = true`.
+- Users normally should not set Glimpse transport env vars manually.
+- For end-user setup and troubleshooting, see `docs/GLIMPSE.md`.
 
 ---
 
