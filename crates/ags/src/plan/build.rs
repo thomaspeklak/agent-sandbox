@@ -69,6 +69,7 @@ const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
     ("sccache", "/home/dev/.cache/sccache", "SCCACHE_DIR"),
     ("cachepot", "/home/dev/.cache/cachepot", "CACHEPOT_DIR"),
     ("ags-hooks", "/home/dev/.config/ags/hooks", ""),
+    ("npm-global", "/home/dev/.npm-global", "NPM_CONFIG_PREFIX"),
 ];
 
 /// Build a complete launch plan from validated config and runtime context.

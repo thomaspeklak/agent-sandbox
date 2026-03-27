@@ -1149,6 +1149,10 @@ fn host_ui_mounts_runtime_dir_and_env_when_enabled() {
         Some("/run/ags-host-ui/host-ui.sock".to_owned())
     );
     assert_eq!(
+        find_plan_env(&plan, "GLIMPSE_BINARY_PATH"),
+        Some("/opt/ags/glimpse-shim".to_owned())
+    );
+    assert_eq!(
         find_plan_env(&plan, "AGS_HOST_UI_PROTOCOL"),
         Some("1".to_owned())
     );
@@ -1233,6 +1237,7 @@ fn no_webview_relay_env_when_disabled() {
     let plan = build_plan_from(&toml, workdir.path());
 
     assert!(find_plan_env(&plan, "AGS_HOST_UI_SOCK").is_none());
+    assert!(find_plan_env(&plan, "GLIMPSE_BINARY_PATH").is_none());
     assert!(find_plan_env(&plan, "AGS_HOST_UI_PROTOCOL").is_none());
     assert!(find_plan_env(&plan, "AGS_HOST_UI_TRANSPORT").is_none());
     assert!(find_plan_env(&plan, "AGS_HOST_UI_SESSION_ID").is_none());

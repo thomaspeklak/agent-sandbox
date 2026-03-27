@@ -12,6 +12,10 @@ pub const SETTINGS_EXAMPLE: &str = include_str!("../../../agent/settings.example
 pub const AUTH_PROXY_SHIM: &str = include_str!("../../../agent/auth-proxy-shim");
 pub const WEBVIEW_RELAY_SHIM: &str = include_str!("../../../agent/webview-relay-shim");
 pub const WEBVIEW_URL_HELPER: &str = include_str!("../../../agent/webview-url-helper");
+pub const GLIMPSE_SHIM_CARGO_TOML: &str = include_str!("../../../crates/glimpse-shim/Cargo.toml");
+pub const GLIMPSE_SHIM_MAIN: &str = include_str!("../../../crates/glimpse-shim/src/main.rs");
+pub const GLIMPSE_SHIM_SOCKET: &str = include_str!("../../../crates/glimpse-shim/src/socket.rs");
+pub const GLIMPSE_SHIM_BRIDGE: &str = include_str!("../../../crates/glimpse-shim/src/bridge.rs");
 
 /// Write `content` into `dir/name`, creating `dir` if needed, and optionally
 /// setting permissions to `mode` on Unix.
@@ -41,6 +45,17 @@ pub fn ensure_containerfile(path: &Path) -> io::Result<()> {
 /// Write the embedded tmux config alongside the configured Containerfile.
 pub fn ensure_tmux_conf(path: &Path) -> io::Result<()> {
     write_asset_at(path, TMUX_CONF)
+}
+
+/// Materialize all files needed for `podman build` from the configured
+/// Containerfile directory.
+pub fn ensure_image_build_context(containerfile: &Path) -> io::Result<()> {
+    ensure_containerfile(containerfile)?;
+    ensure_tmux_conf(&containerfile.with_file_name("tmux.conf"))?;
+    if let Some(context_dir) = containerfile.parent() {
+        ensure_glimpse_shim(context_dir)?;
+    }
+    Ok(())
 }
 
 /// Write the embedded guard.ts to `<pi_sandbox>/extensions/guard.ts`, always overwriting.
@@ -100,6 +115,15 @@ pub fn ensure_auth_proxy_shim(dir: &Path) -> io::Result<()> {
 pub fn ensure_webview_relay_assets(dir: &Path) -> io::Result<()> {
     write_asset(dir, "webview-relay-shim", WEBVIEW_RELAY_SHIM, Some(0o755))?;
     write_asset(dir, "ags-webview-url", WEBVIEW_URL_HELPER, Some(0o755))
+}
+
+/// Write the glimpse-shim crate source into `<dir>/glimpse-shim/`.
+pub fn ensure_glimpse_shim(dir: &Path) -> io::Result<()> {
+    let shim = dir.join("glimpse-shim");
+    write_asset(&shim, "Cargo.toml", GLIMPSE_SHIM_CARGO_TOML, None)?;
+    write_asset(&shim.join("src"), "main.rs", GLIMPSE_SHIM_MAIN, None)?;
+    write_asset(&shim.join("src"), "socket.rs", GLIMPSE_SHIM_SOCKET, None)?;
+    write_asset(&shim.join("src"), "bridge.rs", GLIMPSE_SHIM_BRIDGE, None)
 }
 
 fn set_permissions(path: &Path, mode: u32) {

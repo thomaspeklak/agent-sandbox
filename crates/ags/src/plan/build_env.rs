@@ -69,6 +69,10 @@ fn build_env(
             "AGS_HOST_UI_SOCK".to_owned(),
             HostUiGuard::container_socket_path().to_owned(),
         ));
+        inline.push((
+            "GLIMPSE_BINARY_PATH".to_owned(),
+            "/opt/ags/glimpse-shim".to_owned(),
+        ));
         inline.push(("AGS_HOST_UI_PROTOCOL".to_owned(), "1".to_owned()));
         inline.push(("AGS_HOST_UI_TRANSPORT".to_owned(), "socket".to_owned()));
         inline.push((

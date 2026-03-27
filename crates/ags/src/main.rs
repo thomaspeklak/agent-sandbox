@@ -88,13 +88,8 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
             if matches!(sub, SubCommand::UpdateDeprecated) {
                 eprintln!("warning: `ags update` is deprecated; use `ags update-image` instead.");
             }
-            if let Err(e) = ags::assets::ensure_containerfile(&config.sandbox.containerfile) {
-                eprintln!("update-image error: could not write Containerfile: {e}");
-                return ExitCode::FAILURE;
-            }
-            let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
-            if let Err(e) = ags::assets::ensure_tmux_conf(&tmux_conf) {
-                eprintln!("update-image error: could not write tmux config: {e}");
+            if let Err(e) = ags::assets::ensure_image_build_context(&config.sandbox.containerfile) {
+                eprintln!("update-image error: could not prepare image build context: {e}");
                 return ExitCode::FAILURE;
             }
             try_sub(
@@ -127,12 +122,8 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     };
 
     // 2. Ensure embedded assets are on disk
-    if let Err(e) = ags::assets::ensure_containerfile(&config.sandbox.containerfile) {
-        eprintln!("warning: could not write Containerfile: {e}");
-    }
-    let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
-    if let Err(e) = ags::assets::ensure_tmux_conf(&tmux_conf) {
-        eprintln!("warning: could not write tmux config: {e}");
+    if let Err(e) = ags::assets::ensure_image_build_context(&config.sandbox.containerfile) {
+        eprintln!("warning: could not prepare image build context: {e}");
     }
     if matches!(opts.agent, Agent::Pi | Agent::Shell) {
         if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {

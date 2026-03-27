@@ -66,10 +66,9 @@ fn check_tooling(ck: &mut Checker) {
 fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
     ck.section("Config");
 
-    // Self-heal: write embedded assets before checking
-    let _ = crate::assets::ensure_containerfile(&config.sandbox.containerfile);
+    // Self-heal: write embedded image-build assets before checking
+    let _ = crate::assets::ensure_image_build_context(&config.sandbox.containerfile);
     let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
-    let _ = crate::assets::ensure_tmux_conf(&tmux_conf);
     let pi_host = config.mount_host_for_container("/home/dev/.pi");
     if let Some(pi_host) = pi_host {
         let _ = crate::assets::ensure_guard_extension(&pi_host.join("agent"));

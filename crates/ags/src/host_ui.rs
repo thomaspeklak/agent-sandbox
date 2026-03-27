@@ -85,7 +85,7 @@ pub fn start(
         .arg(&config.log_level)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::inherit());
 
     if let Some(renderer_bin) = &config.renderer_bin {
         cmd.arg("--renderer-bin").arg(renderer_bin);

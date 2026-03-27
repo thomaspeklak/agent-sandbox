@@ -51,7 +51,7 @@ RUN dnf -y update && \
     dnf clean all
 
 RUN useradd -m -u 1000 -s /bin/bash dev && \
-    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /usr/local/pnpm /opt/claude-home && \
+    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /usr/local/pnpm /opt/claude-home /opt/ags && \
     printf 'ignore-scripts=true\n' > /etc/npmrc && \
     printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
     chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home
@@ -139,6 +139,14 @@ RUN set -eu && \
     rm -f /tmp/dcg /tmp/dcg-release.json /tmp/dcg-*.tar.xz /tmp/dcg-*.tar.xz.sha256 && \
     dcg --version
 
+# Glimpse sandbox shim
+COPY glimpse-shim/ /tmp/glimpse-shim/
+RUN cd /tmp/glimpse-shim && \
+    CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup \
+    /usr/local/cargo/bin/cargo build --release && \
+    install -m 0755 target/release/glimpse-shim /opt/ags/glimpse-shim && \
+    rm -rf /tmp/glimpse-shim
+
 USER dev
 WORKDIR /workspace
 
@@ -146,4 +154,5 @@ ENV HOME=/home/dev
 ENV PNPM_HOME=/usr/local/pnpm
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/home/dev/.cargo
-ENV PATH=/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/pnpm:/usr/local/bin:/usr/bin:/bin
+ENV NPM_CONFIG_PREFIX=/home/dev/.npm-global
+ENV PATH=/home/dev/.npm-global/bin:/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/pnpm:/usr/local/bin:/usr/bin:/bin
