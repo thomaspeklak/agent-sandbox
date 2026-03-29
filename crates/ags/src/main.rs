@@ -5,6 +5,7 @@ use ags::cli::{self, Agent, Command, RunOptions, SubCommand};
 use ags::config::{self, ValidatedConfig};
 use ags::secrets::{self, OsSecretBackend};
 use ags::ssh::{self, OsSshRunner, SshKey};
+use ags::trust::StdioRepoConfigPrompter;
 
 fn main() -> ExitCode {
     let update_check = ags::update_check::UpdateCheck::from_default_cache();
@@ -398,12 +399,20 @@ fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, ExitCode
         eprintln!("Created default config: {}", config_path.display());
     }
 
-    let repo_local_config = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| ags::git::repo_root(&cwd))
-        .map(|root| root.join(".ags/config.toml"))
-        .filter(|path| path.exists())
-        .filter(|path| !same_existing_path(path, &config_path));
+    let repo_local_config = std::env::current_dir().ok().and_then(|cwd| {
+        match ags::trust::resolve_repo_local_overlay(
+            &cwd,
+            &config_path,
+            &ags::trust::default_trust_store_path(),
+            &StdioRepoConfigPrompter,
+        ) {
+            Ok(path) => path,
+            Err(err) => {
+                eprintln!("warning: could not load repo trust state: {err}");
+                None
+            }
+        }
+    });
 
     config::parse_and_validate_with_overlay(&config_path, repo_local_config.as_deref()).map_err(
         |e| {
@@ -411,14 +420,4 @@ fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, ExitCode
             ExitCode::from(2)
         },
     )
-}
-
-fn same_existing_path(a: &Path, b: &Path) -> bool {
-    let Ok(a) = a.canonicalize() else {
-        return false;
-    };
-    let Ok(b) = b.canonicalize() else {
-        return false;
-    };
-    a == b
 }
