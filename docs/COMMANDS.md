@@ -8,7 +8,7 @@ This document explains what each `ags` command does and what side effects to exp
 
 ```bash
 ags [command]
-ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--defaults|-D] [--config PATH] [--add-dir PATH ...] -- [agent args...]
+ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--root] [--lockdown] [--defaults|-D] [--config PATH] [--add-dir PATH ...] -- [agent args...]
 ```
 
 Subcommands:
@@ -37,24 +37,26 @@ ags --agent claude --defaults -- --model opus
 ags --agent pi --browser
 ags --agent pi --tmux
 ags --agent pi --psp
+ags --agent claude --lockdown
 ags --agent claude -d ~/code -d ~/Downloads
 ```
 
 ### What happens on run
 
 1. Load and validate config.
-2. Ensure embedded assets exist on disk (`Containerfile`, `tmux.conf`, guard extension).
-3. Resolve secrets from configured sources.
-4. Ensure sandbox git config exists.
-5. Ensure dedicated SSH agent is running and keys are loaded.
-6. Optionally start browser sidecar (`--browser`).
-7. Start auth proxy (Unix socket + shim in per-run temp dir).
-8. Optionally start host UI sidecar (`[host_ui].enabled = true`).
-9. Start webview origin relay for sandbox-served app origins.
-10. Optionally start PSP sidecar (`--psp`).
-11. Build launch plan (mounts/env/security/network/entrypoint).
-12. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
-13. Ensure image exists (builds if missing), then run `podman run`.
+2. Ensure embedded assets exist on disk (`Containerfile`, `tmux.conf`, and any needed staged guard assets).
+3. If not running with `--lockdown`, resolve secrets from configured sources.
+4. If not running with `--lockdown`, ensure sandbox git config exists.
+5. If not running with `--lockdown`, ensure dedicated SSH agent is running and keys are loaded.
+6. If not running with `--lockdown` and requested, start browser sidecar (`--browser`).
+7. If not running with `--lockdown`, start auth proxy (Unix socket + shim in per-run temp dir).
+8. If not running with `--lockdown` and `[host_ui].enabled = true`, start host UI sidecar.
+9. If not running with `--lockdown`, start webview origin relay for sandbox-served app origins.
+10. If not running with `--lockdown` and requested, start PSP sidecar (`--psp`).
+11. If running with `--lockdown`, stage a sanitized per-run agent home/runtime for the selected agent.
+12. Build launch plan (mounts/env/security/network/entrypoint).
+13. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
+14. Ensure image exists (builds if missing), then run `podman run`.
 
 ### Notes
 
@@ -62,14 +64,18 @@ ags --agent claude -d ~/code -d ~/Downloads
 - `--defaults` / `-D` prepends AGS-managed default passthrough args for the selected agent harness. Today that means Claude gets `--strict-mcp-config --dangerously-skip-permissions`, Gemini gets `--yolo`, and other agents currently add nothing.
 - `--add-dir <path>` / `-d <path>` adds an extra same-path directory mount for the current run only; repeat it to add multiple directories.
 - `--yolo` disables AGS-managed Pi/Claude guard integrations for that run. For Pi, the AGS guard extension sees `AGS_GUARD_YOLO=1` and becomes a no-op; for Claude, AGS omits its PreToolUse guard hook wiring.
+- `--lockdown` minimizes host exposure for the current run. It disables configured secrets and passthrough env, SSH agent wiring, sandbox git config, generic `[[mount]]` entries, `[[tool]]`-derived mounts/secrets, host bridges/sidecars (including config-enabled host UI for that run), and direct mounting of the selected agent home. Instead AGS stages a sanitized ephemeral home/runtime for the selected agent and discards prior/current session history artifacts when the run exits.
+- In lockdown mode, `--add-dir` still works, network access stays enabled, and exact workspace/external git metadata mounts still work as usual.
+- Incompatible with `--browser`, `--psp`, `--psp-keep`, and `--root`.
 - Container runs with rootless user namespace (`keep-id`), dropped capabilities, and `no-new-privileges`.
-- Agent host state comes from explicit `[[agent_mount]]` / `[[mount]]` entries.
+- Agent host state normally comes from explicit `[[agent_mount]]` / `[[mount]]` entries; lockdown overrides that with staged per-run agent state.
 - Agent processes run inside the container: `localhost` is container-local. Use `host.containers.internal` for host machine ports/services.
-- Runtime env vars are injected for discoverability: `AGS_HOST_SERVICES_HOST` and `AGS_HOST_SERVICES_HINT`.
-- `pi`/`claude`/`codex` runs also inject a short host-service hint into prompt context.
-- Interactive launches print a one-line host-service reminder before the agent CLI starts.
+- Outside lockdown, runtime env vars are injected for discoverability: `AGS_HOST_SERVICES_HOST` and `AGS_HOST_SERVICES_HINT`.
+- Outside lockdown, `pi`/`claude`/`codex` runs also inject a short host-service hint into prompt context.
+- Outside lockdown, interactive launches print a one-line host-service reminder before the agent CLI starts.
 - `--tmux` wraps the agent command in a tmux session inside the container. After the agent exits, an interactive shell remains available for inspection. Combine with `--stop-when-done` to exit immediately instead.
 - `--stop-when-done` (requires `--tmux`) exits the container as soon as the agent process finishes instead of dropping to an interactive shell. Useful for batch/CI runs where you don't need post-task inspection.
+- The sidecar/bridge notes below apply to normal runs; lockdown suppresses them.
 - `--psp` enables podman-socket-proxy mode. AGS spawns a `psp` sidecar process with a per-run Unix socket, waits for it to be ready, then mounts the socket into the container and sets `DOCKER_HOST` so Docker/Testcontainers clients route through PSP. On exit, AGS sends SIGTERM to allow PSP to clean up any containers it created, then falls back to SIGKILL after 5 seconds. PSP enforces policy-gated access to the host Podman API (deny-by-default, image allowlists, bind mount restrictions). The `psp` binary must be on `PATH` or configured via `[psp].binary` in `config.toml`. PSP picks up its own policy files (global `~/.config/psp/config.json` and project-local `.psp.json`). A stable session identifier (`PSP_SESSION_ID`) is injected into the container environment for tools that support the `x-psp-session-id` header.
 - `--psp-keep` tells PSP to retain containers it created when the session ends (sets `PSP_KEEP_ON_FAILURE=true`). Useful for debugging failed test runs. Stale containers will be cleaned up automatically on the next PSP start (startup sweep).
 - The auth proxy starts automatically on every run. Inside the container, `$BROWSER` points to the auth-proxy-shim. When agent code opens a URL (e.g. OAuth login), the shim sends it to the host proxy over a Unix socket. The host prompts the user via a zenity/kdialog dialog. Standard URLs get **Open** / **Cancel**. If the target itself is `http://localhost:<port>/...` or `http://127.0.0.1:<port>/...` and the AGS webview relay is available, the dialog also offers **Proxy**, which rewrites the URL through the same dedicated host-port relay used for sandbox-served Glimpse apps. When AGS host UI is enabled, Proxy prefers opening that relayed URL in a host-owned Glimpse window; otherwise it falls back to the normal host browser. For OAuth flows with a `localhost` callback, the host proxy captures the browser redirect and relays it back into the container. If neither `zenity` nor `kdialog` is installed, all URL-open requests are auto-denied. The proxy shuts down and cleans up its temp directory when the container exits. Domains listed in `[auth_proxy].auto_allow_domains` skip the dialog.

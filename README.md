@@ -27,8 +27,9 @@ It is designed to keep your host clean while still giving agents controlled acce
   - `opencode`
   - `shell` (interactive bash with agent environments mounted)
 - First-run setup for SSH auth + signing keys
-- Persistent per-agent host volumes (sessions/config survive container restarts)
+- Persistent per-agent host volumes by default (lockdown uses ephemeral staged homes)
 - Configurable mounts, tool binaries, and secret sources
+- Optional hardened `--lockdown` runs for inspecting untrusted/foreign repos with reduced host exposure
 - Optional browser sidecar support for browser-enabled workflows
 - Auth proxy for secure sandbox browser opens and OAuth loopback callbacks
 - Health checks via `ags doctor`
@@ -204,6 +205,14 @@ Run with browser sidecar:
 ags --agent pi --browser
 ```
 
+Run in hardened lockdown mode for untrusted repos:
+
+```bash
+ags --agent claude --lockdown
+```
+
+Lockdown keeps network access and workspace visibility, but disables secrets, SSH agent forwarding, generic config/tool mounts, host bridges/sidecars, and direct mounting of real agent home state. Instead AGS stages a sanitized ephemeral agent home/runtime for the selected agent and discards session/history artifacts when the run exits.
+
 Disable AGS Pi/Claude guards for one run:
 
 ```bash
@@ -368,9 +377,16 @@ ags completions --shell fish > ~/.config/fish/completions/ags.fish
 
 - `--agent <pi|claude|codex|gemini|opencode|shell>` (required for run mode)
 - `--browser`
+- `--tmux`
+- `--stop-when-done` (requires `--tmux`)
+- `--psp`
+- `--psp-keep`
+- `--yolo`
+- `--root`
+- `--lockdown` (harden the run by disabling host bridges, secrets, SSH agent, generic mounts/tools, and direct agent-home mounts for that run)
 - `--defaults` / `-D` (prepend AGS-managed passthrough defaults for the selected harness)
 - `--config <path>`
-- `--add-dir <path>` / `-d <path>` (repeatable, run only)
+- `--add-dir <path>` / `-d <path>` (repeatable, run only; still allowed in lockdown)
 
 ---
 
@@ -427,6 +443,7 @@ Use `config/config.example.toml` for full schema examples.
 - Use least-privilege, short-lived tokens whenever possible.
 - Only mount what the agent needs.
 - Prefer read-only (`ro`) mounts unless write access is required.
+- For untrusted or foreign repos, prefer `--lockdown` to minimize host exposure for that run.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
 - npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
 - Rotate/revoke credentials quickly if compromise is suspected.
