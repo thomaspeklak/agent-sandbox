@@ -81,7 +81,7 @@ pub fn write_env_file(
     entries: &[(String, String)],
     dir: &Path,
 ) -> Result<std::path::PathBuf, PodmanError> {
-    fs::create_dir_all(dir).map_err(PodmanError::EnvFileCreate)?;
+    crate::util::ensure_private_dir(dir).map_err(PodmanError::EnvFileCreate)?;
 
     let path = dir.join(format!("ags-env.{}", std::process::id()));
 
@@ -108,7 +108,7 @@ pub fn execute(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, Pod
     ensure_image(&plan.image, &plan.containerfile)?;
 
     // Write env file
-    let env_dir = crate::util::runtime_dir();
+    let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
 
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
 

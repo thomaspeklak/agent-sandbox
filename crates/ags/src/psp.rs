@@ -124,10 +124,10 @@ fn resolve_binary(config_binary: &str) -> Result<PathBuf, PspError> {
 pub fn start(config_binary: &str, keep_on_failure: bool) -> Result<PspGuard, PspError> {
     let binary = resolve_binary(config_binary)?;
 
-    let runtime_base = crate::util::runtime_dir();
+    let runtime_base = crate::util::runtime_dir().map_err(PspError::SocketDirCreate)?;
 
     let socket_dir = runtime_base.join(format!("ags-psp-{}", std::process::id()));
-    fs::create_dir_all(&socket_dir).map_err(PspError::SocketDirCreate)?;
+    crate::util::ensure_private_dir(&socket_dir).map_err(PspError::SocketDirCreate)?;
 
     let socket_path = socket_dir.join("psp.sock");
 

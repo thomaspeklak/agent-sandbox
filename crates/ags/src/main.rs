@@ -213,7 +213,13 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     };
 
     // 6. Sidecars
-    let runtime_base = ags::util::runtime_dir();
+    let runtime_base = match ags::util::runtime_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("error: failed to prepare AGS runtime dir: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let pid = std::process::id();
 
     let mut _browser_guard = None;

@@ -71,7 +71,7 @@ pub fn start(
     session_id: String,
     config: &crate::config::HostUiConfig,
 ) -> Result<HostUiGuard, HostUiError> {
-    fs::create_dir_all(runtime_dir).map_err(HostUiError::RuntimeDirCreate)?;
+    crate::util::ensure_private_dir(runtime_dir).map_err(HostUiError::RuntimeDirCreate)?;
     let socket_path = runtime_dir.join("host-ui.sock");
 
     let mut cmd = Command::new(&config.binary);
