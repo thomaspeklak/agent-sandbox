@@ -20,6 +20,7 @@ fn parses_agent_and_passthrough_args() {
             assert!(!opts.tmux);
             assert!(!opts.psp);
             assert!(!opts.yolo);
+            assert!(!opts.lockdown);
             assert!(opts.config_path.is_none());
         }
         _ => panic!("expected Run command"),
@@ -88,6 +89,15 @@ fn parses_root_flag() {
     let cmd = parse_args(args(&["ags", "--agent", "claude", "--root"])).unwrap();
     match cmd {
         Command::Run(opts) => assert!(opts.root),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn parses_lockdown_flag() {
+    let cmd = parse_args(args(&["ags", "--agent", "pi", "--lockdown"])).unwrap();
+    match cmd {
+        Command::Run(opts) => assert!(opts.lockdown),
         _ => panic!("expected Run command"),
     }
 }

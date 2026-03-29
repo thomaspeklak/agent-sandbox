@@ -15,34 +15,38 @@ fn build_env(
         psp_socket,
         psp_session_id,
         guard_enabled,
+        lockdown,
     } = ctx;
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
-        (
-            "GIT_CONFIG_GLOBAL".to_owned(),
-            CONTAINER_GITCONFIG.to_owned(),
-        ),
-        ("SSH_AUTH_SOCK".to_owned(), CONTAINER_SSH_SOCK.to_owned()),
         ("RUSTUP_HOME".to_owned(), "/usr/local/rustup".to_owned()),
         ("AGS_SANDBOX".to_owned(), "1".to_owned()),
-        (
+    ];
+    if !lockdown {
+        inline.push(("GIT_CONFIG_GLOBAL".to_owned(), CONTAINER_GITCONFIG.to_owned()));
+        inline.push(("SSH_AUTH_SOCK".to_owned(), CONTAINER_SSH_SOCK.to_owned()));
+        inline.push((
             "AGS_HOST_SERVICES_HOST".to_owned(),
             HOST_SERVICES_HOST.to_owned(),
-        ),
-        (
+        ));
+        inline.push((
             "AGS_HOST_SERVICES_HINT".to_owned(),
             HOST_SERVICES_HINT.to_owned(),
-        ),
-    ];
+        ));
+    }
 
     inline.extend(profile.extra_env.iter().cloned());
 
-    inline.extend(
-        CACHE_MOUNTS
-            .iter()
-            .filter(|(_, _, env_var)| !env_var.is_empty())
-            .map(|(_, container_path, env_var)| (env_var.to_string(), container_path.to_string())),
-    );
+    if !lockdown {
+        inline.extend(
+            CACHE_MOUNTS
+                .iter()
+                .filter(|(_, _, env_var)| !env_var.is_empty())
+                .map(|(_, container_path, env_var)| {
+                    (env_var.to_string(), container_path.to_string())
+                }),
+        );
+    }
 
     if !guard_enabled {
         inline.push(("AGS_GUARD_YOLO".to_owned(), "1".to_owned()));
@@ -113,23 +117,33 @@ fn build_env(
         }
     }
 
-    let passthrough_names = ["TERM", "COLORTERM", "EDITOR", "VISUAL"]
-        .into_iter()
-        .map(String::from)
-        .collect();
+    let passthrough_names = if lockdown {
+        Vec::new()
+    } else {
+        ["TERM", "COLORTERM", "EDITOR", "VISUAL"]
+            .into_iter()
+            .map(String::from)
+            .collect()
+    };
 
-    let mut env_file_entries: Vec<(String, String)> = resolved_secrets
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    for env_name in &config.sandbox.passthrough_env {
-        if resolved_secrets.contains_key(env_name) {
-            continue;
-        }
-        if let Ok(val) = std::env::var(env_name)
-            && !val.is_empty()
-        {
-            env_file_entries.push((env_name.clone(), val));
+    let mut env_file_entries = if lockdown {
+        Vec::new()
+    } else {
+        resolved_secrets
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    };
+    if !lockdown {
+        for env_name in &config.sandbox.passthrough_env {
+            if resolved_secrets.contains_key(env_name) {
+                continue;
+            }
+            if let Ok(val) = std::env::var(env_name)
+                && !val.is_empty()
+            {
+                env_file_entries.push((env_name.clone(), val));
+            }
         }
     }
 
@@ -144,15 +158,28 @@ fn build_env(
 
 // --- entrypoint ---
 
-fn build_entrypoint(
-    boot_dirs: &[String],
-    profile: &AgentProfile,
-    browser: &BrowserConfig,
+struct EntryPointContext<'a> {
+    boot_dirs: &'a [String],
+    profile: &'a AgentProfile,
+    browser: &'a BrowserConfig,
     browser_mode: bool,
     tmux_mode: bool,
     webview_relay_enabled: bool,
+    show_host_services_hint: bool,
     stop_when_done: bool,
-) -> String {
+}
+
+fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
+    let EntryPointContext {
+        boot_dirs,
+        profile,
+        browser,
+        browser_mode,
+        tmux_mode,
+        webview_relay_enabled,
+        show_host_services_hint,
+        stop_when_done,
+    } = ctx;
     let mut script = String::new();
 
     let all_dirs: Vec<String> = boot_dirs
@@ -191,10 +218,12 @@ fn build_entrypoint(
         ));
     }
 
-    script.push_str(&format!(
-        "if [ -t 1 ]; then echo {} >&2; fi; ",
-        shell_quote(HOST_SERVICES_HINT)
-    ));
+    if show_host_services_hint {
+        script.push_str(&format!(
+            "if [ -t 1 ]; then echo {} >&2; fi; ",
+            shell_quote(HOST_SERVICES_HINT)
+        ));
+    }
 
     let agent_exec = build_agent_exec(profile, browser, browser_mode);
 

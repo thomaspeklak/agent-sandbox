@@ -102,7 +102,7 @@ fn pi_profile_no_extra_boot_dirs() {
 #[test]
 fn pi_profile_omits_guard_extension_when_guards_disabled() {
     let config = minimal_config();
-    let profile = profile_for_with_guards(Agent::Pi, &config, false, false);
+    let profile = profile_for_with_guards(Agent::Pi, &config, false, false, false);
     assert_eq!(profile.command, "pi");
     assert_eq!(
         profile.command_args,
@@ -161,6 +161,35 @@ fn claude_profile_command() {
 }
 
 #[test]
+fn claude_profile_uses_runtime_hook_path_in_lockdown() {
+    let config = minimal_config();
+    let profile = profile_for_with_guards(Agent::Claude, &config, true, false, true);
+
+    let settings_idx = profile
+        .command_args
+        .iter()
+        .position(|a| a == "--settings")
+        .expect("--settings flag present");
+    let settings_json = &profile.command_args[settings_idx + 1];
+    let parsed: serde_json::Value =
+        serde_json::from_str(settings_json).expect("settings arg is valid JSON");
+    assert_eq!(
+        parsed["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+        "/run/ags-claude-hooks/guard.sh"
+    );
+
+    let plugin_idx = profile
+        .command_args
+        .iter()
+        .position(|a| a == "--plugin-dir")
+        .expect("--plugin-dir flag present");
+    assert_eq!(
+        profile.command_args[plugin_idx + 1],
+        "/run/ags-claude-hooks"
+    );
+}
+
+#[test]
 fn claude_profile_no_config_dir_env() {
     let config = minimal_config();
     let profile = profile_for(Agent::Claude, &config);
@@ -203,7 +232,7 @@ fn claude_profile_no_browser_skill() {
 #[test]
 fn claude_profile_omits_guard_hook_when_guards_disabled() {
     let config = minimal_config();
-    let profile = profile_for_with_guards(Agent::Claude, &config, false, false);
+    let profile = profile_for_with_guards(Agent::Claude, &config, false, false, false);
     assert_eq!(profile.command, "claude");
     assert_eq!(
         profile.command_args,
@@ -218,7 +247,7 @@ fn claude_profile_omits_guard_hook_when_guards_disabled() {
 #[test]
 fn claude_profile_root_mode_appends_system_prompt() {
     let config = minimal_config();
-    let profile = profile_for_with_guards(Agent::Claude, &config, true, true);
+    let profile = profile_for_with_guards(Agent::Claude, &config, true, true, false);
     // Root mode should add an extra --append-system-prompt with a root hint
     let prompt_indices: Vec<_> = profile
         .command_args

@@ -37,6 +37,8 @@ Run flags:
 \
   --root               Run agent with root access inside the sandbox
 \
+  --lockdown           Minimize host exposure for this run (fail-closed)
+\
   --stop-when-done     Exit container when agent finishes (tmux mode)
 \
   --defaults, -D       Apply AGS-managed defaults for the selected agent harness

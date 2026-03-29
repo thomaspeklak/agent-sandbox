@@ -22,7 +22,7 @@ pub struct AgentProfile {
 
 /// Build the launch profile for the given agent.
 pub fn profile_for(agent: Agent, config: &ValidatedConfig) -> AgentProfile {
-    profile_for_with_guards(agent, config, true, false)
+    profile_for_with_guards(agent, config, true, false, false)
 }
 
 /// Build the launch profile for the given agent with AGS guard integrations
@@ -32,10 +32,11 @@ pub fn profile_for_with_guards(
     config: &ValidatedConfig,
     guard_enabled: bool,
     root_mode: bool,
+    lockdown: bool,
 ) -> AgentProfile {
     let mut profile = match agent {
         Agent::Pi => pi_profile(config, guard_enabled),
-        Agent::Claude => claude_profile(guard_enabled),
+        Agent::Claude => claude_profile(guard_enabled, lockdown),
         Agent::Codex => codex_profile(),
         Agent::Gemini => gemini_profile(),
         Agent::Opencode => opencode_profile(),
@@ -70,11 +71,17 @@ fn pi_profile(config: &ValidatedConfig, guard_enabled: bool) -> AgentProfile {
     }
 }
 
-fn claude_profile(guard_enabled: bool) -> AgentProfile {
-    const GUARD_HOOK_PATH: &str = "/home/dev/.config/ags/hooks/guard.sh";
-    const GUARD_PLUGIN_DIR: &str = "/home/dev/.config/ags/hooks";
+fn claude_profile(guard_enabled: bool, lockdown: bool) -> AgentProfile {
+    let (guard_hook_path, guard_plugin_dir) = if lockdown {
+        ("/run/ags-claude-hooks/guard.sh", "/run/ags-claude-hooks")
+    } else {
+        (
+            "/home/dev/.config/ags/hooks/guard.sh",
+            "/home/dev/.config/ags/hooks",
+        )
+    };
     let settings_json = format!(
-        r#"{{"sandbox":{{"enabled":false}},"hooks":{{"PreToolUse":[{{"matcher":"Bash|Read|Write|Edit|Grep|Glob","hooks":[{{"type":"command","command":"{GUARD_HOOK_PATH}","timeout":5}}]}}]}}}}"#,
+        r#"{{"sandbox":{{"enabled":false}},"hooks":{{"PreToolUse":[{{"matcher":"Bash|Read|Write|Edit|Grep|Glob","hooks":[{{"type":"command","command":"{guard_hook_path}","timeout":5}}]}}]}}}}"#,
     );
 
     let mut command_args = vec!["--dangerously-skip-permissions".to_owned()];
@@ -82,7 +89,7 @@ fn claude_profile(guard_enabled: bool) -> AgentProfile {
         command_args.push("--settings".to_owned());
         command_args.push(settings_json);
         command_args.push("--plugin-dir".to_owned());
-        command_args.push(GUARD_PLUGIN_DIR.to_owned());
+        command_args.push(guard_plugin_dir.to_owned());
     }
     command_args.push("--append-system-prompt".to_owned());
     command_args.push(HOST_SERVICE_PROMPT_HINT.to_owned());

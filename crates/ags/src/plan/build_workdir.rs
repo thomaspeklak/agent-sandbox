@@ -170,6 +170,23 @@ fn expand_config_mounts(
     Ok(())
 }
 
+fn add_plan_mounts(
+    extra_mounts: &[PlanMount],
+    mounts: &mut Vec<PlanMount>,
+    read_roots: &mut Vec<String>,
+    write_roots: &mut Vec<String>,
+) {
+    for m in extra_mounts {
+        mounts.push(m.clone());
+        if !read_roots.contains(&m.container) {
+            read_roots.push(m.container.clone());
+        }
+        if m.mode == MountMode::Rw && !write_roots.contains(&m.container) {
+            write_roots.push(m.container.clone());
+        }
+    }
+}
+
 fn add_runtime_dir_mounts(
     extra_mount_dirs: &[PathBuf],
     mounts: &mut Vec<PlanMount>,

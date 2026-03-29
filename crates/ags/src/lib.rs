@@ -7,6 +7,7 @@ pub mod cmd;
 pub mod config;
 pub mod git;
 pub mod host_ui;
+pub mod lockdown;
 pub mod paths;
 pub mod plan;
 pub mod podman;

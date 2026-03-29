@@ -28,6 +28,7 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub browser_mode: bool,
     pub tmux_mode: bool,
     pub guard_enabled: bool,
+    pub lockdown: bool,
     pub ssh_auth_sock: Option<&'a Path>,
     pub resolved_secrets: &'a HashMap<String, String>,
     pub auth_proxy_runtime_dir: Option<&'a Path>,
@@ -36,6 +37,7 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub webview_relay_runtime_dir: Option<&'a Path>,
     pub psp_socket: Option<&'a Path>,
     pub psp_session_id: Option<&'a str>,
+    pub extra_mounts: &'a [PlanMount],
     pub extra_mount_dirs: &'a [PathBuf],
     pub stop_when_done: bool,
     pub root_mode: bool,
@@ -56,6 +58,7 @@ struct BuildEnvContext<'a> {
     psp_socket: Option<&'a Path>,
     psp_session_id: Option<&'a str>,
     guard_enabled: bool,
+    lockdown: bool,
 }
 
 /// Cache volume mappings: (host_suffix under cache_dir, container_path, env_var).
@@ -83,6 +86,7 @@ pub fn build_launch_plan(
         browser_mode,
         tmux_mode,
         guard_enabled,
+        lockdown,
         ssh_auth_sock,
         resolved_secrets,
         auth_proxy_runtime_dir,
@@ -91,19 +95,21 @@ pub fn build_launch_plan(
         webview_relay_runtime_dir,
         psp_socket,
         psp_session_id,
+        extra_mounts,
         extra_mount_dirs,
         stop_when_done,
         root_mode,
     } = options;
-    let profile = agent::profile_for_with_guards(agent, config, guard_enabled, root_mode);
+    let profile = agent::profile_for_with_guards(agent, config, guard_enabled, root_mode, lockdown);
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);
     let cache_dir = &config.sandbox.cache_dir;
 
-    // Ensure host directories exist
-    ensure_dir(cache_dir)?;
-    for (suffix, _, _) in CACHE_MOUNTS {
-        ensure_dir(&cache_dir.join(suffix))?;
+    if !lockdown {
+        ensure_dir(cache_dir)?;
+        for (suffix, _, _) in CACHE_MOUNTS {
+            ensure_dir(&cache_dir.join(suffix))?;
+        }
     }
 
     let mut mounts = Vec::new();
@@ -117,11 +123,11 @@ pub fn build_launch_plan(
         mode: MountMode::Rw,
     });
 
-    // Infrastructure mounts
-    add_infrastructure_mounts(&mut mounts, config, cache_dir);
+    if !lockdown {
+        add_infrastructure_mounts(&mut mounts, config, cache_dir);
+    }
 
-    // Wayland clipboard
-    let wayland = detect_wayland()?;
+    let wayland = if lockdown { None } else { detect_wayland()? };
     if let Some(ref w) = wayland {
         mounts.push(PlanMount {
             host: w.socket_path.clone(),
@@ -143,16 +149,17 @@ pub fn build_launch_plan(
         write_roots.push(container);
     }
 
-    // Config mounts (filtered by when, optional/create handled)
-    expand_config_mounts(
-        &config.mounts,
-        browser_mode,
-        &mut mounts,
-        &mut read_roots,
-        &mut write_roots,
-    )?;
+    if !lockdown {
+        expand_config_mounts(
+            &config.mounts,
+            browser_mode,
+            &mut mounts,
+            &mut read_roots,
+            &mut write_roots,
+        )?;
+    }
 
-    // Extra runtime directory mounts from CLI flags.
+    add_plan_mounts(extra_mounts, &mut mounts, &mut read_roots, &mut write_roots);
     add_runtime_dir_mounts(
         extra_mount_dirs,
         &mut mounts,
@@ -160,73 +167,66 @@ pub fn build_launch_plan(
         &mut write_roots,
     )?;
 
-    // SSH agent socket
-    if let Some(sock) = ssh_auth_sock {
-        mounts.push(PlanMount {
-            host: sock.to_owned(),
-            container: CONTAINER_SSH_SOCK.to_owned(),
-            mode: MountMode::Rw,
-        });
+    if !lockdown {
+        if let Some(sock) = ssh_auth_sock {
+            mounts.push(PlanMount {
+                host: sock.to_owned(),
+                container: CONTAINER_SSH_SOCK.to_owned(),
+                mode: MountMode::Rw,
+            });
+        }
+
+        if let Some(runtime_dir) = auth_proxy_runtime_dir {
+            mounts.push(PlanMount {
+                host: runtime_dir.to_owned(),
+                container: AuthProxyGuard::container_runtime_dir().to_owned(),
+                mode: MountMode::Rw,
+            });
+            let shim_host = runtime_dir.join("auth-proxy-shim");
+            let shim_container = format!("{CONTAINER_HOME}/.local/bin/auth-proxy-shim");
+            mounts.push(PlanMount {
+                host: shim_host,
+                container: shim_container,
+                mode: MountMode::Ro,
+            });
+        }
+
+        if let Some(runtime_dir) = host_ui_runtime_dir {
+            mounts.push(PlanMount {
+                host: runtime_dir.to_owned(),
+                container: HostUiGuard::container_runtime_dir().to_owned(),
+                mode: MountMode::Rw,
+            });
+        }
+
+        if let Some(runtime_dir) = webview_relay_runtime_dir {
+            mounts.push(PlanMount {
+                host: runtime_dir.to_owned(),
+                container: WebviewRelayGuard::container_runtime_dir().to_owned(),
+                mode: MountMode::Rw,
+            });
+            let helper_host = runtime_dir.join("ags-webview-url");
+            let helper_container = format!("{CONTAINER_HOME}/.local/bin/ags-webview-url");
+            mounts.push(PlanMount {
+                host: helper_host,
+                container: helper_container,
+                mode: MountMode::Ro,
+            });
+        }
+
+        if let Some(sock) = psp_socket
+            && let Some(sock_dir) = sock.parent()
+        {
+            mounts.push(PlanMount {
+                host: sock_dir.to_owned(),
+                container: crate::psp::PspGuard::container_socket_dir().to_owned(),
+                mode: MountMode::Rw,
+            });
+        }
+
+        add_pub_key_mount(&mut mounts, &config.sandbox.auth_key, "ags-agent-auth");
+        add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
     }
-
-    // Auth proxy runtime dir + shim
-    if let Some(runtime_dir) = auth_proxy_runtime_dir {
-        mounts.push(PlanMount {
-            host: runtime_dir.to_owned(),
-            container: AuthProxyGuard::container_runtime_dir().to_owned(),
-            mode: MountMode::Rw,
-        });
-
-        // Mount the shim script into the container
-        let shim_host = runtime_dir.join("auth-proxy-shim");
-        let shim_container = format!("{CONTAINER_HOME}/.local/bin/auth-proxy-shim");
-        mounts.push(PlanMount {
-            host: shim_host,
-            container: shim_container,
-            mode: MountMode::Ro,
-        });
-    }
-
-    // Host UI service runtime dir mount
-    if let Some(runtime_dir) = host_ui_runtime_dir {
-        mounts.push(PlanMount {
-            host: runtime_dir.to_owned(),
-            container: HostUiGuard::container_runtime_dir().to_owned(),
-            mode: MountMode::Rw,
-        });
-    }
-
-    // Webview relay runtime dir + helper for sandbox-local app servers
-    if let Some(runtime_dir) = webview_relay_runtime_dir {
-        mounts.push(PlanMount {
-            host: runtime_dir.to_owned(),
-            container: WebviewRelayGuard::container_runtime_dir().to_owned(),
-            mode: MountMode::Rw,
-        });
-
-        let helper_host = runtime_dir.join("ags-webview-url");
-        let helper_container = format!("{CONTAINER_HOME}/.local/bin/ags-webview-url");
-        mounts.push(PlanMount {
-            host: helper_host,
-            container: helper_container,
-            mode: MountMode::Ro,
-        });
-    }
-
-    // PSP socket mount
-    if let Some(sock) = psp_socket
-        && let Some(sock_dir) = sock.parent()
-    {
-        mounts.push(PlanMount {
-            host: sock_dir.to_owned(),
-            container: crate::psp::PspGuard::container_socket_dir().to_owned(),
-            mode: MountMode::Rw,
-        });
-    }
-
-    // Public key files
-    add_pub_key_mount(&mut mounts, &config.sandbox.auth_key, "ags-agent-auth");
-    add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
 
     // Environment
     let env = build_env(
@@ -244,6 +244,7 @@ pub fn build_launch_plan(
             psp_socket,
             psp_session_id,
             guard_enabled,
+            lockdown,
         },
     );
 
@@ -256,15 +257,16 @@ pub fn build_launch_plan(
     .to_owned();
 
     // Entrypoint bash script
-    let entrypoint = build_entrypoint(
-        &config.sandbox.container_boot_dirs,
-        &profile,
-        &config.browser,
+    let entrypoint = build_entrypoint(EntryPointContext {
+        boot_dirs: &config.sandbox.container_boot_dirs,
+        profile: &profile,
+        browser: &config.browser,
         browser_mode,
         tmux_mode,
-        webview_relay_runtime_dir.is_some(),
+        webview_relay_enabled: webview_relay_runtime_dir.is_some(),
+        show_host_services_hint: !lockdown,
         stop_when_done,
-    );
+    });
 
     Ok(LaunchPlan {
         image: config.sandbox.image.clone(),

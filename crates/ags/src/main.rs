@@ -120,12 +120,16 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         Ok(c) => c,
         Err(code) => return code,
     };
+    if let Err(e) = ags::lockdown::validate(&opts) {
+        eprintln!("error: {e}");
+        return ExitCode::from(2);
+    }
 
     // 2. Ensure embedded assets are on disk
     if let Err(e) = ags::assets::ensure_image_build_context(&config.sandbox.containerfile) {
         eprintln!("warning: could not prepare image build context: {e}");
     }
-    if matches!(opts.agent, Agent::Pi | Agent::Shell) {
+    if !opts.lockdown && matches!(opts.agent, Agent::Pi | Agent::Shell) {
         if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {
             let pi_agent_dir = pi_host.join("agent");
             if let Err(e) = ags::assets::ensure_guard_extension(&pi_agent_dir) {
@@ -140,7 +144,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             );
         }
     }
-    if matches!(opts.agent, Agent::Claude) {
+    if !opts.lockdown && matches!(opts.agent, Agent::Claude) {
         let hooks_dir = config.sandbox.cache_dir.join("ags-hooks");
         if let Err(e) = ags::assets::ensure_claude_guard_hook(&hooks_dir) {
             eprintln!("warning: could not write Claude guard hook: {e}");
@@ -150,39 +154,60 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     }
 
-    // 3. Resolve secrets
-    let resolved_secrets = secrets::resolve_secrets(&config.secrets, &OsSecretBackend);
+    let _lockdown_session = if opts.lockdown {
+        match ags::lockdown::prepare(opts.agent, &config, !opts.yolo) {
+            Ok(session) => Some(session),
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        None
+    };
 
-    // 4. Bootstrap git config
-    let sign_key_container = "/home/dev/.ssh/ags-agent-signing.pub";
-    if let Err(e) = ags::git::ensure_gitconfig(&config.sandbox.gitconfig_path, sign_key_container) {
-        eprintln!("warning: git config bootstrap failed: {e}");
+    let resolved_secrets = if opts.lockdown {
+        std::collections::HashMap::new()
+    } else {
+        secrets::resolve_secrets(&config.secrets, &OsSecretBackend)
+    };
+
+    if !opts.lockdown {
+        let sign_key_container = "/home/dev/.ssh/ags-agent-signing.pub";
+        if let Err(e) =
+            ags::git::ensure_gitconfig(&config.sandbox.gitconfig_path, sign_key_container)
+        {
+            eprintln!("warning: git config bootstrap failed: {e}");
+        }
     }
 
-    // 5. Ensure SSH agent
-    let ssh_sock = match ssh::ensure_agent(
-        &config.sandbox.cache_dir,
-        &[
-            SshKey {
-                private_path: config.sandbox.auth_key.clone(),
-                label: "auth".into(),
-            },
-            SshKey {
-                private_path: config.sandbox.sign_key.clone(),
-                label: "signing".into(),
-            },
-        ],
-        &OsSshRunner,
-    ) {
-        Ok(ready) => {
-            for w in &ready.warnings {
-                eprintln!("warning: {w}");
+    let ssh_sock = if opts.lockdown {
+        None
+    } else {
+        match ssh::ensure_agent(
+            &config.sandbox.cache_dir,
+            &[
+                SshKey {
+                    private_path: config.sandbox.auth_key.clone(),
+                    label: "auth".into(),
+                },
+                SshKey {
+                    private_path: config.sandbox.sign_key.clone(),
+                    label: "signing".into(),
+                },
+            ],
+            &OsSshRunner,
+        ) {
+            Ok(ready) => {
+                for w in &ready.warnings {
+                    eprintln!("warning: {w}");
+                }
+                Some(ready.auth_sock)
             }
-            Some(ready.auth_sock)
-        }
-        Err(e) => {
-            eprintln!("warning: SSH agent setup failed: {e}");
-            None
+            Err(e) => {
+                eprintln!("warning: SSH agent setup failed: {e}");
+                None
+            }
         }
     };
 
@@ -191,7 +216,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     let pid = std::process::id();
 
     let mut _browser_guard = None;
-    if opts.browser {
+    if !opts.lockdown && opts.browser {
         match ags::browser::start_if_needed(true, &config.browser) {
             Ok(sidecar) => _browser_guard = sidecar,
             Err(e) => {
@@ -201,21 +226,24 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     }
 
-    let _host_ui_guard: Option<ags::host_ui::HostUiGuard> = if config.host_ui.enabled {
-        let dir = runtime_base.join(format!("ags-host-ui-{pid}"));
-        let session_id = format!("ags-{}-{pid}", opts.agent.as_str());
-        match ags::host_ui::start(&dir, session_id, &config.host_ui) {
-            Ok(guard) => Some(guard),
-            Err(e) => {
-                eprintln!("warning: host UI: {e}");
-                None
+    let _host_ui_guard: Option<ags::host_ui::HostUiGuard> =
+        if !opts.lockdown && config.host_ui.enabled {
+            let dir = runtime_base.join(format!("ags-host-ui-{pid}"));
+            let session_id = format!("ags-{}-{pid}", opts.agent.as_str());
+            match ags::host_ui::start(&dir, session_id, &config.host_ui) {
+                Ok(guard) => Some(guard),
+                Err(e) => {
+                    eprintln!("warning: host UI: {e}");
+                    None
+                }
             }
-        }
-    } else {
-        None
-    };
+        } else {
+            None
+        };
 
-    let _webview_relay_guard = {
+    let _webview_relay_guard = if opts.lockdown {
+        None
+    } else {
         let dir = runtime_base.join(format!("ags-webview-relay-{pid}"));
         match ags::webview_relay::start(&dir) {
             Ok(guard) => {
@@ -231,7 +259,9 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     };
 
-    let _auth_proxy_guard = {
+    let _auth_proxy_guard = if opts.lockdown {
+        None
+    } else {
         let dir = runtime_base.join(format!("ags-auth-proxy-{pid}"));
         let relay_socket = _webview_relay_guard
             .as_ref()
@@ -258,7 +288,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         }
     };
 
-    let _psp_guard = if opts.psp {
+    let _psp_guard = if !opts.lockdown && opts.psp {
         match ags::psp::start(&config.psp.binary, opts.psp_keep) {
             Ok(guard) => Some(guard),
             Err(e) => {
@@ -291,6 +321,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             browser_mode: opts.browser,
             tmux_mode: opts.tmux,
             guard_enabled: !opts.yolo,
+            lockdown: opts.lockdown,
             ssh_auth_sock: ssh_sock.as_deref(),
             resolved_secrets: &resolved_secrets,
             auth_proxy_runtime_dir: _auth_proxy_guard.as_ref().map(|g| g.runtime_dir.as_path()),
@@ -301,6 +332,10 @@ fn run_agent(opts: RunOptions) -> ExitCode {
                 .map(|g| g.runtime_dir.as_path()),
             psp_socket: _psp_guard.as_ref().map(|g| g.socket_path.as_path()),
             psp_session_id: psp_session_id.as_deref(),
+            extra_mounts: _lockdown_session
+                .as_ref()
+                .map(|s| s.extra_mounts.as_slice())
+                .unwrap_or(&[]),
             extra_mount_dirs: &opts.add_dirs,
             stop_when_done: opts.stop_when_done,
             root_mode: opts.root,

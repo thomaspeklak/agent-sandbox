@@ -49,12 +49,9 @@ impl fmt::Display for Agent {
     }
 }
 
-/// Top-level command parsed from CLI args.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// Run an agent inside the sandbox.
     Run(RunOptions),
-    /// Subcommands: setup, doctor, update-image, update-agents, install, uninstall, create-aliases, completions.
     Sub(SubCommand),
 }
 
@@ -67,6 +64,7 @@ pub struct RunOptions {
     pub psp_keep: bool,
     pub yolo: bool,
     pub root: bool,
+    pub lockdown: bool,
     pub stop_when_done: bool,
     pub config_path: Option<PathBuf>,
     pub add_dirs: Vec<PathBuf>,
@@ -251,6 +249,7 @@ where
         psp_keep: state.psp_keep,
         yolo: state.yolo,
         root: state.root,
+        lockdown: state.lockdown,
         stop_when_done: state.stop_when_done,
         config_path: state.config_path,
         add_dirs: state.add_dirs,
@@ -267,6 +266,7 @@ struct RunParseState {
     psp_keep: bool,
     yolo: bool,
     root: bool,
+    lockdown: bool,
     stop_when_done: bool,
     use_defaults: bool,
     config_path: Option<PathBuf>,
@@ -323,6 +323,11 @@ fn parse_run_arg<I: Iterator<Item = String>>(
 
     if arg == "--root" {
         state.root = true;
+        return Ok(());
+    }
+
+    if arg == "--lockdown" {
+        state.lockdown = true;
         return Ok(());
     }
 

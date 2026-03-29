@@ -100,7 +100,7 @@ fn make_test_app_with_local(global_toml: &str, local_toml: Option<&str>) -> (Tem
         quit_after_validation_dialog: false,
         agent_host_status_cache: super::KNOWN_AGENTS
             .iter()
-            .map(|a| super::compute_host_status(a))
+            .map(super::compute_host_status)
             .collect(),
         cached_binaries: Some(Vec::new()),
         cached_home_dirs: Some(Vec::new()),
