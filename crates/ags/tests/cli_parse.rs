@@ -173,6 +173,8 @@ fn parses_subcommands() {
 fn help_shows_update_image_but_not_deprecated_update_alias() {
     let help = help_text();
     assert!(help.contains("update-image"));
+    assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
+    assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));
     assert!(!help.contains("\n     \x20 update         Rebuild container image"));
 }
 

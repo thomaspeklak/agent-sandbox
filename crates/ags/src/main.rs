@@ -125,6 +125,10 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         eprintln!("error: {e}");
         return ExitCode::from(2);
     }
+    if let Err(e) = ags::psp::validate_options(&opts) {
+        eprintln!("error: {e}");
+        return ExitCode::from(2);
+    }
 
     // 2. Ensure embedded assets are on disk
     if let Err(e) = ags::assets::ensure_image_build_context(&config.sandbox.containerfile) {
@@ -296,6 +300,9 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     };
 
     let _psp_guard = if !opts.lockdown && opts.psp {
+        for warning in ags::psp::operator_warnings(opts.psp_keep) {
+            eprintln!("warning: {warning}");
+        }
         match ags::psp::start(&config.psp.binary, opts.psp_keep) {
             Ok(guard) => Some(guard),
             Err(e) => {

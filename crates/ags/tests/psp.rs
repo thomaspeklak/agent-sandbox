@@ -18,6 +18,8 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
+use ags::cli::{Agent, RunOptions};
+
 // --- Unit-level tests (no psp binary required) ---
 
 #[test]
@@ -59,6 +61,34 @@ fn start_fails_when_binary_exits_immediately() {
         err.contains("exited immediately") || err.contains("failed to start"),
         "should detect early child exit: {err}"
     );
+}
+
+#[test]
+fn validate_options_rejects_psp_keep_without_psp() {
+    let opts = RunOptions {
+        agent: Agent::Pi,
+        browser: false,
+        tmux: false,
+        psp: false,
+        psp_keep: true,
+        yolo: false,
+        root: false,
+        lockdown: false,
+        stop_when_done: false,
+        config_path: None,
+        add_dirs: Vec::new(),
+        passthrough_args: Vec::new(),
+    };
+
+    let err = ags::psp::validate_options(&opts).expect_err("validation should fail");
+    assert_eq!(err.to_string(), "--psp-keep requires --psp");
+}
+
+#[test]
+fn operator_warnings_cover_policy_and_keep_on_failure() {
+    let warnings = ags::psp::operator_warnings(true);
+    assert!(warnings[0].contains("does not validate PSP policy strength"));
+    assert!(warnings.iter().any(|line| line.contains("--psp-keep")));
 }
 
 #[test]

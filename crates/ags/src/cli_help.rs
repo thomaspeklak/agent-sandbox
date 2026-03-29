@@ -29,9 +29,9 @@ Run flags:
 \
   --tmux               Launch the agent inside a tmux session
 \
-  --psp                Enable podman-socket-proxy for Docker/Testcontainers flows
+  --psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)
 \
-  --psp-keep           Keep PSP-created containers after session exit
+  --psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)
 \
   --yolo               Disable AGS Pi/Claude guard integrations for this run
 \
