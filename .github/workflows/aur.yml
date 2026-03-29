@@ -1,0 +1,86 @@
+name: Publish to AUR
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    env:
+      PKGNAME: ags
+      AUR_REPO: ags
+      VERSION: ${{ github.ref_name }}
+
+    steps:
+      - name: Install deps
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git pacman-contrib openssh curl sudo
+
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Strip leading v from tag
+        id: v
+        run: echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump PKGBUILD (pkgver & sha256sums)
+        run: |
+          ver="${{ steps.v.outputs.version }}"
+          sed -i "s/^pkgver=.*/pkgver=${ver}/" PKGBUILD
+
+          tarball="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v${ver}.tar.gz"
+          sum=$(curl -sL "$tarball" | sha256sum | cut -d' ' -f1)
+          sed -i "s/^sha256sums=.*/sha256sums=('${sum}')/" PKGBUILD
+
+      - name: Create non-root build user
+        run: |
+          useradd -m build
+          echo 'build ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+          chown -R build:build .
+
+      - name: Generate .SRCINFO
+        run: |
+          sudo -u build makepkg --printsrcinfo > .SRCINFO
+
+      - name: Prepare SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AUR_PRIVATE_KEY }}
+
+      - name: Trust AUR host key
+        run: |
+          install -m 700 -d ~/.ssh
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Clone AUR repo
+        env:
+          GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=accept-new"
+          SSH_AUTH_SOCK: ${{ env.SSH_AUTH_SOCK }}
+        run: |
+          git clone ssh://aur@aur.archlinux.org/${AUR_REPO}.git aur
+
+      - name: Commit & push to AUR
+        env:
+          GIT_AUTHOR_NAME:  ${{ secrets.AUR_COMMIT_NAME || 'github-actions[bot]' }}
+          GIT_AUTHOR_EMAIL: ${{ secrets.AUR_COMMIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}
+          GIT_COMMITTER_NAME:  ${{ secrets.AUR_COMMIT_NAME || 'github-actions[bot]' }}
+          GIT_COMMITTER_EMAIL: ${{ secrets.AUR_COMMIT_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}
+        run: |
+          ver="${{ steps.v.outputs.version }}"
+          cp PKGBUILD .SRCINFO aur/
+          cd aur
+          git config user.name "$GIT_AUTHOR_NAME"
+          git config user.email "$GIT_AUTHOR_EMAIL"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "No changes to push."
+            exit 0
+          fi
+          git commit -m "Release ${PKGNAME} ${ver}"
+          git push origin HEAD:master
