@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.10.0] — 2026-03-29
+
+### Features
+
+- Add lockdown mode for hardened agent sessions (a509b96)
+
+### Chores / Other
+
+- docs: document lockdown mode (d8b8d43)
+
 ## [v0.9.0] — 2026-03-28
 
 ### Features
