@@ -69,6 +69,6 @@ container = "/home/dev/.gemini"
 enabled = false
 binary = "glimpse-host-ui"
 renderer = "stub"
-idle_timeout_ms = 30000
+idle_timeout_ms = 0
 log_level = "info"
 "#;

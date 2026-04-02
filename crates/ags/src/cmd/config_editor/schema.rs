@@ -153,7 +153,7 @@ const HOST_UI_FIELDS: &[ScalarFieldSchema] = &[
             max: u64::MAX,
         },
         required: false,
-        default_input: "30000",
+        default_input: "0",
     },
     ScalarFieldSchema {
         key: "log_level",

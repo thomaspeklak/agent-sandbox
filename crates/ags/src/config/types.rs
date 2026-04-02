@@ -163,7 +163,7 @@ impl Default for HostUiConfig {
             binary: "glimpse-host-ui".to_owned(),
             renderer: "stub".to_owned(),
             renderer_bin: None,
-            idle_timeout_ms: 30_000,
+            idle_timeout_ms: 0,
             log_level: "info".to_owned(),
         }
     }

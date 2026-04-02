@@ -349,7 +349,7 @@ enabled = true
 binary = "/path/to/glimpse_host_ui"
 renderer = "process"
 renderer_bin = "/path/to/glimpse"
-idle_timeout_ms = 30000
+idle_timeout_ms = 0
 log_level = "info"
 ```
 
@@ -365,8 +365,9 @@ log_level = "info"
   - `stub` is mainly useful for testing.
 - `renderer_bin` (path, optional)
   - Required when the chosen renderer needs an external binary, such as `renderer = "process"`.
-- `idle_timeout_ms` (u64, default `30000`)
+- `idle_timeout_ms` (u64, default `0`)
   - Idle timeout passed to the host UI service.
+  - `0` disables idle shutdown so the sidecar stays alive for the AGS session.
 - `log_level` (string, default `info`)
   - Logging level passed to the host UI service.
 

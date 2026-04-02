@@ -130,7 +130,7 @@ enabled = false
 binary = "/path/to/glimpse_host_ui"
 renderer = "process"
 renderer_bin = "/path/to/glimpse"
-idle_timeout_ms = 30000
+idle_timeout_ms = 0
 log_level = "info"
 
 [update]

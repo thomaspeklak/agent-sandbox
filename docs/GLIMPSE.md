@@ -52,7 +52,7 @@ enabled = true
 binary = "/path/to/glimpse_host_ui"
 renderer = "process"
 renderer_bin = "/path/to/glimpse"
-idle_timeout_ms = 30000
+idle_timeout_ms = 0
 log_level = "info"
 ```
 
@@ -70,6 +70,7 @@ log_level = "info"
   - path to the actual Glimpse renderer binary
 - `idle_timeout_ms`
   - host UI idle shutdown timeout
+  - `0` disables idle shutdown and keeps the sidecar alive for the full AGS session
 - `log_level`
   - host UI logging level
 
@@ -80,9 +81,10 @@ log_level = "info"
 At runtime AGS:
 
 1. starts a per-session host UI service on the host
-2. mounts its socket into the sandbox
-3. points sandboxed `glimpseui` at AGS's bundled shim
-4. lets the shim talk to the host UI service
+2. keeps that sidecar alive for the full AGS session by default
+3. mounts its socket into the sandbox
+4. points sandboxed `glimpseui` at AGS's bundled shim
+5. lets the shim talk to the host UI service
 
 In other words:
 

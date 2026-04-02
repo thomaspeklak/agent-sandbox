@@ -203,7 +203,7 @@ fn default_host_ui_renderer() -> String {
 }
 
 fn default_host_ui_idle_timeout_ms() -> u64 {
-    30_000
+    0
 }
 
 fn default_host_ui_log_level() -> String {

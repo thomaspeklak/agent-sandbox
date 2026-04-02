@@ -126,7 +126,9 @@ The service must not become an unbounded background process.
 
 MVP shutdown conditions:
 - AGS process exits or tears down the session
-- or service sees no clients and no open windows for an idle timeout
+- optional operator-configured idle timeout, if explicitly enabled
+
+Default behavior should keep the sidecar alive for the full AGS session.
 
 ### 5.3 Future compatibility
 
