@@ -109,7 +109,7 @@ impl fmt::Debug for WebviewRelayGuard {
 }
 
 pub fn start(runtime_dir: &Path) -> Result<WebviewRelayGuard, WebviewRelayError> {
-    fs::create_dir_all(runtime_dir).map_err(WebviewRelayError::RuntimeDirCreate)?;
+    crate::util::ensure_private_dir(runtime_dir).map_err(WebviewRelayError::RuntimeDirCreate)?;
 
     let register_socket_path = runtime_dir.join(SOCKET_NAME);
     if register_socket_path.exists() {

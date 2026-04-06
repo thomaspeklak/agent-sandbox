@@ -1,6 +1,12 @@
+use std::fs;
+use std::io;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+#[cfg(test)]
+#[path = "util_tests.rs"]
+mod util_tests;
 
 /// Check if a path has any execute permission bit set.
 #[cfg(unix)]
@@ -29,11 +35,49 @@ pub fn has_command(name: &str) -> bool {
     which(name).is_some()
 }
 
-/// Return `$XDG_RUNTIME_DIR` if set, otherwise the system temp directory.
-pub fn runtime_dir() -> PathBuf {
-    std::env::var("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir())
+/// Return the AGS private runtime directory, creating it with restrictive
+/// permissions if needed.
+pub fn runtime_dir() -> io::Result<PathBuf> {
+    let dir = runtime_dir_base();
+    ensure_private_dir(&dir)?;
+    Ok(dir)
+}
+
+/// Ensure a directory exists and is private to the current user.
+pub fn ensure_private_dir(path: &Path) -> io::Result<()> {
+    fs::create_dir_all(path)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+
+    Ok(())
+}
+
+fn runtime_dir_base() -> PathBuf {
+    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR")
+        && !dir.is_empty()
+    {
+        return PathBuf::from(dir).join("ags");
+    }
+
+    if let Some(cache_dir) = dirs::cache_dir() {
+        return cache_dir.join("ags/runtime");
+    }
+
+    temp_runtime_dir_fallback()
+}
+
+#[cfg(unix)]
+fn temp_runtime_dir_fallback() -> PathBuf {
+    std::env::temp_dir().join(format!("ags-uid-{}", unsafe { libc::geteuid() }))
+}
+
+#[cfg(not(unix))]
+fn temp_runtime_dir_fallback() -> PathBuf {
+    std::env::temp_dir().join("ags")
 }
 
 /// Shell-quote a value using single quotes if it contains special characters.

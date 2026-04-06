@@ -15,6 +15,7 @@ pub mod psp;
 pub mod run_defaults;
 pub mod secrets;
 pub mod ssh;
+pub mod trust;
 pub mod update_check;
 pub mod util;
 pub mod webview_relay;

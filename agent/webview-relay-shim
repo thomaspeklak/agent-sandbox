@@ -158,7 +158,6 @@ def main() -> int:
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(SOCK_PATH)
-    os.chmod(SOCK_PATH, 0o666)
     server.listen(64)
     log(f"listening on {SOCK_PATH}")
 

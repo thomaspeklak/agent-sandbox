@@ -557,6 +557,23 @@ fn guard_drop_cleans_up_runtime_dir() {
     );
 }
 
+#[test]
+#[cfg(unix)]
+fn auth_proxy_runtime_dir_is_private() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let runtime_dir = dir.keep();
+
+    let _guard = host::start_with_host(&runtime_dir, Arc::new(AllowHost)).unwrap();
+    let mode = std::fs::metadata(&runtime_dir)
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o700);
+}
+
 // --- Socket absent test ---
 
 #[test]

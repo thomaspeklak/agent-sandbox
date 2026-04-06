@@ -1,21 +1,38 @@
 fn is_auto_allowed(url: &str, domains: &[String]) -> bool {
-    if domains.is_empty() {
+    let Some(host) = parsed_http_host(url) else {
         return false;
+    };
+
+    domains
+        .iter()
+        .filter_map(|domain| normalize_allowed_domain(domain))
+        .any(|domain| host_matches_allowed_domain(&host, &domain))
+}
+
+fn parsed_http_host(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
     }
-    // Extract host from URL: skip "https://" or "http://", take up to next '/' or ':'
-    let host = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url)
-        .split(['/', ':', '?'])
-        .next()
-        .unwrap_or("");
-    domains.iter().any(|d| {
-        host == d.as_str()
-            || (host.len() > d.len()
-                && host.ends_with(d.as_str())
-                && host.as_bytes()[host.len() - d.len() - 1] == b'.')
-    })
+    parsed.host_str().map(|host| host.to_ascii_lowercase())
+}
+
+fn normalize_allowed_domain(domain: &str) -> Option<String> {
+    let trimmed = domain.trim().trim_end_matches('.');
+    if trimmed.is_empty()
+        || trimmed.contains(['/', ':'])
+        || trimmed.chars().any(char::is_whitespace)
+    {
+        return None;
+    }
+    Some(trimmed.to_ascii_lowercase())
+}
+
+fn host_matches_allowed_domain(host: &str, domain: &str) -> bool {
+    host == domain
+        || (host.len() > domain.len()
+            && host.ends_with(domain)
+            && host.as_bytes()[host.len() - domain.len() - 1] == b'.')
 }
 
 /// Try zenity, then kdialog, then deny.
@@ -45,11 +62,27 @@ fn display_url(url: &str) -> String {
 
 fn prompt_text(url: &str, has_callback: bool, can_proxy: bool) -> String {
     let display = display_url(url);
+    let host = parsed_http_host(url).unwrap_or_else(|| "(unable to parse host)".to_owned());
     let action = if has_callback {
-        "open this URL and capture a localhost callback"
+        "open this URL and relay a localhost callback back into the sandbox"
     } else {
         "open this URL"
     };
+
+    let mut details = vec![format!("Requested host: {host}"), display];
+    if has_callback {
+        details.push(
+            "This flow includes a localhost callback that AGS will capture and relay to the sandbox."
+                .to_owned(),
+        );
+    }
+    if can_proxy {
+        details.push(
+            "Proxy is available for this localhost app: Open uses the original URL, Proxy routes it through AGS."
+                .to_owned(),
+        );
+    }
+
     let choices = if has_callback {
         "Choose Open to open it in the host browser or Cancel to deny."
     } else if can_proxy {
@@ -57,7 +90,11 @@ fn prompt_text(url: &str, has_callback: bool, can_proxy: bool) -> String {
     } else {
         "Choose Open to open it or Cancel to deny."
     };
-    format!("A sandbox tool wants to {action}:\n\n{display}\n\n{choices}")
+
+    format!(
+        "A sandbox tool wants to {action}:\n\n{}\n\n{choices}",
+        details.join("\n\n")
+    )
 }
 
 fn parse_named_decision(label: &str, can_proxy: bool) -> Option<OpenDecision> {

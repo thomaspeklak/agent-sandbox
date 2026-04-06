@@ -19,20 +19,13 @@ pub fn start_with_host(
     runtime_dir: &Path,
     host: Arc<dyn AuthProxyHost + Send + Sync>,
 ) -> Result<AuthProxyGuard, AuthProxyError> {
-    fs::create_dir_all(runtime_dir).map_err(AuthProxyError::RuntimeDirCreate)?;
+    crate::util::ensure_private_dir(runtime_dir).map_err(AuthProxyError::RuntimeDirCreate)?;
 
     let sock_path = runtime_dir.join(SOCKET_NAME);
     // Remove stale socket if present
     let _ = fs::remove_file(&sock_path);
 
     let listener = UnixListener::bind(&sock_path).map_err(AuthProxyError::SocketBind)?;
-
-    // Make socket world-accessible (container user may have different UID mapping)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&sock_path, fs::Permissions::from_mode(0o666));
-    }
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = shutdown.clone();

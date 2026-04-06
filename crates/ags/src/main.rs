@@ -5,6 +5,7 @@ use ags::cli::{self, Agent, Command, RunOptions, SubCommand};
 use ags::config::{self, ValidatedConfig};
 use ags::secrets::{self, OsSecretBackend};
 use ags::ssh::{self, OsSshRunner, SshKey};
+use ags::trust::StdioRepoConfigPrompter;
 
 fn main() -> ExitCode {
     let update_check = ags::update_check::UpdateCheck::from_default_cache();
@@ -124,6 +125,10 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         eprintln!("error: {e}");
         return ExitCode::from(2);
     }
+    if let Err(e) = ags::psp::validate_options(&opts) {
+        eprintln!("error: {e}");
+        return ExitCode::from(2);
+    }
 
     // 2. Ensure embedded assets are on disk
     if let Err(e) = ags::assets::ensure_image_build_context(&config.sandbox.containerfile) {
@@ -212,7 +217,13 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     };
 
     // 6. Sidecars
-    let runtime_base = ags::util::runtime_dir();
+    let runtime_base = match ags::util::runtime_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("error: failed to prepare AGS runtime dir: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let pid = std::process::id();
 
     let mut _browser_guard = None;
@@ -289,6 +300,9 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     };
 
     let _psp_guard = if !opts.lockdown && opts.psp {
+        for warning in ags::psp::operator_warnings(opts.psp_keep) {
+            eprintln!("warning: {warning}");
+        }
         match ags::psp::start(&config.psp.binary, opts.psp_keep) {
             Ok(guard) => Some(guard),
             Err(e) => {
@@ -398,12 +412,20 @@ fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, ExitCode
         eprintln!("Created default config: {}", config_path.display());
     }
 
-    let repo_local_config = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| ags::git::repo_root(&cwd))
-        .map(|root| root.join(".ags/config.toml"))
-        .filter(|path| path.exists())
-        .filter(|path| !same_existing_path(path, &config_path));
+    let repo_local_config = std::env::current_dir().ok().and_then(|cwd| {
+        match ags::trust::resolve_repo_local_overlay(
+            &cwd,
+            &config_path,
+            &ags::trust::default_trust_store_path(),
+            &StdioRepoConfigPrompter,
+        ) {
+            Ok(path) => path,
+            Err(err) => {
+                eprintln!("warning: could not load repo trust state: {err}");
+                None
+            }
+        }
+    });
 
     config::parse_and_validate_with_overlay(&config_path, repo_local_config.as_deref()).map_err(
         |e| {
@@ -411,14 +433,4 @@ fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, ExitCode
             ExitCode::from(2)
         },
     )
-}
-
-fn same_existing_path(a: &Path, b: &Path) -> bool {
-    let Ok(a) = a.canonicalize() else {
-        return false;
-    };
-    let Ok(b) = b.canonicalize() else {
-        return false;
-    };
-    a == b
 }

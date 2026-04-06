@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::Duration;
 
+use crate::cli::RunOptions;
+
 /// Container-side directory where the PSP socket is mounted.
 const CONTAINER_PSP_DIR: &str = "/run/psp";
 
@@ -14,6 +16,10 @@ const CONTAINER_PSP_SOCK: &str = "/run/psp/psp.sock";
 
 /// Timeout for PSP to become ready after starting.
 const READINESS_TIMEOUT: Duration = Duration::from_secs(10);
+
+const PSP_POLICY_WARNING: &str = "--psp exposes a Docker-compatible socket inside the sandbox; AGS does not validate PSP policy strength, and a permissive policy may allow host container control or host-path mounts";
+const PSP_KEEP_WARNING: &str =
+    "--psp-keep leaves PSP-managed containers behind after exit for debugging";
 
 /// Poll interval for readiness check.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -52,6 +58,36 @@ impl fmt::Display for PspError {
 }
 
 impl std::error::Error for PspError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PspOptionError {
+    KeepRequiresPsp,
+}
+
+impl fmt::Display for PspOptionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::KeepRequiresPsp => write!(f, "--psp-keep requires --psp"),
+        }
+    }
+}
+
+impl std::error::Error for PspOptionError {}
+
+pub fn validate_options(opts: &RunOptions) -> Result<(), PspOptionError> {
+    if opts.psp_keep && !opts.psp {
+        return Err(PspOptionError::KeepRequiresPsp);
+    }
+    Ok(())
+}
+
+pub fn operator_warnings(keep_on_failure: bool) -> Vec<&'static str> {
+    let mut warnings = vec![PSP_POLICY_WARNING];
+    if keep_on_failure {
+        warnings.push(PSP_KEEP_WARNING);
+    }
+    warnings
+}
 
 /// Guard that manages the PSP sidecar lifetime.
 ///
@@ -124,10 +160,10 @@ fn resolve_binary(config_binary: &str) -> Result<PathBuf, PspError> {
 pub fn start(config_binary: &str, keep_on_failure: bool) -> Result<PspGuard, PspError> {
     let binary = resolve_binary(config_binary)?;
 
-    let runtime_base = crate::util::runtime_dir();
+    let runtime_base = crate::util::runtime_dir().map_err(PspError::SocketDirCreate)?;
 
     let socket_dir = runtime_base.join(format!("ags-psp-{}", std::process::id()));
-    fs::create_dir_all(&socket_dir).map_err(PspError::SocketDirCreate)?;
+    crate::util::ensure_private_dir(&socket_dir).map_err(PspError::SocketDirCreate)?;
 
     let socket_path = socket_dir.join("psp.sock");
 

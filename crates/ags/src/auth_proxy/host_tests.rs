@@ -1,9 +1,35 @@
 use super::{
-    OpenDecision, is_proxyable_localhost_url, parse_zenity_decision,
+    OpenDecision, is_auto_allowed, is_proxyable_localhost_url, parse_zenity_decision, prompt_text,
     rewrite_localhost_url_via_relay,
 };
 use crate::webview_relay;
 use std::os::unix::process::ExitStatusExt;
+
+#[test]
+fn auto_allow_matches_exact_hosts_and_subdomains() {
+    let domains = vec!["example.com".to_owned(), "trusted.test".to_owned()];
+
+    assert!(is_auto_allowed("https://example.com/login", &domains));
+    assert!(is_auto_allowed("https://api.example.com/login", &domains));
+    assert!(is_auto_allowed("HTTP://TRUSTED.TEST:8443/path", &domains));
+}
+
+#[test]
+fn auto_allow_rejects_suffix_tricks_and_invalid_urls() {
+    let domains = vec!["example.com".to_owned(), "trusted.test".to_owned()];
+
+    assert!(!is_auto_allowed("https://evil-example.com/login", &domains));
+    assert!(!is_auto_allowed(
+        "https://example.com.evil.test/login",
+        &domains
+    ));
+    assert!(!is_auto_allowed("file:///tmp/example.com", &domains));
+    assert!(!is_auto_allowed("not a url", &domains));
+    assert!(!is_auto_allowed(
+        "https://example.com/login",
+        &[" https://example.com ".to_owned()]
+    ));
+}
 
 #[test]
 fn proxyable_localhost_detection_requires_http_and_explicit_port() {
@@ -12,6 +38,29 @@ fn proxyable_localhost_detection_requires_http_and_explicit_port() {
     assert!(!is_proxyable_localhost_url("https://localhost:4173/app"));
     assert!(!is_proxyable_localhost_url("http://localhost/app"));
     assert!(!is_proxyable_localhost_url("http://example.com:4173/app"));
+}
+
+#[test]
+fn prompt_text_surfaces_requested_host_and_callback_context() {
+    let text = prompt_text(
+        "https://provider.example/auth?redirect_uri=http://localhost:4317/callback",
+        true,
+        false,
+    );
+
+    assert!(text.contains("Requested host: provider.example"));
+    assert!(text.contains("relay a localhost callback back into the sandbox"));
+    assert!(text.contains("AGS will capture and relay to the sandbox"));
+}
+
+#[test]
+fn prompt_text_explains_proxy_choice_for_localhost_apps() {
+    let text = prompt_text("http://localhost:4173/app?token=secret", false, true);
+
+    assert!(text.contains("Requested host: localhost"));
+    assert!(text.contains("http://localhost:4173/app?..."));
+    assert!(text.contains("Proxy routes it through AGS"));
+    assert!(text.contains("Choose Open to open the original URL, Proxy to route sandbox localhost through AGS, or Cancel to deny."));
 }
 
 #[test]

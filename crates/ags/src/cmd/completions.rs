@@ -208,8 +208,8 @@ _arguments -S \
   '--agent[Agent to run]:agent:(pi claude codex gemini opencode shell)' \
   '--browser[Enable browser sidecar]' \
   '--tmux[Launch the agent inside a tmux session]' \
-  '--psp[Enable podman-socket-proxy mode]' \
-  '--psp-keep[Keep PSP-managed containers on exit (debug)]' \
+  '--psp[Enable podman-socket-proxy mode (policy-gated)]' \
+  '--psp-keep[Keep PSP-managed containers on exit (debug; requires --psp)]' \
   '--yolo[Disable AGS guard integrations for this run]' \
   '--root[Run agent with root access inside the sandbox]' \
   '--lockdown[Minimize host exposure for this run]' \
@@ -242,8 +242,8 @@ complete -c ags -n "__fish_use_subcommand" -a completions -d "Print completion s
 complete -c ags -n "__fish_use_subcommand" -l agent -r -a "$__ags_agents" -d "Agent to run"
 complete -c ags -n "__fish_use_subcommand" -l browser -d "Enable browser sidecar"
 complete -c ags -n "__fish_use_subcommand" -l tmux -d "Launch the agent inside a tmux session"
-complete -c ags -n "__fish_use_subcommand" -l psp -d "Enable podman-socket-proxy mode"
-complete -c ags -n "__fish_use_subcommand" -l psp-keep -d "Keep PSP-managed containers on exit (debug)"
+complete -c ags -n "__fish_use_subcommand" -l psp -d "Enable podman-socket-proxy mode (policy-gated)"
+complete -c ags -n "__fish_use_subcommand" -l psp-keep -d "Keep PSP-managed containers on exit (debug; requires --psp)"
 complete -c ags -n "__fish_use_subcommand" -l yolo -d "Disable AGS guard integrations for this run"
 complete -c ags -n "__fish_use_subcommand" -l root -d "Run agent with root access inside the sandbox"
 complete -c ags -n "__fish_use_subcommand" -l lockdown -d "Minimize host exposure for this run"
@@ -302,6 +302,12 @@ mod tests {
         let script = render(Shell::Zsh);
         assert!(script.starts_with("#compdef ags"));
         assert!(script.contains("update-agents"));
+        assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
+        assert!(
+            script.contains(
+                "--psp-keep[Keep PSP-managed containers on exit (debug; requires --psp)]"
+            )
+        );
     }
 
     #[test]
@@ -309,5 +315,9 @@ mod tests {
         let script = render(Shell::Fish);
         assert!(script.contains("complete -c ags"));
         assert!(script.contains("-a completions"));
+        assert!(script.contains("-l psp -d \"Enable podman-socket-proxy mode (policy-gated)\""));
+        assert!(script.contains(
+            "-l psp-keep -d \"Keep PSP-managed containers on exit (debug; requires --psp)\""
+        ));
     }
 }
