@@ -1,12 +1,13 @@
 # Maintainer: Thomas Peklak <thomaspeklak@gmail.com>
-pkgname=ags
-pkgver=0.8.0
+pkgname=agent-sandbox
+pkgver=0.10.0
 pkgrel=1
 pkgdesc='Launch AI coding agents inside a rootless Podman sandbox'
 arch=('x86_64')
 url='https://github.com/thomaspeklak/agent-sandbox'
 license=('MIT')
-depends=('podman')
+install='agent-sandbox.install'
+depends=('git' 'openssh' 'podman')
 makedepends=('cargo')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('SKIP')
