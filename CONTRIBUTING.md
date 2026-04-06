@@ -35,6 +35,31 @@ cargo clippy -p ags -- -D warnings
 cargo test -p ags
 ```
 
+AUR package install smoke test on a clean Arch container:
+
+```bash
+podman run --rm -it \
+  -v "$PWD:/work:Z" \
+  -w /work \
+  archlinux:latest \
+  bash -lc '
+    set -euxo pipefail
+    pacman-key --init
+    pacman-key --populate archlinux
+    pacman -Sy --noconfirm archlinux-keyring
+    pacman -Syyu --noconfirm
+
+    pkg=$(find /work -maxdepth 1 -type f | grep -E "/agent-sandbox-[0-9].*-x86_64\.pkg\.tar\.zst$" | grep -v -- "-debug-" | head -n1)
+
+    echo "PKG=$pkg"
+    test -n "$pkg"
+
+    pacman -U --noconfirm "$pkg"
+    command -v ags git ssh-keygen ssh-add podman
+    ags --help
+  '
+```
+
 Useful run examples:
 
 ```bash
