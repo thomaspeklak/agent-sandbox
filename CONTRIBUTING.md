@@ -35,12 +35,19 @@ cargo clippy -p ags -- -D warnings
 cargo test -p ags
 ```
 
+Useful run examples:
+
+```bash
+cargo run -p ags -- --help
+cargo run -p ags -- doctor
+cargo run -p ags -- --agent shell
+```
+
 AUR package install smoke test on a clean Arch container:
 
 ```bash
 podman run --rm -it \
-  -v "$PWD:/work:Z" \
-  -w /work \
+  -v "$PWD:/src:Z" \
   archlinux:latest \
   bash -lc '
     set -euxo pipefail
@@ -48,24 +55,19 @@ podman run --rm -it \
     pacman-key --populate archlinux
     pacman -Sy --noconfirm archlinux-keyring
     pacman -Syyu --noconfirm
-
-    pkg=$(find /work -maxdepth 1 -type f | grep -E "/agent-sandbox-[0-9].*-x86_64\.pkg\.tar\.zst$" | grep -v -- "-debug-" | head -n1)
-
+    pacman -S --noconfirm --needed base-devel sudo rsync
+    useradd -m build
+    echo "build ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+    rsync -a --delete /src/ /tmp/build/
+    chown -R build:build /tmp/build
+    sudo -u build bash -lc "cd /tmp/build && makepkg -s -f --noconfirm"
+    pkg=$(find /tmp/build -maxdepth 1 -type f | grep -E "/agent-sandbox-.*-x86_64\.pkg\.tar\.zst$" | grep -v -- "-debug-" | head -n1)
     echo "PKG=$pkg"
     test -n "$pkg"
-
     pacman -U --noconfirm "$pkg"
     command -v ags git ssh-keygen ssh-add podman
     ags --help
   '
-```
-
-Useful run examples:
-
-```bash
-cargo run -p ags -- --help
-cargo run -p ags -- doctor
-cargo run -p ags -- --agent shell
 ```
 
 ---
