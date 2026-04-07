@@ -4,6 +4,7 @@ config/config.toml
 __pycache__/
 *.pyc
 agent/settings.json
+/PKGBUILD
 /target/
 
 # Dotfiles (host/container mounts, not part of repo)
