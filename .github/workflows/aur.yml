@@ -33,14 +33,23 @@ jobs:
         id: v
         run: echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Bump PKGBUILD (pkgver & sha256sums)
+      - name: Validate release version matches Cargo.toml
         run: |
           ver="${{ steps.v.outputs.version }}"
-          sed -i "s/^pkgver=.*/pkgver=${ver}/" PKGBUILD
+          cargo_ver=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/ags/Cargo.toml | head -n 1)
 
-          tarball="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v${ver}.tar.gz"
-          sum=$(curl -fsSL "$tarball" | sha256sum | cut -d' ' -f1)
-          sed -i "s/^sha256sums=.*/sha256sums=('${sum}')/" PKGBUILD
+          if [[ -z "$cargo_ver" ]]; then
+            echo "Could not read version from crates/ags/Cargo.toml" >&2
+            exit 1
+          fi
+
+          if [[ "$ver" != "$cargo_ver" ]]; then
+            echo "Tag/manual version $ver does not match Cargo.toml version $cargo_ver" >&2
+            exit 1
+          fi
+
+      - name: Render PKGBUILD
+        run: ./scripts/render-pkgbuild.sh "${{ steps.v.outputs.version }}"
 
       - name: Create non-root build user
         run: |

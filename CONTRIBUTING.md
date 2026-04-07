@@ -60,7 +60,7 @@ podman run --rm -it \
     echo "build ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
     rsync -a --delete /src/ /tmp/build/
     chown -R build:build /tmp/build
-    sudo -u build bash -lc "cd /tmp/build && makepkg -s -f --noconfirm"
+    sudo -u build bash -lc "cd /tmp/build && ./scripts/render-pkgbuild.sh && makepkg -s -f --noconfirm"
     pkg=$(find /tmp/build -maxdepth 1 -type f | grep -E "/agent-sandbox-.*-x86_64\.pkg\.tar\.zst$" | grep -v -- "-debug-" | head -n1)
     echo "PKG=$pkg"
     test -n "$pkg"
