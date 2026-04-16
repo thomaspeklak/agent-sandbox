@@ -1,5 +1,6 @@
 FROM registry.fedoraproject.org/fedora:43
 
+# Stable base layer: core tools used in nearly every sandbox run.
 RUN dnf -y update && \
     dnf -y install \
       bash \
@@ -15,10 +16,7 @@ RUN dnf -y update && \
       gcc-c++ \
       gh \
       git \
-      golang \
       grep \
-      ImageMagick \
-      java-21-openjdk-devel \
       jq \
       kitty-terminfo \
       less \
@@ -29,13 +27,11 @@ RUN dnf -y update && \
       openssh-clients \
       patch \
       pkgconf-pkg-config \
-      postgresql \
       procps-ng \
       python3 \
-      python3-pip \
       ripgrep \
       rsync \
-      ruby \
+      sccache \
       sed \
       socat \
       tar \
@@ -147,6 +143,15 @@ RUN cd /tmp/glimpse-shim && \
     install -m 0755 target/release/glimpse-shim /opt/ags/glimpse-shim && \
     rm -rf /tmp/glimpse-shim
 
+# Extended tooling layer: project-specific and heavier dev dependencies.
+# Keep this near the end so package list tweaks rebuild quickly.
+# Override with: --build-arg EXTRA_DNF_PACKAGES="..."
+ARG EXTRA_DNF_PACKAGES="golang ImageMagick java-21-openjdk-devel postgresql python3-pip ruby sqlite-devel zig"
+RUN if [ -n "$EXTRA_DNF_PACKAGES" ]; then \
+      dnf -y install $EXTRA_DNF_PACKAGES; \
+    fi && \
+    dnf clean all
+
 USER dev
 WORKDIR /workspace
 
@@ -154,5 +159,6 @@ ENV HOME=/home/dev
 ENV PNPM_HOME=/usr/local/pnpm
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/home/dev/.cargo
+ENV RUSTC_WRAPPER=sccache
 ENV NPM_CONFIG_PREFIX=/home/dev/.npm-global
 ENV PATH=/home/dev/.npm-global/bin:/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/pnpm:/usr/local/bin:/usr/bin:/bin
