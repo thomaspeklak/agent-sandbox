@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.11.0] — 2026-04-22
+
+### Features
+
+- Keep host UI sidecar alive for full AGS session (2ef7936)
+- Add PSP safety rails and warnings (6d0bbd1)
+- Gate repo-local AGS overlays behind trust (84c3bbf)
+- Add AUR packaging and publish workflow (6040c3c)
+
+### Bug Fixes
+
+- Harden auth proxy URL matching and prompts (481fd19)
+- Harden AGS runtime dirs and sockets (693e6e7)
+- fix(aur): generate PKGBUILD from release version (5dce2e9)
+- fix: update AUR packaging for agent-sandbox release (1d63d2b)
+- fix: update AUR packaging for agent-sandbox release, add info how to smoke test a clean install in an Arch container (301739c)
+- fix: update AUR packaging for agent-sandbox release (0e522e3)
+
+### Chores / Other
+
+- chore: block git worktree prune in sandbox via dcg (5addc3f)
+- build(container): add sccache support in sandbox image (bf6c57d)
+- build(rust): enable sccache wrapper repo-wide via Cargo config (c2c86b5)
+- Merge branch 'main' of github.com:thomaspeklak/agent-sandbox (8d150d7)
+- Merge pull request #4 from thomaspeklak/feature/release-to-archlinux-user-repository (7cb482b)
+- Merge branch 'main' into feature/release-to-archlinux-user-repository (2666285)
+
 ## [v0.10.0] — 2026-03-29
 
 ### Features
