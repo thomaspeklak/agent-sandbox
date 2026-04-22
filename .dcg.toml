@@ -1,0 +1,4 @@
+[packs]
+custom_paths = [
+  ".dcg/packs/*.yaml",
+]

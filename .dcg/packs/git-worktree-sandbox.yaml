@@ -1,0 +1,20 @@
+schema_version: 1
+id: ags.git_worktree_sandbox
+name: AGS Sandbox Git Worktree Guard
+version: 1.0.0
+description: Blocks git worktree prune inside AGS sandbox sessions.
+keywords:
+  - git
+  - worktree
+
+destructive_patterns:
+  - name: worktree-prune
+    pattern: '(?:^|[^[:alnum:]_-])git\s+(?:\S+\s+)*worktree\s+prune(?:\s|$)'
+    severity: critical
+    description: Sandbox cannot see all host worktrees; prune may orphan valid host worktrees.
+    explanation: |
+      This sandbox does not have visibility into all host worktree paths.
+      `git worktree prune` treats unseen paths as stale and removes their metadata
+      from `.git/worktrees`.
+      That can orphan valid host worktrees and leave the host repository in a faulty state.
+      Run `git worktree prune` only on the host where all worktrees are visible.

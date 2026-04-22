@@ -449,6 +449,7 @@ Use `config/config.example.toml` for full schema examples.
 - Rotate/revoke credentials quickly if compromise is suspected.
 - The auth proxy requires explicit user approval (via desktop dialog) before opening any URL requested by the sandbox agent. URLs are never opened silently.
 - OAuth loopback callbacks are relayed through the host proxy — the container never listens on host network ports directly.
+- This repo ships a project-local dcg policy (`.dcg/packs/git-worktree-sandbox.yaml`) that blocks `git worktree prune` in sandbox sessions because not all host worktrees are necessarily visible from inside the container.
 
 ---
 
