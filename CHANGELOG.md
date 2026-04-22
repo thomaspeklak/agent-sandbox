@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.11.1] — 2026-04-22
+
+### Bug Fixes
+
+- fix(ci): fall back when sccache is unavailable (9cc182a)
+
 ## [v0.11.0] — 2026-04-22
 
 ### Features
