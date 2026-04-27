@@ -104,9 +104,11 @@ RUN set -eu && \
     awk -v asset="$bv_asset" '$2 == asset { print $1 "  " $2 }' /tmp/bv-checksums.txt > /tmp/bv.sha256 && \
     [ -s /tmp/bv.sha256 ] && \
     (cd /tmp && sha256sum -c bv.sha256) && \
-    tar -xzf "/tmp/${bv_asset}" -C /tmp bv && \
-    install -m 0755 /tmp/bv /usr/local/bin/bv && \
-    rm -f /tmp/br /tmp/bv /tmp/br-release.json /tmp/bv-release.json /tmp/bv-checksums.txt /tmp/bv.sha256 \
+    bv_member="$(tar -tzf "/tmp/${bv_asset}" | awk -F/ '$NF == "bv" { print; exit }')" && \
+    [ -n "$bv_member" ] && \
+    tar -xzf "/tmp/${bv_asset}" -C /tmp "$bv_member" && \
+    install -m 0755 "/tmp/${bv_member}" /usr/local/bin/bv && \
+    rm -rf /tmp/br /tmp/bv /tmp/bv_*_linux_* /tmp/br-release.json /tmp/bv-release.json /tmp/bv-checksums.txt /tmp/bv.sha256 \
           /tmp/br-*.tar.gz /tmp/br-*.tar.gz.sha256 /tmp/bv_*.tar.gz && \
     br --version && bv --version
 
