@@ -143,7 +143,7 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
         secrets,
         browser,
         update: UpdateConfig {
-            pi_spec: raw.update.pi_spec,
+            pi_spec: require_non_empty(&raw.update.pi_spec, "[update].pi_spec")?.to_owned(),
             minimum_release_age: raw.update.minimum_release_age,
         },
         auth_proxy: AuthProxyConfig {

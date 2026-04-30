@@ -436,6 +436,17 @@ minimum_release_age = 60
 }
 
 #[test]
+fn empty_update_pi_spec_rejected() {
+    let err = parse_err(
+        r#"
+[update]
+pi_spec = ""
+"#,
+    );
+    assert!(err.contains("[update].pi_spec"), "got: {err}");
+}
+
+#[test]
 fn invalid_toml_produces_toml_error() {
     let result = parse_toml_str("not valid [[ toml", Path::new("/test/config.toml"));
     let err = result.unwrap_err();

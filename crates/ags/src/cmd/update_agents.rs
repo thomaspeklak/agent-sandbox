@@ -3,6 +3,7 @@ use std::fs;
 use std::process::Command;
 
 use crate::config::ValidatedConfig;
+use crate::util::shell_quote;
 
 /// Options for the update-agents command.
 #[derive(Default)]
@@ -100,16 +101,24 @@ fn build_podman_run_args(
 }
 
 fn build_install_script(pi_spec: &str, release_age: u32) -> String {
+    let pi_spec = shell_quote(pi_spec);
+
     format!(
         r#"set -e && \
 mkdir -p "$HOME/.config/pnpm" && \
 printf 'minimum-release-age=%s\nignore-scripts=true\n' '{release_age}' > "$HOME/.config/pnpm/rc" && \
 (pnpm self-update || echo '[ags] pnpm self-update skipped (release too new?); using existing version' >&2) && \
-(PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH \
-  pnpm add -g --store-dir /usr/local/pnpm/.store \
-    {pi_spec} @openai/codex @google/gemini-cli opencode-ai || \
-  (echo '[ags] pnpm add -g failed (release too new?); using existing installs' >&2 && \
-   PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH command -v pi >/dev/null 2>&1)) && \
+export PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH && \
+install_pnpm_agent() {{ \
+  name="$1"; shift; \
+  echo "[ags] updating $name..." >&2; \
+  pnpm add -g --store-dir /usr/local/pnpm/.store "$@" || return; \
+  command -v "$name" >/dev/null 2>&1 || return; \
+}} && \
+install_pnpm_agent pi {pi_spec} && \
+install_pnpm_agent codex @openai/codex && \
+install_pnpm_agent gemini @google/gemini-cli && \
+install_pnpm_agent opencode opencode-ai && \
 CLAUDE_HOME=/opt/claude-home && \
 CLAUDE_BIN="$CLAUDE_HOME/.local/bin/claude" && \
 if [ -x "$CLAUDE_BIN" ]; then \
@@ -158,6 +167,28 @@ mod tests {
             !args.iter().any(|arg| arg.contains(":rw,z")),
             "update-agents should not relabel mounted cache dirs"
         );
+    }
+
+    #[test]
+    fn pnpm_agent_updates_do_not_fall_back_to_stale_pi() {
+        let script = build_install_script("@mariozechner/pi-coding-agent", 1440);
+
+        assert!(script.contains("install_pnpm_agent pi '@mariozechner/pi-coding-agent'"));
+        assert!(script.contains("install_pnpm_agent codex @openai/codex"));
+        assert!(script.contains("install_pnpm_agent gemini @google/gemini-cli"));
+        assert!(script.contains("install_pnpm_agent opencode opencode-ai"));
+        assert!(script.contains("pnpm add -g --store-dir /usr/local/pnpm/.store \"$@\" || return"));
+        assert!(
+            !script.contains("using existing installs"),
+            "pnpm update failures must not be masked by an existing stale pi binary"
+        );
+    }
+
+    #[test]
+    fn pi_spec_is_shell_quoted_in_install_script() {
+        let script = build_install_script("@scope/pkg; echo bad", 1440);
+
+        assert!(script.contains("install_pnpm_agent pi '@scope/pkg; echo bad'"));
     }
 
     #[test]
