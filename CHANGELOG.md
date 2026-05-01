@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.11.2] — 2026-05-01
+
+### Bug Fixes
+
+- Fix clippy release blockers (825f0d7)
+- Harden lockdown sandbox defaults (943e2b0)
+- Fix update-agents stale Pi fallback (71528c8)
+- fix(container): handle nested bv release archive (#6) (775b230)
+
 ## [v0.11.1] — 2026-04-22
 
 ### Bug Fixes
