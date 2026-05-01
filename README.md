@@ -383,7 +383,7 @@ ags completions --shell fish > ~/.config/fish/completions/ags.fish
 - `--psp-keep`
 - `--yolo`
 - `--root`
-- `--lockdown` (harden the run by disabling host bridges, secrets, SSH agent, generic mounts/tools, and direct agent-home mounts for that run)
+- `--lockdown` (harden the run by disabling host bridges, secrets, SSH agent, generic mounts/tools, direct agent-home mounts, host-loopback networking, and adding size-limited tmpfs mounts for that run)
 - `--defaults` / `-D` (prepend AGS-managed passthrough defaults for the selected harness)
 - `--config <path>`
 - `--add-dir <path>` / `-d <path>` (repeatable, run only; still allowed in lockdown)
@@ -444,6 +444,7 @@ Use `config/config.example.toml` for full schema examples.
 - Only mount what the agent needs.
 - Prefer read-only (`ro`) mounts unless write access is required.
 - For untrusted or foreign repos, prefer `--lockdown` to minimize host exposure for that run.
+- In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update` if Bash commands are unexpectedly blocked.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
 - npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
 - Rotate/revoke credentials quickly if compromise is suspected.

@@ -104,6 +104,7 @@ pub struct SecurityConfig {
     pub security_opts: Vec<String>,
     pub cap_drop: Option<String>,
     pub pids_limit: u32,
+    pub tmpfs: Vec<String>,
 }
 
 impl Default for SecurityConfig {
@@ -114,11 +115,23 @@ impl Default for SecurityConfig {
             security_opts: vec!["no-new-privileges".to_owned(), "label=disable".to_owned()],
             cap_drop: Some("all".to_owned()),
             pids_limit: 4096,
+            tmpfs: Vec::new(),
         }
     }
 }
 
 impl SecurityConfig {
+    /// Security config for hardened lockdown sessions.
+    pub fn lockdown() -> Self {
+        let mut config = Self::default();
+        config.tmpfs = vec![
+            "/tmp:rw,nosuid,nodev,size=1g".to_owned(),
+            "/var/tmp:rw,nosuid,nodev,noexec,size=256m".to_owned(),
+            "/run:rw,nosuid,nodev,noexec,size=64m".to_owned(),
+        ];
+        config
+    }
+
     /// Security config for root-capable sessions.
     ///
     /// Omits `keep-id` so UID 0 in the container maps to the host user
@@ -131,6 +144,7 @@ impl SecurityConfig {
             security_opts: vec!["label=disable".to_owned()],
             cap_drop: None,
             pids_limit: 4096,
+            tmpfs: Vec::new(),
         }
     }
 }

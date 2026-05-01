@@ -62,6 +62,25 @@ fn args_include_security_flags() {
 }
 
 #[test]
+fn args_include_tmpfs_mounts() {
+    let mut plan = minimal_plan();
+    plan.security.tmpfs = vec![
+        "/tmp:rw,nosuid,nodev,size=1g".to_owned(),
+        "/run:rw,nosuid,nodev,noexec,size=64m".to_owned(),
+    ];
+    let args = build_run_args(&plan, Path::new("/tmp/env"));
+
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "--tmpfs" && w[1] == "/tmp:rw,nosuid,nodev,size=1g")
+    );
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "--tmpfs" && w[1] == "/run:rw,nosuid,nodev,noexec,size=64m")
+    );
+}
+
+#[test]
 fn root_mode_omits_userns_and_cap_drop() {
     let mut plan = minimal_plan();
     plan.security = SecurityConfig::root();
@@ -240,6 +259,28 @@ fn write_env_file_restricted_permissions() {
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "env file should be mode 0600");
     }
+}
+
+#[test]
+fn write_env_file_rejects_env_injection() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let bad_name = write_env_file(&[("BAD-NAME".to_owned(), "value".to_owned())], dir.path())
+        .expect_err("invalid env names should be rejected");
+    assert_eq!(
+        bad_name.to_string(),
+        "failed to create env file: invalid environment variable name: \"BAD-NAME\""
+    );
+
+    let newline = write_env_file(
+        &[("TOKEN".to_owned(), "one\nINJECTED=1".to_owned())],
+        dir.path(),
+    )
+    .expect_err("newline values should be rejected");
+    assert!(
+        newline.to_string().contains("contains a newline"),
+        "{newline}"
+    );
 }
 
 #[test]

@@ -349,4 +349,90 @@ fn lockdown_plan_filters_mounts_and_env() {
             .write_roots_json
             .contains(&extra_dir.path().to_string_lossy().to_string())
     );
+    assert!(
+        plan.env
+            .inline
+            .iter()
+            .any(|(k, v)| k == "AGS_LOCKDOWN" && v == "1")
+    );
+    assert!(plan.security.tmpfs.iter().any(|v| v.starts_with("/tmp:")));
+    assert!(
+        plan.security
+            .tmpfs
+            .iter()
+            .any(|v| v.starts_with("/var/tmp:"))
+    );
+    assert!(plan.security.tmpfs.iter().any(|v| v.starts_with("/run:")));
+}
+
+#[test]
+fn lockdown_plan_ignores_host_bridge_inputs() {
+    let temp = tempfile::tempdir().unwrap();
+    setup_base_dirs(temp.path());
+    let config = parse_toml_str(
+        &config_toml(temp.path(), true),
+        Path::new("/test/config.toml"),
+    )
+    .unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let auth_proxy = tempfile::tempdir().unwrap();
+    let host_ui = tempfile::tempdir().unwrap();
+    let webview = tempfile::tempdir().unwrap();
+    let psp = tempfile::tempdir().unwrap();
+    let psp_socket = psp.path().join("podman.sock");
+    write_file(&psp_socket, "");
+    let secrets = HashMap::new();
+
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            browser_mode: true,
+            auth_proxy_runtime_dir: Some(auth_proxy.path()),
+            host_ui_runtime_dir: Some(host_ui.path()),
+            host_ui_session_id: Some("host-ui-session"),
+            webview_relay_runtime_dir: Some(webview.path()),
+            psp_socket: Some(&psp_socket),
+            psp_session_id: Some("psp-session"),
+            ssh_auth_sock: Some(&psp_socket),
+            ..lockdown_options(&secrets, &[], &[])
+        },
+    )
+    .unwrap();
+
+    assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=false");
+    assert!(!plan.entrypoint.contains("socat TCP-LISTEN"));
+    assert!(!plan.entrypoint.contains("webview-relay-shim"));
+
+    for denied in [
+        auth_proxy.path(),
+        host_ui.path(),
+        webview.path(),
+        psp.path(),
+        psp_socket.as_path(),
+    ] {
+        assert!(
+            !plan.mounts.iter().any(|m| m.host == denied),
+            "lockdown should not mount {}",
+            denied.display()
+        );
+    }
+
+    let inline_keys: Vec<&str> = plan.env.inline.iter().map(|(k, _)| k.as_str()).collect();
+    for key in [
+        "BROWSER",
+        "AGS_AUTH_PROXY_SOCK",
+        "AGS_HOST_UI_SOCK",
+        "AGS_HOST_UI_SESSION_ID",
+        "AGS_WEBVIEW_RELAY_SOCKET",
+        "DOCKER_HOST",
+        "TESTCONTAINERS_HOST_OVERRIDE",
+        "PSP_SESSION_ID",
+    ] {
+        assert!(
+            !inline_keys.contains(&key),
+            "{key} should be suppressed in lockdown"
+        );
+    }
 }

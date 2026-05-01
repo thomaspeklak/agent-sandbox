@@ -100,6 +100,14 @@ pub fn build_launch_plan(
         stop_when_done,
         root_mode,
     } = options;
+    let effective_browser_mode = browser_mode && !lockdown;
+    let auth_proxy_runtime_dir = auth_proxy_runtime_dir.filter(|_| !lockdown);
+    let host_ui_runtime_dir = host_ui_runtime_dir.filter(|_| !lockdown);
+    let webview_relay_runtime_dir = webview_relay_runtime_dir.filter(|_| !lockdown);
+    let psp_socket = psp_socket.filter(|_| !lockdown);
+    let psp_session_id = psp_session_id.filter(|_| !lockdown);
+    let ssh_auth_sock = ssh_auth_sock.filter(|_| !lockdown);
+
     let profile = agent::profile_for_with_guards(agent, config, guard_enabled, root_mode, lockdown);
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);
@@ -152,7 +160,7 @@ pub fn build_launch_plan(
     if !lockdown {
         expand_config_mounts(
             &config.mounts,
-            browser_mode,
+            effective_browser_mode,
             &mut mounts,
             &mut read_roots,
             &mut write_roots,
@@ -249,7 +257,7 @@ pub fn build_launch_plan(
     );
 
     // Network mode
-    let network_mode = if browser_mode {
+    let network_mode = if effective_browser_mode {
         "slirp4netns:allow_host_loopback=true"
     } else {
         "slirp4netns:allow_host_loopback=false"
@@ -261,7 +269,7 @@ pub fn build_launch_plan(
         boot_dirs: &config.sandbox.container_boot_dirs,
         profile: &profile,
         browser: &config.browser,
-        browser_mode,
+        browser_mode: effective_browser_mode,
         tmux_mode,
         webview_relay_enabled: webview_relay_runtime_dir.is_some(),
         show_host_services_hint: !lockdown,
@@ -275,7 +283,9 @@ pub fn build_launch_plan(
         workdir: workdir_mapping,
         mounts,
         env,
-        security: if root_mode {
+        security: if lockdown {
+            SecurityConfig::lockdown()
+        } else if root_mode {
             SecurityConfig::root()
         } else {
             SecurityConfig::default()

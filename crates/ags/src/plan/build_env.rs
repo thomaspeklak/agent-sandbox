@@ -22,7 +22,9 @@ fn build_env(
         ("RUSTUP_HOME".to_owned(), "/usr/local/rustup".to_owned()),
         ("AGS_SANDBOX".to_owned(), "1".to_owned()),
     ];
-    if !lockdown {
+    if lockdown {
+        inline.push(("AGS_LOCKDOWN".to_owned(), "1".to_owned()));
+    } else {
         inline.push(("GIT_CONFIG_GLOBAL".to_owned(), CONTAINER_GITCONFIG.to_owned()));
         inline.push(("SSH_AUTH_SOCK".to_owned(), CONTAINER_SSH_SOCK.to_owned()));
         inline.push((
@@ -57,7 +59,7 @@ fn build_env(
         inline.push(("XDG_RUNTIME_DIR".to_owned(), "/tmp".to_owned()));
     }
 
-    if auth_proxy_runtime_dir.is_some() {
+    if !lockdown && auth_proxy_runtime_dir.is_some() {
         inline.push((
             "AGS_AUTH_PROXY_SOCK".to_owned(),
             AuthProxyGuard::container_socket_path().to_owned(),
@@ -68,7 +70,7 @@ fn build_env(
         ));
     }
 
-    if host_ui_runtime_dir.is_some() {
+    if !lockdown && host_ui_runtime_dir.is_some() {
         inline.push((
             "AGS_HOST_UI_SOCK".to_owned(),
             HostUiGuard::container_socket_path().to_owned(),
@@ -88,7 +90,7 @@ fn build_env(
         }
     }
 
-    if webview_relay_runtime_dir.is_some() {
+    if !lockdown && webview_relay_runtime_dir.is_some() {
         inline.push((
             "AGS_WEBVIEW_RELAY_SOCKET".to_owned(),
             WebviewRelayGuard::container_socket_path().to_owned(),
@@ -103,7 +105,7 @@ fn build_env(
         ));
     }
 
-    if psp_socket.is_some() {
+    if !lockdown && psp_socket.is_some() {
         inline.push((
             "DOCKER_HOST".to_owned(),
             format!("unix://{}", crate::psp::PspGuard::container_socket_path()),

@@ -103,7 +103,7 @@ fn pi_guard_extension_uses_dcg_without_broad_ags_bash_regexes() {
     let content = fs::read_to_string(pi_guard_extension_path()).unwrap();
 
     assert!(
-        content.contains("maybeRunDcg(pi, command)"),
+        content.contains("maybeRunDcg(pi, command, lockdownModeEnabled())"),
         "Pi guard should still delegate Bash evaluation to dcg"
     );
     assert!(
@@ -236,6 +236,51 @@ fn guard_hook_fails_open_when_dcg_errors() {
     assert_eq!(exit_code, 0, "stdout: {stdout}\nstderr: {stderr}");
     assert!(stdout.trim().is_empty(), "stdout: {stdout}");
     assert!(stderr.trim().is_empty(), "stderr: {stderr}");
+}
+
+#[test]
+fn guard_hook_fails_closed_when_dcg_errors_in_lockdown() {
+    if !require_shell_tools() {
+        return;
+    }
+
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello"}}"#;
+    let (stdout, stderr, exit_code, _temp) =
+        run_guard_with_env(input, &[("AGS_LOCKDOWN", "1")], |root| {
+            let dcg_path = root.join("bin/dcg");
+            write_executable(
+                &dcg_path,
+                "#!/usr/bin/env bash\necho 'dcg internal error' >&2\nexit 2\n",
+            );
+        });
+
+    assert_eq!(exit_code, 2, "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.trim().is_empty(), "stdout: {stdout}");
+    assert!(
+        stderr.contains("destructive_command_guard failed in lockdown"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn guard_hook_fails_closed_when_dcg_missing_in_lockdown() {
+    if !require_shell_tools() {
+        return;
+    }
+
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello"}}"#;
+    let (stdout, stderr, exit_code, _temp) = run_guard_with_env(
+        input,
+        &[("AGS_LOCKDOWN", "1"), ("PATH", "/usr/bin:/bin")],
+        |_| {},
+    );
+
+    assert_eq!(exit_code, 2, "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.trim().is_empty(), "stdout: {stdout}");
+    assert!(
+        stderr.contains("destructive_command_guard is unavailable in lockdown"),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]

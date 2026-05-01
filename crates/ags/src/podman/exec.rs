@@ -85,6 +85,9 @@ pub fn write_env_file(
 
     let path = dir.join(format!("ags-env.{}", std::process::id()));
 
+    for (key, value) in entries {
+        validate_env_file_entry(key, value).map_err(PodmanError::EnvFileCreate)?;
+    }
     let content: String = entries.iter().map(|(k, v)| format!("{k}={v}\n")).collect();
 
     fs::write(&path, &content).map_err(PodmanError::EnvFileCreate)?;
@@ -96,6 +99,26 @@ pub fn write_env_file(
     }
 
     Ok(path)
+}
+
+fn validate_env_file_entry(key: &str, value: &str) -> io::Result<()> {
+    let valid_key = key
+        .bytes()
+        .enumerate()
+        .all(|(idx, b)| b == b'_' || b.is_ascii_alphabetic() || (idx > 0 && b.is_ascii_digit()));
+    if key.is_empty() || !valid_key || key.as_bytes()[0].is_ascii_digit() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid environment variable name: {key:?}"),
+        ));
+    }
+    if value.contains(['\n', '\r']) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("environment variable {key} contains a newline"),
+        ));
+    }
+    Ok(())
 }
 
 /// Execute a container from a launch plan.

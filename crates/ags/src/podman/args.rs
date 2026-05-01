@@ -26,6 +26,10 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
         args.push(format!("--cap-drop={cap_drop}"));
     }
     args.push(format!("--pids-limit={}", plan.security.pids_limit));
+    for tmpfs in &plan.security.tmpfs {
+        args.push("--tmpfs".into());
+        args.push(tmpfs.clone());
+    }
     args.push("--network".into());
     args.push(plan.network_mode.clone());
 

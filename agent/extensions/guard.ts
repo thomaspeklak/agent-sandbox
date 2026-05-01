@@ -53,6 +53,10 @@ function yoloModeEnabled(): boolean {
 	return process.env.AGS_GUARD_YOLO === "1";
 }
 
+function lockdownModeEnabled(): boolean {
+	return process.env.AGS_LOCKDOWN === "1";
+}
+
 function expandHome(inputPath: string, home: string): string {
 	if (inputPath === "~") return home;
 	if (inputPath.startsWith("~/")) return `${home}/${inputPath.slice(2)}`;
@@ -119,15 +123,17 @@ async function detectDcgAvailability(pi: ExtensionAPI): Promise<boolean> {
 	return dcgAvailability === "available";
 }
 
-async function maybeRunDcg(pi: ExtensionAPI, command: string): Promise<string | undefined> {
+async function maybeRunDcg(pi: ExtensionAPI, command: string, lockdown: boolean): Promise<string | undefined> {
 	if (!(await detectDcgAvailability(pi))) {
-		return undefined;
+		return lockdown ? "destructive_command_guard is unavailable in lockdown; blocking Bash command" : undefined;
 	}
 
 	try {
 		const result = await pi.exec("dcg", ["test", "--format", "json", command], { timeout: 2000 });
 		if (result.code === 0) return undefined;
-		if (result.code !== 1) return undefined; // fail-open for dcg runtime issues
+		if (result.code !== 1) {
+			return lockdown ? "destructive_command_guard failed in lockdown; blocking Bash command" : undefined;
+		}
 
 		try {
 			const parsed = JSON.parse(result.stdout || "{}");
@@ -136,7 +142,7 @@ async function maybeRunDcg(pi: ExtensionAPI, command: string): Promise<string | 
 			return "Blocked by destructive_command_guard";
 		}
 	} catch {
-		return undefined;
+		return lockdown ? "destructive_command_guard failed in lockdown; blocking Bash command" : undefined;
 	}
 }
 
@@ -145,11 +151,14 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 		const theme = ctx.ui.theme;
 		const yolo = yoloModeEnabled();
+		const lockdown = lockdownModeEnabled();
 		const status = yolo
 			? theme.fg("warning", "guard:yolo")
-			: SANDBOX_DETECTION.enabled
-				? dim(theme.fg("success", "sandbox:on"))
-				: theme.fg("error", "sandbox:off");
+			: lockdown
+				? theme.fg("warning", "lockdown:on")
+				: SANDBOX_DETECTION.enabled
+					? dim(theme.fg("success", "sandbox:on"))
+					: theme.fg("error", "sandbox:off");
 		ctx.ui.setWidget("ags-sandbox", [status], { placement: "aboveEditor" });
 		ctx.ui.notify(
 			`Sandbox ${SANDBOX_DETECTION.enabled ? "ON" : "OFF"} (${SANDBOX_DETECTION.source})`,
@@ -161,7 +170,9 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (!(await detectDcgAvailability(pi))) {
 			ctx.ui.notify(
-				"destructive_command_guard (dcg) is unavailable in this sandbox; Bash classification will fail open. Run `ags doctor` or `ags update`.",
+				lockdown
+					? "destructive_command_guard (dcg) is unavailable in lockdown; Bash commands will be blocked. Run `ags doctor` or `ags update`."
+					: "destructive_command_guard (dcg) is unavailable in this sandbox; Bash classification will fail open. Run `ags doctor` or `ags update`.",
 				"warning",
 			);
 		}
@@ -207,7 +218,7 @@ export default function (pi: ExtensionAPI) {
 			if (commandReferencesSensitivePath(command, home)) {
 				return { block: true, reason: "Command references sensitive host path" };
 			}
-			const dcgReason = await maybeRunDcg(pi, command);
+			const dcgReason = await maybeRunDcg(pi, command, lockdownModeEnabled());
 			if (dcgReason) {
 				return { block: true, reason: dcgReason };
 			}
@@ -222,12 +233,14 @@ export default function (pi: ExtensionAPI) {
 			const readRoots = parseRootsFromEnv("AGS_GUARD_READ_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi"];
 			const writeRoots = parseRootsFromEnv("AGS_GUARD_WRITE_ROOTS_JSON") ?? [ctx.cwd, "/tmp", "/home/dev/.pi"];
 			const yolo = yoloModeEnabled();
-			const dcgState = yolo ? "disabled by --yolo" : (await detectDcgAvailability(pi)) ? "available" : "missing";
+			const lockdown = lockdownModeEnabled();
+			const dcgState = yolo ? "disabled by --yolo" : (await detectDcgAvailability(pi)) ? "available" : lockdown ? "missing (Bash blocked)" : "missing";
 
 			ctx.ui.notify(
 				[
-					yolo ? "Sandbox guard disabled for this run (--yolo)." : "Sandbox guard active.",
+					yolo ? "Sandbox guard disabled for this run (--yolo)." : lockdown ? "Sandbox guard active in lockdown mode." : "Sandbox guard active.",
 					`Sandbox mode (startup check): ${SANDBOX_DETECTION.enabled ? "ON" : "OFF"}`,
+					`Lockdown mode: ${lockdown ? "ON" : "OFF"}`,
 					`Detection source: ${SANDBOX_DETECTION.source}`,
 					`dcg: ${dcgState}`,
 					`Workspace root: ${ctx.cwd}`,

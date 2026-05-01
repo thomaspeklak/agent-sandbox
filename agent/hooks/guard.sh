@@ -15,13 +15,15 @@
 #   0 — allow the tool call (or pass through dcg's allow/deny JSON)
 #   2 — block the tool call (reason printed to stderr)
 #
-# If dcg is unavailable or errors, this wrapper fails open and relies on the
-# sandbox plus the AGS-specific sensitive-path and secret-write protections above.
+# If dcg is unavailable or errors, this wrapper normally fails open and relies on
+# the sandbox plus the AGS-specific sensitive-path and secret-write protections
+# above. In AGS lockdown mode it fails closed for Bash commands.
 
 set -euo pipefail
 
 # Explicit AGS escape hatch for runs that intentionally disable guard layers.
 [[ "${AGS_GUARD_YOLO:-0}" == "1" ]] && exit 0
+LOCKDOWN="${AGS_LOCKDOWN:-0}"
 
 INPUT=$(cat)
 
@@ -131,10 +133,10 @@ case "$TOOL_NAME" in
 
     # Delegate shell command classification to dcg using the original hook
     # payload so Claude-compatible hook output can pass through unchanged.
-    # If dcg is missing or errors, fail open.
+    # If dcg is missing or errors, fail open normally and fail closed in lockdown.
     if command -v dcg &>/dev/null; then
-      dcg_stdout=$(mktemp) || exit 0
-      dcg_stderr=$(mktemp) || { rm -f "$dcg_stdout"; exit 0; }
+      dcg_stdout=$(mktemp) || { [[ "$LOCKDOWN" == "1" ]] && deny "dcg temporary file setup failed in lockdown"; exit 0; }
+      dcg_stderr=$(mktemp) || { rm -f "$dcg_stdout"; [[ "$LOCKDOWN" == "1" ]] && deny "dcg temporary file setup failed in lockdown"; exit 0; }
       trap 'rm -f "$dcg_stdout" "$dcg_stderr" 2>/dev/null' EXIT
 
       if printf '%s' "$INPUT" | dcg >"$dcg_stdout" 2>"$dcg_stderr"; then
@@ -142,6 +144,9 @@ case "$TOOL_NAME" in
         [[ -s "$dcg_stdout" ]] && cat "$dcg_stdout"
         exit 0
       fi
+      [[ "$LOCKDOWN" == "1" ]] && deny "destructive_command_guard failed in lockdown; blocking Bash command"
+    elif [[ "$LOCKDOWN" == "1" ]]; then
+      deny "destructive_command_guard is unavailable in lockdown; blocking Bash command"
     fi
     ;;
 
