@@ -123,13 +123,14 @@ impl Default for SecurityConfig {
 impl SecurityConfig {
     /// Security config for hardened lockdown sessions.
     pub fn lockdown() -> Self {
-        let mut config = Self::default();
-        config.tmpfs = vec![
-            "/tmp:rw,nosuid,nodev,size=1g".to_owned(),
-            "/var/tmp:rw,nosuid,nodev,noexec,size=256m".to_owned(),
-            "/run:rw,nosuid,nodev,noexec,size=64m".to_owned(),
-        ];
-        config
+        Self {
+            tmpfs: vec![
+                "/tmp:rw,nosuid,nodev,size=1g".to_owned(),
+                "/var/tmp:rw,nosuid,nodev,noexec,size=256m".to_owned(),
+                "/run:rw,nosuid,nodev,noexec,size=64m".to_owned(),
+            ],
+            ..Self::default()
+        }
     }
 
     /// Security config for root-capable sessions.

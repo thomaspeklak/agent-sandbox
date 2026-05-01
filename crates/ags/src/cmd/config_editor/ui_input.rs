@@ -217,12 +217,10 @@ impl App {
                 };
                 self.selected_field = 0;
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab if self.focus == Focus::MainPanel => {
                 // Shift-Tab always goes to sidebar
-                if self.focus == Focus::MainPanel {
-                    self.focus = Focus::Sidebar;
-                    self.selected_field = 0;
-                }
+                self.focus = Focus::Sidebar;
+                self.selected_field = 0;
             }
             KeyCode::Esc => {
                 self.focus = Focus::Sidebar;
@@ -248,30 +246,24 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char(' ') => {
-                if self.focus == Focus::MainPanel {
-                    if self.is_agents_section() {
-                        if let Some(idx) = self
-                            .filtered_agent_indices()
-                            .get(self.selected_field)
-                            .copied()
-                        {
-                            self.toggle_agent(idx);
-                        }
-                    } else {
-                        self.toggle_scalar_field();
+            KeyCode::Char(' ') if self.focus == Focus::MainPanel => {
+                if self.is_agents_section() {
+                    if let Some(idx) = self
+                        .filtered_agent_indices()
+                        .get(self.selected_field)
+                        .copied()
+                    {
+                        self.toggle_agent(idx);
                     }
+                } else {
+                    self.toggle_scalar_field();
                 }
             }
-            KeyCode::Char('a') => {
-                if self.focus == Focus::MainPanel {
-                    self.start_add_entry();
-                }
+            KeyCode::Char('a') if self.focus == Focus::MainPanel => {
+                self.start_add_entry();
             }
-            KeyCode::Char('d') => {
-                if self.focus == Focus::MainPanel {
-                    self.start_delete_entry();
-                }
+            KeyCode::Char('d') if self.focus == Focus::MainPanel => {
+                self.start_delete_entry();
             }
             _ => {}
         }
