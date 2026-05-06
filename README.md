@@ -29,6 +29,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - First-run setup for SSH auth + signing keys
 - Persistent per-agent host volumes by default (lockdown uses ephemeral staged homes)
 - Configurable mounts, tool binaries, and secret sources
+- Tools-only TUI package configurator for host-installed tools
 - Optional hardened `--lockdown` runs for inspecting untrusted/foreign repos with reduced host exposure
 - Optional browser sidecar support for browser-enabled workflows
 - Auth proxy for secure sandbox browser opens and OAuth loopback callbacks
@@ -56,6 +57,14 @@ Optional but useful:
 - `zenity` or `kdialog` (for auth proxy allow/deny prompts; auto-denied if neither is available)
 
 > Tip: run `ags doctor` after setup to verify your environment.
+
+Optional tool package configuration:
+
+```bash
+ags tools --packages config/tool-packages.example.json
+```
+
+This only configures tools that already exist on your host `PATH`; it does not install tools or create their host-side config.
 
 ---
 

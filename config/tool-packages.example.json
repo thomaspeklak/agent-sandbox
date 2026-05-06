@@ -1,0 +1,88 @@
+[
+  {
+    "package": "development",
+    "tools": [
+      {
+        "name": "gh",
+        "description": "GitHub CLI for issue, pull request, and repository workflows.",
+        "secrets": {
+          "GH_TOKEN": {
+            "description": "GitHub token supplied by the host environment.",
+            "from_env": "GH_TOKEN"
+          }
+        }
+      },
+      {
+        "name": "jq",
+        "description": "Command-line JSON processor.",
+        "secrets": {}
+      },
+      {
+        "name": "rg",
+        "description": "ripgrep source and text search.",
+        "secrets": {}
+      },
+      {
+        "name": "fd",
+        "description": "Fast filesystem search.",
+        "secrets": {}
+      },
+      {
+        "name": "cargo",
+        "description": "Rust package manager and build tool.",
+        "secrets": {
+          "CARGO_REGISTRY_TOKEN": {
+            "description": "Optional crates.io publishing token.",
+            "required": false,
+            "from_env": "CARGO_REGISTRY_TOKEN"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "package": "ops",
+    "tools": [
+      {
+        "name": "kubectl",
+        "description": "Kubernetes command-line client. Host cluster config must already be handled outside this tool-only scope.",
+        "secrets": {}
+      },
+      {
+        "name": "helm",
+        "description": "Kubernetes package manager.",
+        "secrets": {}
+      },
+      {
+        "name": "terraform",
+        "description": "Infrastructure provisioning CLI.",
+        "secrets": {
+          "TF_TOKEN_app_terraform_io": {
+            "description": "Optional Terraform Cloud token supplied by host environment.",
+            "required": false,
+            "from_env": "TF_TOKEN_app_terraform_io"
+          }
+        }
+      },
+      {
+        "name": "aws",
+        "description": "AWS CLI. Host credentials must be supplied through env or other configured secret sources.",
+        "secrets": {
+          "AWS_ACCESS_KEY_ID": {
+            "description": "AWS access key ID supplied by host environment.",
+            "from_env": "AWS_ACCESS_KEY_ID"
+          },
+          "AWS_SECRET_ACCESS_KEY": {
+            "description": "AWS secret access key supplied by host environment.",
+            "from_env": "AWS_SECRET_ACCESS_KEY"
+          },
+          "AWS_SESSION_TOKEN": {
+            "description": "Optional temporary AWS session token supplied by host environment.",
+            "required": false,
+            "from_env": "AWS_SESSION_TOKEN"
+          }
+        }
+      }
+    ]
+  }
+]

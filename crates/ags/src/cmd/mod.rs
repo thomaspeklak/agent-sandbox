@@ -5,5 +5,6 @@ pub mod doctor;
 mod doctor_util;
 pub mod install;
 pub mod setup;
+pub mod tool_configurator;
 pub mod update;
 pub mod update_agents;
