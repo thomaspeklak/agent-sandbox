@@ -1,6 +1,6 @@
 use ags::cli::{
     Agent, AliasMode, CliError, Command, CompletionsOptions, CreateAliasesOptions, InstallOptions,
-    Shell, SubCommand, help_text, parse_args,
+    Shell, SubCommand, ToolConfigOptions, help_text, parse_args,
 };
 
 fn args(items: &[&str]) -> Vec<String> {
@@ -173,9 +173,49 @@ fn parses_subcommands() {
 fn help_shows_update_image_but_not_deprecated_update_alias() {
     let help = help_text();
     assert!(help.contains("update-image"));
+    assert!(help.contains("tools"));
     assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
     assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));
     assert!(!help.contains("\n     \x20 update         Rebuild container image"));
+}
+
+#[test]
+fn parses_tools_with_positional_packages() {
+    let cmd = parse_args(args(&["ags", "tools", "config/tool-packages.example.json"])).unwrap();
+
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::Tools(ToolConfigOptions {
+            packages_path: "config/tool-packages.example.json".into(),
+            config_path: None,
+        }))
+    );
+}
+
+#[test]
+fn parses_tools_with_flags() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "tools",
+        "--packages",
+        "packages.json",
+        "--config=/tmp/ags.toml",
+    ]))
+    .unwrap();
+
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::Tools(ToolConfigOptions {
+            packages_path: "packages.json".into(),
+            config_path: Some("/tmp/ags.toml".into()),
+        }))
+    );
+}
+
+#[test]
+fn tools_requires_packages_path() {
+    let error = parse_args(args(&["ags", "tools"])).expect_err("expected parse error");
+    assert_eq!(error, CliError::MissingToolPackagesPath);
 }
 
 #[test]

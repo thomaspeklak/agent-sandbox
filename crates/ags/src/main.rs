@@ -64,6 +64,16 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
             let config_path = ags::config::default_config_path();
             return try_sub("config", ags::cmd::config_editor::run(&config_path));
         }
+        SubCommand::Tools(ref opts) => {
+            let config_path = opts
+                .config_path
+                .clone()
+                .unwrap_or_else(ags::config::default_config_path);
+            return try_sub(
+                "tools",
+                ags::cmd::tool_configurator::run(&config_path, &opts.packages_path),
+            );
+        }
         SubCommand::Setup
         | SubCommand::Doctor
         | SubCommand::UpdateImage
@@ -109,7 +119,8 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
         | SubCommand::Uninstall
         | SubCommand::CreateAliases(_)
         | SubCommand::Completions(_)
-        | SubCommand::Config => {
+        | SubCommand::Config
+        | SubCommand::Tools(_) => {
             unreachable!()
         }
     }

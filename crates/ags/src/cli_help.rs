@@ -19,6 +19,8 @@ Commands:
   create-aliases Create managed wrapper scripts and/or shell aliases
 \
   completions    Print shell completion script to stdout
+\
+  tools          Configure host tool packages from JSON
 
 \
 Run flags:
@@ -69,4 +71,10 @@ Create-aliases flags:
 Completions flags:
 \
   --shell <name> Shell to generate completion script for (fish|zsh|bash)
+\
+Tools flags:
+\
+  --packages <path> Tool package JSON file (or pass as first positional argument)
+\
+  --config <path>   Config file to update (default: ~/.config/ags/config.toml)
 ";

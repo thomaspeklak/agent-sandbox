@@ -1,7 +1,13 @@
+#[path = "cli_completions.rs"]
+mod completions;
 #[path = "cli_help.rs"]
 mod help;
+#[path = "cli_tools.rs"]
+mod tools;
 
+pub use completions::CompletionsOptions;
 use help::HELP_TEXT;
+pub use tools::ToolConfigOptions;
 
 use std::fmt;
 use std::path::PathBuf;
@@ -122,11 +128,6 @@ pub struct InstallOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompletionsOptions {
-    pub shell: Shell,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubCommand {
     Setup,
     Doctor,
@@ -138,6 +139,7 @@ pub enum SubCommand {
     CreateAliases(CreateAliasesOptions),
     Completions(CompletionsOptions),
     Config,
+    Tools(ToolConfigOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +148,8 @@ pub enum CliError {
     MissingAgent,
     MissingAgentValue,
     MissingConfigValue,
+    MissingToolPackagesValue,
+    MissingToolPackagesPath,
     MissingShellValue,
     MissingAliasModeValue,
     MissingMountPathValue,
@@ -165,6 +169,10 @@ impl fmt::Display for CliError {
             ),
             Self::MissingAgentValue => f.write_str("missing value for --agent"),
             Self::MissingConfigValue => f.write_str("missing value for --config"),
+            Self::MissingToolPackagesValue => f.write_str("missing value for --packages"),
+            Self::MissingToolPackagesPath => {
+                f.write_str("missing tool package JSON path (use `ags tools --packages <path>`)")
+            }
             Self::MissingShellValue => f.write_str("missing value for --shell"),
             Self::MissingAliasModeValue => f.write_str("missing value for --mode"),
             Self::MissingMountPathValue => f.write_str("missing value for --add-dir / -d"),
@@ -213,10 +221,14 @@ where
             return Ok(Command::Sub(SubCommand::CreateAliases(opts)));
         }
         "completions" => {
-            let opts = parse_completions_args(iter)?;
+            let opts = completions::parse_completions_args(iter)?;
             return Ok(Command::Sub(SubCommand::Completions(opts)));
         }
         "config" => return Ok(Command::Sub(SubCommand::Config)),
+        "tools" => {
+            let opts = tools::parse_tools_args(iter)?;
+            return Ok(Command::Sub(SubCommand::Tools(opts)));
+        }
         _ => {}
     }
 
@@ -461,38 +473,6 @@ where
     }
 
     Ok(CreateAliasesOptions { shell, mode, force })
-}
-
-fn parse_completions_args<I>(mut iter: I) -> Result<CompletionsOptions, CliError>
-where
-    I: Iterator<Item = String>,
-{
-    let mut shell = None;
-
-    while let Some(arg) = iter.next() {
-        if arg == "-h" || arg == "--help" {
-            return Err(CliError::HelpRequested);
-        }
-        if arg == "--shell" {
-            let value = iter.next().ok_or(CliError::MissingShellValue)?;
-            shell = Some(Shell::parse(&value)?);
-            continue;
-        }
-        if let Some(value) = arg.strip_prefix("--shell=") {
-            if value.is_empty() {
-                return Err(CliError::MissingShellValue);
-            }
-            shell = Some(Shell::parse(value)?);
-            continue;
-        }
-        if arg.starts_with('-') {
-            return Err(CliError::UnexpectedFlag(arg));
-        }
-        return Err(CliError::UnexpectedPositional(arg));
-    }
-
-    let shell = shell.ok_or(CliError::MissingShellValue)?;
-    Ok(CompletionsOptions { shell })
 }
 
 pub fn help_text() -> &'static str {
