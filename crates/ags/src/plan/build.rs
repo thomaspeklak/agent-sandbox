@@ -20,6 +20,9 @@ use crate::webview_relay::WebviewRelayGuard;
 const CONTAINER_HOME: &str = "/home/dev";
 const CONTAINER_GITCONFIG: &str = "/home/dev/.config/ags/gitconfig";
 const CONTAINER_SSH_SOCK: &str = "/ssh-agent";
+const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin";
+const PNPM_STORE_DIR: &str = "/usr/local/pnpm/.store";
+const PNPM_GLOBAL_BIN_DIR: &str = "/usr/local/pnpm";
 const HOST_SERVICES_HOST: &str = "host.containers.internal";
 const HOST_SERVICES_HINT: &str =
     "[ags] Host services: use host.containers.internal (localhost is container-local)";

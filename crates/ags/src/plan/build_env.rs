@@ -19,8 +19,14 @@ fn build_env(
     } = ctx;
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
+        ("PATH".to_owned(), CONTAINER_PATH.to_owned()),
         ("RUSTUP_HOME".to_owned(), "/usr/local/rustup".to_owned()),
         ("AGS_SANDBOX".to_owned(), "1".to_owned()),
+        ("NPM_CONFIG_STORE_DIR".to_owned(), PNPM_STORE_DIR.to_owned()),
+        (
+            "NPM_CONFIG_GLOBAL_BIN_DIR".to_owned(),
+            PNPM_GLOBAL_BIN_DIR.to_owned(),
+        ),
     ];
     if lockdown {
         inline.push(("AGS_LOCKDOWN".to_owned(), "1".to_owned()));

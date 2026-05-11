@@ -256,6 +256,25 @@ ags update-agents
 
 ---
 
+## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, or Pi loads from `.npm-global`
+
+Cause:
+
+- a pnpm self-update or install script wrote pnpm's own shims into the persistent agent runtime volume
+- old npm-global agent installs can shadow the pnpm-managed AGS agent shims
+- those shims can disagree with the store used by the globally installed agent CLIs
+
+### Fix
+
+```bash
+ags update
+ags update-agents
+```
+
+AGS keeps agent CLIs in `/usr/local/pnpm`, but runtime `pnpm` should come from the sandbox image (`/usr/bin/pnpm`) so stale persistent shims do not shadow it. `update-agents` also removes old npm-global `pi`/`codex`/`gemini`/`opencode` shims from the sandbox cache.
+
+---
+
 ## SSH problems (git auth/signing)
 
 Symptoms:

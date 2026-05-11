@@ -3,6 +3,11 @@ use crate::config::ValidatedConfig;
 
 const HOST_SERVICE_PROMPT_HINT: &str =
     "Sandbox: use host.containers.internal (localhost is container-local).";
+const PNPM_AGENT_BIN_DIR: &str = "/usr/local/pnpm";
+
+fn pnpm_agent_command(name: &str) -> String {
+    format!("{PNPM_AGENT_BIN_DIR}/{name}")
+}
 
 /// Agent-specific launch profile: command, args, env, and boot behavior.
 #[derive(Default)]
@@ -63,7 +68,7 @@ fn pi_profile(config: &ValidatedConfig, guard_enabled: bool) -> AgentProfile {
     command_args.push(HOST_SERVICE_PROMPT_HINT.to_owned());
 
     AgentProfile {
-        command: "pi".to_owned(),
+        command: pnpm_agent_command("pi"),
         command_args,
         browser_skill_flag: Some("--skill".to_owned()),
         browser_skill_path: config.browser.pi_skill_path.clone(),
@@ -105,7 +110,7 @@ fn claude_profile(guard_enabled: bool, lockdown: bool) -> AgentProfile {
 
 fn codex_profile() -> AgentProfile {
     AgentProfile {
-        command: "codex".to_owned(),
+        command: pnpm_agent_command("codex"),
         command_args: vec![
             "-c".to_owned(),
             format!(
@@ -132,7 +137,7 @@ fn opencode_boot_dirs() -> Vec<String> {
 
 fn gemini_profile() -> AgentProfile {
     AgentProfile {
-        command: "gemini".to_owned(),
+        command: pnpm_agent_command("gemini"),
         ..AgentProfile::default()
     }
 }
@@ -147,7 +152,7 @@ fn shell_profile() -> AgentProfile {
 
 fn opencode_profile() -> AgentProfile {
     AgentProfile {
-        command: "opencode".to_owned(),
+        command: pnpm_agent_command("opencode"),
         extra_boot_dirs: opencode_boot_dirs(),
         ..AgentProfile::default()
     }

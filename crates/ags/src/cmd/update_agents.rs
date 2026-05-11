@@ -36,9 +36,10 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
 
     let pnpm_home = cache_dir.join("pnpm-home");
     let claude_install = cache_dir.join("claude-install");
+    let npm_global = cache_dir.join("npm-global");
 
     // 1. Ensure host dirs exist
-    for dir in [&pnpm_home, &claude_install] {
+    for dir in [&pnpm_home, &claude_install, &npm_global] {
         fs::create_dir_all(dir)
             .map_err(|e| UpdateAgentsError::HostDirCreate(format!("{}: {e}", dir.display())))?;
     }
@@ -66,6 +67,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
             image,
             &pnpm_home,
             &claude_install,
+            &npm_global,
             &script,
         ))
         .status()
@@ -86,6 +88,7 @@ fn build_podman_run_args(
     image: &str,
     pnpm_home: &std::path::Path,
     claude_install: &std::path::Path,
+    npm_global: &std::path::Path,
     script: &str,
 ) -> Vec<String> {
     vec![
@@ -98,6 +101,8 @@ fn build_podman_run_args(
         format!("{}:/usr/local/pnpm:rw", pnpm_home.display()),
         "-v".to_owned(),
         format!("{}:/opt/claude-home:rw", claude_install.display()),
+        "-v".to_owned(),
+        format!("{}:/home/dev/.npm-global:rw", npm_global.display()),
         image.to_owned(),
         "bash".to_owned(),
         "-c".to_owned(),
@@ -124,22 +129,29 @@ fn build_install_script(pi_spec: &str, release_age: u32) -> String {
     let pi_spec = shell_quote(pi_spec);
     let legacy_pi_cleanup = legacy_pi_cleanup_script();
 
+    // Always use the pnpm packaged in the sandbox image. `pnpm self-update` writes
+    // pnpm's own shims into PNPM_HOME; those shims can shadow `/usr/bin/pnpm`
+    // and drift to a different store layout than the global agent installs.
     format!(
         r#"set -e && \
-mkdir -p "$HOME/.config/pnpm" && \
-printf 'minimum-release-age=%s\nignore-scripts=true\n' '{release_age}' > "$HOME/.config/pnpm/rc" && \
-(pnpm self-update || echo '[ags] pnpm self-update skipped (release too new?); using existing version' >&2) && \
-export PNPM_HOME=/usr/local/pnpm PATH=/usr/local/pnpm:$PATH && \
+mkdir -p "$HOME/.config/pnpm" /usr/local/pnpm && \
+printf 'minimum-release-age=%s\nignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' '{release_age}' > "$HOME/.config/pnpm/rc" && \
+export PNPM_HOME=/usr/local/pnpm NPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store NPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:$PATH && \
+rm -f /usr/local/pnpm/pnpm /usr/local/pnpm/pn /usr/local/pnpm/pnpx /usr/local/pnpm/pnx /usr/local/pnpm/bin/pnpm /usr/local/pnpm/bin/pn /usr/local/pnpm/bin/pnpx /usr/local/pnpm/bin/pnx && \
+rm -f /home/dev/.npm-global/bin/pi /home/dev/.npm-global/bin/codex /home/dev/.npm-global/bin/gemini /home/dev/.npm-global/bin/opencode && \
+rm -rf /home/dev/.npm-global/lib/node_modules/@mariozechner/pi-coding-agent /home/dev/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent /home/dev/.npm-global/lib/node_modules/@openai/codex /home/dev/.npm-global/lib/node_modules/@google/gemini-cli /home/dev/.npm-global/lib/node_modules/opencode-ai && \
+PNPM_BIN=/usr/bin/pnpm && \
+[ -x "$PNPM_BIN" ] && \
 install_pnpm_agent() {{ \
   name="$1"; shift; \
   echo "[ags] updating $name..." >&2; \
-  pnpm add -g --store-dir /usr/local/pnpm/.store "$@" || return; \
+  "$PNPM_BIN" add -g "$@" || return; \
   command -v "$name" >/dev/null 2>&1 || return; \
 }} && \
 remove_pnpm_agent() {{ \
   package="$1"; \
   echo "[ags] removing legacy $package..." >&2; \
-  pnpm remove -g --store-dir /usr/local/pnpm/.store "$package" >/dev/null 2>&1 || true; \
+  "$PNPM_BIN" remove -g "$package" >/dev/null 2>&1 || true; \
 }} && \
 {legacy_pi_cleanup}install_pnpm_agent pi {pi_spec} && \
 install_pnpm_agent codex @openai/codex && \
@@ -180,6 +192,7 @@ mod tests {
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/pnpm-home"),
             Path::new("/tmp/claude-home"),
+            Path::new("/tmp/npm-global"),
             "echo ok",
         );
 
@@ -191,6 +204,10 @@ mod tests {
         assert!(
             args.windows(2)
                 .any(|w| w[0] == "-v" && w[1] == "/tmp/claude-home:/opt/claude-home:rw")
+        );
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-v" && w[1] == "/tmp/npm-global:/home/dev/.npm-global:rw")
         );
         assert!(
             !args.iter().any(|arg| arg.contains(":rw,z")),
@@ -212,10 +229,36 @@ mod tests {
         assert!(script.contains("install_pnpm_agent codex @openai/codex"));
         assert!(script.contains("install_pnpm_agent gemini @google/gemini-cli"));
         assert!(script.contains("install_pnpm_agent opencode opencode-ai"));
-        assert!(script.contains("pnpm add -g --store-dir /usr/local/pnpm/.store \"$@\" || return"));
+        assert!(script.contains("\"$PNPM_BIN\" add -g \"$@\" || return"));
+        assert!(script.contains("PNPM_BIN=/usr/bin/pnpm"));
         assert!(
             !script.contains("using existing installs"),
             "pnpm update failures must not be masked by an existing stale pi binary"
+        );
+    }
+
+    #[test]
+    fn pnpm_update_uses_stable_store_and_ignores_stale_self_update_shims() {
+        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
+
+        assert!(script.contains("store-dir=/usr/local/pnpm/.store"));
+        assert!(script.contains("global-bin-dir=/usr/local/pnpm"));
+        assert!(script.contains("NPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store"));
+        assert!(script.contains("NPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm"));
+        assert!(script.contains("rm -f /usr/local/pnpm/pnpm"));
+        assert!(script.contains("/usr/local/pnpm/bin/pnpm"));
+        assert!(script.contains("rm -f /home/dev/.npm-global/bin/pi"));
+        assert!(
+            script.contains("/home/dev/.npm-global/lib/node_modules/@mariozechner/pi-coding-agent"),
+            "legacy npm-global Pi package should be cleaned up"
+        );
+        assert!(
+            script.contains("install_pnpm_agent pi '@earendil-works/pi-coding-agent'"),
+            "current Pi package should still be installed"
+        );
+        assert!(
+            !script.contains("pnpm self-update"),
+            "update-agents should not install pnpm into the agent runtime volume"
         );
     }
 

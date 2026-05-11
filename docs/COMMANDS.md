@@ -175,9 +175,12 @@ ags update-agents
 
 Settings come from `[update]` in config.
 
-Security hardening:
+Security hardening and runtime hygiene:
 
 - pnpm installs run with `ignore-scripts=true`.
+- pnpm uses a stable store under `/usr/local/pnpm/.store`.
+- `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.
+- `update-agents` removes old npm-global agent shims so they cannot shadow the pnpm-managed AGS agents.
 
 ---
 

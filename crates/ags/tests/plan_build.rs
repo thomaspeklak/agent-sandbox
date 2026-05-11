@@ -195,6 +195,23 @@ fn env_has_required_inline_vars() {
     );
     assert_eq!(find_plan_env(&plan, "AGS_SANDBOX"), Some("1".to_owned()));
     assert_eq!(
+        find_plan_env(&plan, "NPM_CONFIG_STORE_DIR"),
+        Some("/usr/local/pnpm/.store".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "NPM_CONFIG_GLOBAL_BIN_DIR"),
+        Some("/usr/local/pnpm".to_owned())
+    );
+    let path = find_plan_env(&plan, "PATH").expect("PATH should be set");
+    assert!(
+        path.find(":/usr/bin:").unwrap() < path.find(":/usr/local/pnpm:").unwrap(),
+        "system pnpm should take precedence over stale pnpm shims in PNPM_HOME"
+    );
+    assert!(
+        path.find(":/usr/local/pnpm:").unwrap() < path.find(":/home/dev/.npm-global/bin").unwrap(),
+        "pnpm-managed agent shims should take precedence over stale npm-global agent shims"
+    );
+    assert_eq!(
         find_plan_env(&plan, "AGS_HOST_SERVICES_HOST"),
         Some("host.containers.internal".to_owned())
     );
@@ -367,7 +384,7 @@ fn boot_dirs_in_entrypoint() {
         plan.entrypoint
     );
     assert!(plan.entrypoint.contains("/home/dev/.ssh"));
-    assert!(plan.entrypoint.contains("exec pi -e"));
+    assert!(plan.entrypoint.contains("exec /usr/local/pnpm/pi -e"));
     assert!(
         !plan.entrypoint.contains("--no-extensions"),
         "pi should not disable extensions: {}",
@@ -461,7 +478,7 @@ fn tmux_stop_when_done_uses_exec() {
     .unwrap();
 
     assert!(
-        plan.entrypoint.contains("exec pi -e"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/pi -e"),
         "stop_when_done should exec the agent: {}",
         plan.entrypoint
     );
@@ -854,7 +871,7 @@ fn codex_agent_entrypoint() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Codex);
 
     assert!(
-        plan.entrypoint.contains("exec codex"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/codex"),
         "codex entrypoint should exec codex: {}",
         plan.entrypoint
     );
@@ -881,7 +898,7 @@ fn gemini_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Gemini);
 
     assert!(
-        plan.entrypoint.contains("exec gemini"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/gemini"),
         "gemini entrypoint: {}",
         plan.entrypoint
     );
@@ -900,7 +917,7 @@ fn opencode_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Opencode);
 
     assert!(
-        plan.entrypoint.contains("exec opencode"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/opencode"),
         "opencode entrypoint: {}",
         plan.entrypoint
     );

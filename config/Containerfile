@@ -47,9 +47,10 @@ RUN dnf -y update && \
     dnf clean all
 
 RUN useradd -m -u 1000 -s /bin/bash dev && \
-    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /usr/local/pnpm /opt/claude-home /opt/ags && \
+    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/ags && \
     printf 'ignore-scripts=true\n' > /etc/npmrc && \
     printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
+    printf 'ignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' > /home/dev/.config/pnpm/rc && \
     chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home
 
 COPY --chown=dev:dev tmux.conf /home/dev/.tmux.conf
@@ -163,4 +164,4 @@ ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/home/dev/.cargo
 ENV RUSTC_WRAPPER=sccache
 ENV NPM_CONFIG_PREFIX=/home/dev/.npm-global
-ENV PATH=/home/dev/.npm-global/bin:/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/pnpm:/usr/local/bin:/usr/bin:/bin
+ENV PATH=/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin
