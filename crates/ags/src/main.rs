@@ -15,7 +15,9 @@ fn main() -> ExitCode {
         Ok(Command::Sub(sub)) => {
             let skip_notice = matches!(
                 sub,
-                SubCommand::Completions(_) | SubCommand::UpdateImage | SubCommand::UpdateDeprecated
+                SubCommand::Completions(_)
+                    | SubCommand::UpdateImage(_)
+                    | SubCommand::UpdateDeprecated(_)
             );
             let code = run_subcommand(sub);
             if skip_notice {
@@ -49,6 +51,23 @@ fn try_sub(label: &str, result: Result<(), impl std::fmt::Display>) -> ExitCode 
     }
 }
 
+fn run_update_image(config: &ValidatedConfig, opts: ags::cli::UpdateImageOptions) -> ExitCode {
+    if let Err(e) = ags::assets::ensure_image_build_context(&config.sandbox.containerfile) {
+        eprintln!("update-image error: could not prepare image build context: {e}");
+        return ExitCode::FAILURE;
+    }
+    try_sub(
+        "update-image",
+        ags::cmd::update::run(
+            config,
+            &ags::cmd::update::UpdateOptions {
+                keep_existing: opts.keep_existing,
+                ..Default::default()
+            },
+        ),
+    )
+}
+
 fn run_subcommand(sub: SubCommand) -> ExitCode {
     // Subcommands that don't need a config file.
     match sub {
@@ -66,8 +85,8 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
         }
         SubCommand::Setup
         | SubCommand::Doctor
-        | SubCommand::UpdateImage
-        | SubCommand::UpdateDeprecated
+        | SubCommand::UpdateImage(_)
+        | SubCommand::UpdateDeprecated(_)
         | SubCommand::UpdateAgents => {}
     }
 
@@ -85,18 +104,10 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 ExitCode::FAILURE
             }
         }
-        SubCommand::UpdateImage | SubCommand::UpdateDeprecated => {
-            if matches!(sub, SubCommand::UpdateDeprecated) {
-                eprintln!("warning: `ags update` is deprecated; use `ags update-image` instead.");
-            }
-            if let Err(e) = ags::assets::ensure_image_build_context(&config.sandbox.containerfile) {
-                eprintln!("update-image error: could not prepare image build context: {e}");
-                return ExitCode::FAILURE;
-            }
-            try_sub(
-                "update-image",
-                ags::cmd::update::run(&config, &ags::cmd::update::UpdateOptions::default()),
-            )
+        SubCommand::UpdateImage(opts) => run_update_image(&config, opts),
+        SubCommand::UpdateDeprecated(opts) => {
+            eprintln!("warning: `ags update` is deprecated; use `ags update-image` instead.");
+            run_update_image(&config, opts)
         }
         SubCommand::UpdateAgents => try_sub(
             "update-agents",

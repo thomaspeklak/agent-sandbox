@@ -96,7 +96,7 @@ passthrough_env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
 - `image` (string, required)
   - Podman image tag used for runs.
 - `containerfile` (path, required)
-  - Containerfile path used by `ags update` and auto-build fallback.
+  - Containerfile path used by `ags update-image` and auto-build fallback.
 - `cache_dir` (path, required)
   - Host cache dir for ssh-agent env/socket and tool caches.
 - `gitconfig_path` (path, required)

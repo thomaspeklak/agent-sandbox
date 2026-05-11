@@ -32,7 +32,7 @@ Symptoms:
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ```
 
 Then if needed:
@@ -50,11 +50,11 @@ If bundled sandbox commands are missing or stale.
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ags --agent shell -- -lc 'br --version && bv --version && dcg --version'
 ```
 
-`ags update` refreshes from upstream releases:
+`ags update-image` refreshes from upstream releases:
 
 - `beads_rust` (`br`): https://github.com/Dicklesworthstone/beads_rust/releases
 - `beads_viewer` (`bv`): https://github.com/Dicklesworthstone/beads_viewer/releases
@@ -73,7 +73,7 @@ Symptoms:
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ags doctor
 ags --agent shell -- -lc 'dcg --version'
 ```
@@ -94,7 +94,7 @@ If `psql` is not found in sandbox shell.
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ags --agent shell -- -lc 'psql --version'
 ```
 
@@ -114,7 +114,7 @@ Cause:
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ags --agent shell -- -lc 'tmux -V && test -f ~/.tmux.conf'
 ```
 
@@ -199,7 +199,7 @@ Cause:
 Rebuild the image so the sandbox includes `kitty-terminfo`:
 
 ```bash
-ags update
+ags update-image
 ags --agent shell -- -lc 'echo "$TERM" && tmux -V'
 ```
 
@@ -267,7 +267,7 @@ Cause:
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ags update-agents
 ```
 

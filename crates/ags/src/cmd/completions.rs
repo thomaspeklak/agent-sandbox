@@ -65,7 +65,11 @@ const BASH: &str = r#"_ags_completion() {
   fi
 
   case "${COMP_WORDS[1]}" in
-    setup|doctor|update-image|update-agents|uninstall)
+    update-image)
+      COMPREPLY=( $(compgen -W "--keep-existing -h --help" -- "$cur") )
+      return 0
+      ;;
+    setup|doctor|update-agents|uninstall)
       COMPREPLY=( $(compgen -W "-h --help" -- "$cur") )
       return 0
       ;;
@@ -176,7 +180,13 @@ if (( CURRENT == 2 )); then
 fi
 
 case "$words[2]" in
-  setup|doctor|update-image|update-agents|uninstall)
+  update-image)
+    _arguments \
+      '--keep-existing[Keep the previous image after a successful rebuild]' \
+      '(-h --help)'{-h,--help}'[Show help]'
+    return
+    ;;
+  setup|doctor|update-agents|uninstall)
     _values 'option' -h --help
     return
     ;;
@@ -253,6 +263,10 @@ complete -c ags -n "__fish_use_subcommand" -l config -r -d "Override config file
 complete -c ags -n "__fish_use_subcommand" -l add-dir -s d -r -d "Add an extra same-path directory mount for this run"
 complete -c ags -n "__fish_use_subcommand" -s h -l help -d "Show help"
 
+# update-image
+complete -c ags -n "__fish_seen_subcommand_from update-image" -l keep-existing -d "Keep the previous image after a successful rebuild"
+complete -c ags -n "__fish_seen_subcommand_from update-image" -s h -l help -d "Show help"
+
 # install
 complete -c ags -n "__fish_seen_subcommand_from install" -l link-self -d "Link ags to ~/.local/bin/ags"
 complete -c ags -n "__fish_seen_subcommand_from install" -l force -d "Replace existing target"
@@ -270,7 +284,7 @@ complete -c ags -n "__fish_seen_subcommand_from completions" -l shell -r -a "$__
 complete -c ags -n "__fish_seen_subcommand_from completions" -s h -l help -d "Show help"
 
 # simple subcommands
-for __ags_cmd in setup doctor update-image update-agents uninstall
+for __ags_cmd in setup doctor update-agents uninstall
   complete -c ags -n "__fish_seen_subcommand_from $__ags_cmd" -s h -l help -d "Show help"
 end
 "#;
@@ -293,6 +307,7 @@ mod tests {
         assert!(script.contains("create-aliases"));
         assert!(script.contains("completions"));
         assert!(script.contains("--add-agent-mounts"));
+        assert!(script.contains("--keep-existing"));
         assert!(script.contains("--add-dir"));
         assert!(script.contains("-d"));
     }
@@ -302,6 +317,9 @@ mod tests {
         let script = render(Shell::Zsh);
         assert!(script.starts_with("#compdef ags"));
         assert!(script.contains("update-agents"));
+        assert!(
+            script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
+        );
         assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
         assert!(
             script.contains(
@@ -315,6 +333,9 @@ mod tests {
         let script = render(Shell::Fish);
         assert!(script.contains("complete -c ags"));
         assert!(script.contains("-a completions"));
+        assert!(script.contains(
+            "-l keep-existing -d \"Keep the previous image after a successful rebuild\""
+        ));
         assert!(script.contains("-l psp -d \"Enable podman-socket-proxy mode (policy-gated)\""));
         assert!(script.contains(
             "-l psp-keep -d \"Keep PSP-managed containers on exit (debug; requires --psp)\""

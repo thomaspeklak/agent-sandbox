@@ -1,6 +1,6 @@
 use ags::cli::{
     Agent, AliasMode, CliError, Command, CompletionsOptions, CreateAliasesOptions, InstallOptions,
-    Shell, SubCommand, help_text, parse_args,
+    Shell, SubCommand, UpdateImageOptions, help_text, parse_args,
 };
 
 fn args(items: &[&str]) -> Vec<String> {
@@ -159,8 +159,14 @@ fn parses_subcommands() {
     for (arg, expected) in [
         ("setup", SubCommand::Setup),
         ("doctor", SubCommand::Doctor),
-        ("update-image", SubCommand::UpdateImage),
-        ("update", SubCommand::UpdateDeprecated),
+        (
+            "update-image",
+            SubCommand::UpdateImage(UpdateImageOptions::default()),
+        ),
+        (
+            "update",
+            SubCommand::UpdateDeprecated(UpdateImageOptions::default()),
+        ),
         ("update-agents", SubCommand::UpdateAgents),
         ("uninstall", SubCommand::Uninstall),
     ] {
@@ -170,9 +176,32 @@ fn parses_subcommands() {
 }
 
 #[test]
+fn parses_update_image_keep_existing_flag() {
+    let cmd = parse_args(args(&["ags", "update-image", "--keep-existing"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::UpdateImage(UpdateImageOptions {
+            keep_existing: true,
+        }))
+    );
+}
+
+#[test]
+fn parses_deprecated_update_keep_existing_flag() {
+    let cmd = parse_args(args(&["ags", "update", "--keep-existing"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::UpdateDeprecated(UpdateImageOptions {
+            keep_existing: true,
+        }))
+    );
+}
+
+#[test]
 fn help_shows_update_image_but_not_deprecated_update_alias() {
     let help = help_text();
     assert!(help.contains("update-image"));
+    assert!(help.contains("--keep-existing Keep the previous image after a successful rebuild"));
     assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
     assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));
     assert!(!help.contains("\n     \x20 update         Rebuild container image"));

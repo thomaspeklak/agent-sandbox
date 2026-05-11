@@ -131,7 +131,7 @@ ags doctor
 
 ---
 
-## `ags update`
+## `ags update-image`
 
 Rebuilds sandbox image from configured `Containerfile` and refreshes bundled sandbox tools:
 
@@ -140,12 +140,17 @@ Rebuilds sandbox image from configured `Containerfile` and refreshes bundled san
 - `dcg` from `destructive_command_guard` releases
 
 ```bash
-ags update
+ags update-image
+ags update-image --keep-existing
 ```
 
 - Resolves latest release tags from GitHub and passes them into the image build
 - Verifies release checksums during image build
+- Removes the previously tagged sandbox image after the new build succeeds
+- `--keep-existing` keeps the previous image for manual rollback/debugging
 - Does **not** update agent CLIs installed in persistent volumes
+
+`ags update` remains as a deprecated alias for `ags update-image`.
 
 Version check (inside sandbox):
 

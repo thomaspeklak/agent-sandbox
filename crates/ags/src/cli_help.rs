@@ -48,6 +48,11 @@ Run flags:
   --add-dir, -d <path> Add an extra host directory mount (repeatable)
 
 \
+Update-image flags:
+\
+  --keep-existing Keep the previous image after a successful rebuild
+
+\
 Install flags:
 \
   --link-self        Link current ags executable to ~/.local/bin/ags

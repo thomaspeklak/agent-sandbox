@@ -145,7 +145,7 @@ cargo run -p ags -- setup
 ### 4) Build/update sandbox image and agent installs
 
 ```bash
-cargo run -p ags -- update
+cargo run -p ags -- update-image
 cargo run -p ags -- update-agents
 ```
 
@@ -262,7 +262,7 @@ This is intentionally **not** the default.
 If `tmux` is reported as missing when using `--tmux`, rebuild the sandbox image first:
 
 ```bash
-ags update
+ags update-image
 ```
 
 Quick check:
@@ -316,7 +316,7 @@ Example:
 ags --agent shell -- -lc 'curl http://host.containers.internal:3000/health'
 ```
 
-Postgres example (`psql` is available in the sandbox image after `ags update`):
+Postgres example (`psql` is available in the sandbox image after `ags update-image`):
 
 ```bash
 ags --agent shell -- -lc 'PGPASSWORD="${PGPASSWORD:-postgres}" psql -h "${AGS_HOST_SERVICES_HOST}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" "${PGDATABASE:-postgres}"'
@@ -341,7 +341,7 @@ Start here:
 
 - `ags setup` — generate keys, ensure Pi assets in mounted host path, optional keyring secret setup
 - `ags doctor` — run environment + config health checks
-- `ags update` — rebuild container image from `Containerfile` and refresh bundled `br`/`bv`/`dcg` binaries
+- `ags update-image [--keep-existing]` — rebuild container image from `Containerfile`, refresh bundled `br`/`bv`/`dcg` binaries, and remove the previous image after a successful rebuild unless `--keep-existing` is set
 - `ags update-agents` — install/update agent CLIs in persistent volumes
 - `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
 - `ags uninstall` — currently reserved/no-op cleanup
@@ -444,7 +444,7 @@ Use `config/config.example.toml` for full schema examples.
 - Only mount what the agent needs.
 - Prefer read-only (`ro`) mounts unless write access is required.
 - For untrusted or foreign repos, prefer `--lockdown` to minimize host exposure for that run.
-- In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update` if Bash commands are unexpectedly blocked.
+- In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update-image` if Bash commands are unexpectedly blocked.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
 - npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
 - Rotate/revoke credentials quickly if compromise is suspected.
@@ -470,7 +470,7 @@ Use `config/config.example.toml` for full schema examples.
 ## Troubleshooting
 
 - Run `ags doctor` first.
-- If image is missing/stale: run `ags update`.
+- If image is missing/stale: run `ags update-image`.
 - If agent CLIs are missing/stale: run `ags update-agents`.
 - If browser mode fails:
   - ensure `[browser].enabled = true`

@@ -18,7 +18,7 @@ setup:
 	$(AGS) setup
 
 update:
-	$(AGS) update
+	$(AGS) update-image
 
 update-agents:
 	$(AGS) update-agents
