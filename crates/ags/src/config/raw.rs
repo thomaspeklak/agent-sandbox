@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use super::defaults::DEFAULT_PI_SPEC;
+
 /// Top-level config as deserialized directly from TOML.
 /// Field names and shapes match the config file schema exactly.
 #[derive(Debug, Deserialize)]
@@ -187,7 +189,7 @@ fn default_ro() -> String {
 }
 
 fn default_pi_spec() -> String {
-    "@mariozechner/pi-coding-agent".to_owned()
+    DEFAULT_PI_SPEC.to_owned()
 }
 
 fn default_release_age() -> u32 {

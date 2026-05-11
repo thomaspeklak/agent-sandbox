@@ -134,5 +134,5 @@ idle_timeout_ms = 0
 log_level = "info"
 
 [update]
-pi_spec = "@mariozechner/pi-coding-agent"
+pi_spec = "@earendil-works/pi-coding-agent"
 minimum_release_age = 1440

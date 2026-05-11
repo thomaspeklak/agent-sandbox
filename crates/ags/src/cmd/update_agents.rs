@@ -2,7 +2,7 @@ use std::fmt;
 use std::fs;
 use std::process::Command;
 
-use crate::config::ValidatedConfig;
+use crate::config::{DEFAULT_PI_SPEC, LEGACY_PI_SPECS, ValidatedConfig};
 use crate::util::shell_quote;
 
 /// Options for the update-agents command.
@@ -43,7 +43,8 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
             .map_err(|e| UpdateAgentsError::HostDirCreate(format!("{}: {e}", dir.display())))?;
     }
 
-    let pi_spec = opts.pi_spec.as_deref().unwrap_or(&config.update.pi_spec);
+    let configured_pi_spec = opts.pi_spec.as_deref().unwrap_or(&config.update.pi_spec);
+    let pi_spec = resolve_pi_spec(configured_pi_spec);
     let release_age = opts
         .minimum_release_age
         .unwrap_or(config.update.minimum_release_age);
@@ -53,7 +54,11 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
 
     // 3. Run throwaway container
     println!("Installing/updating agents in volumes...");
-    println!("  PI spec: {pi_spec}");
+    if pi_spec == configured_pi_spec {
+        println!("  PI spec: {pi_spec}");
+    } else {
+        println!("  PI spec: {pi_spec} (migrated from legacy {configured_pi_spec})");
+    }
     println!("  pnpm minimum-release-age: {release_age}");
 
     let status = Command::new("podman")
@@ -100,8 +105,24 @@ fn build_podman_run_args(
     ]
 }
 
+fn resolve_pi_spec(spec: &str) -> &str {
+    if LEGACY_PI_SPECS.contains(&spec) {
+        DEFAULT_PI_SPEC
+    } else {
+        spec
+    }
+}
+
+fn legacy_pi_cleanup_script() -> String {
+    LEGACY_PI_SPECS
+        .iter()
+        .map(|spec| format!("remove_pnpm_agent {} && \\\n", shell_quote(spec)))
+        .collect()
+}
+
 fn build_install_script(pi_spec: &str, release_age: u32) -> String {
     let pi_spec = shell_quote(pi_spec);
+    let legacy_pi_cleanup = legacy_pi_cleanup_script();
 
     format!(
         r#"set -e && \
@@ -115,7 +136,12 @@ install_pnpm_agent() {{ \
   pnpm add -g --store-dir /usr/local/pnpm/.store "$@" || return; \
   command -v "$name" >/dev/null 2>&1 || return; \
 }} && \
-install_pnpm_agent pi {pi_spec} && \
+remove_pnpm_agent() {{ \
+  package="$1"; \
+  echo "[ags] removing legacy $package..." >&2; \
+  pnpm remove -g --store-dir /usr/local/pnpm/.store "$package" >/dev/null 2>&1 || true; \
+}} && \
+{legacy_pi_cleanup}install_pnpm_agent pi {pi_spec} && \
 install_pnpm_agent codex @openai/codex && \
 install_pnpm_agent gemini @google/gemini-cli && \
 install_pnpm_agent opencode opencode-ai && \
@@ -135,6 +161,7 @@ rm -f /usr/local/pnpm/claude && \
 printf '%s\n' '#!/usr/bin/env bash' 'export PATH=/opt/claude-home/.local/bin:$PATH' 'exec /opt/claude-home/.local/bin/claude "$@"' > /usr/local/pnpm/claude && \
 chmod +x /usr/local/pnpm/claude"#,
         release_age = release_age,
+        legacy_pi_cleanup = legacy_pi_cleanup,
         pi_spec = pi_spec,
     )
 }
@@ -143,7 +170,9 @@ chmod +x /usr/local/pnpm/claude"#,
 mod tests {
     use std::path::Path;
 
-    use super::{build_install_script, build_podman_run_args};
+    use crate::config::{DEFAULT_PI_SPEC, LEGACY_PI_SPECS};
+
+    use super::{build_install_script, build_podman_run_args, resolve_pi_spec};
 
     #[test]
     fn podman_run_args_disable_selinux_relabeling() {
@@ -171,9 +200,15 @@ mod tests {
 
     #[test]
     fn pnpm_agent_updates_do_not_fall_back_to_stale_pi() {
-        let script = build_install_script("@mariozechner/pi-coding-agent", 1440);
+        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
 
-        assert!(script.contains("install_pnpm_agent pi '@mariozechner/pi-coding-agent'"));
+        let cleanup_pos = script
+            .find("remove_pnpm_agent '@mariozechner/pi-coding-agent'")
+            .expect("legacy Pi package should be removed before install");
+        let install_pos = script
+            .find("install_pnpm_agent pi '@earendil-works/pi-coding-agent'")
+            .expect("current Pi package should be installed");
+        assert!(cleanup_pos < install_pos);
         assert!(script.contains("install_pnpm_agent codex @openai/codex"));
         assert!(script.contains("install_pnpm_agent gemini @google/gemini-cli"));
         assert!(script.contains("install_pnpm_agent opencode opencode-ai"));
@@ -185,6 +220,12 @@ mod tests {
     }
 
     #[test]
+    fn legacy_pi_spec_resolves_to_current_default() {
+        assert_eq!(resolve_pi_spec(LEGACY_PI_SPECS[0]), DEFAULT_PI_SPEC);
+        assert_eq!(resolve_pi_spec("@custom/pi"), "@custom/pi");
+    }
+
+    #[test]
     fn pi_spec_is_shell_quoted_in_install_script() {
         let script = build_install_script("@scope/pkg; echo bad", 1440);
 
@@ -193,7 +234,7 @@ mod tests {
 
     #[test]
     fn claude_update_still_uses_persistent_install_home() {
-        let script = build_install_script("@mariozechner/pi-coding-agent", 1440);
+        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
 
         assert!(
             script.contains(
@@ -205,7 +246,7 @@ mod tests {
 
     #[test]
     fn claude_wrapper_does_not_override_runtime_home() {
-        let script = build_install_script("@mariozechner/pi-coding-agent", 1440);
+        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
 
         assert!(
             script.contains("exec /opt/claude-home/.local/bin/claude \"$@\""),

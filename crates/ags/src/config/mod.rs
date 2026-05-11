@@ -4,7 +4,9 @@ mod parse;
 mod raw;
 mod types;
 
-pub use defaults::{DEFAULT_CONFIG, create_default_config, default_config_path};
+pub use defaults::{
+    DEFAULT_CONFIG, DEFAULT_PI_SPEC, LEGACY_PI_SPECS, create_default_config, default_config_path,
+};
 pub use error::ConfigError;
 pub use parse::{parse_and_validate, parse_and_validate_with_overlay, parse_toml_str};
 

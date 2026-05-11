@@ -385,14 +385,15 @@ Controls `ags update-agents` behavior.
 
 ```toml
 [update]
-pi_spec = "@mariozechner/pi-coding-agent"
+pi_spec = "@earendil-works/pi-coding-agent"
 minimum_release_age = 1440
 ```
 
 ### Fields
 
-- `pi_spec` (string, default `@mariozechner/pi-coding-agent`)
+- `pi_spec` (string, default `@earendil-works/pi-coding-agent`)
   - Package spec used for Pi install/update.
+  - Older configs with the exact legacy value `@mariozechner/pi-coding-agent` should be updated; `ags update-agents` treats that value as the current default during migration.
 - `minimum_release_age` (u32, default `1440`)
   - Written to pnpm config (`minimum-release-age`) inside update container.
 

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use ags::config::{
-    MountKind, MountMode, MountWhen, SecretSource, ValidatedConfig,
+    DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource, ValidatedConfig,
     parse_and_validate_with_overlay, parse_toml_str,
 };
 use tempfile::tempdir;
@@ -38,7 +38,7 @@ fn minimal_config_parses() {
     assert!(cfg.tools.is_empty());
     assert!(cfg.secrets.is_empty());
     assert!(!cfg.browser.enabled);
-    assert_eq!(cfg.update.pi_spec, "@mariozechner/pi-coding-agent");
+    assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
 }
 
@@ -418,7 +418,7 @@ profile_dir = "/tmp/chrome"
 #[test]
 fn update_defaults() {
     let cfg = parse_minimal("");
-    assert_eq!(cfg.update.pi_spec, "@mariozechner/pi-coding-agent");
+    assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
 }
 

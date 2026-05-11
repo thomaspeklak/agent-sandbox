@@ -1,3 +1,5 @@
+use crate::config::DEFAULT_PI_SPEC;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScalarFieldKind {
     Text,
@@ -175,7 +177,7 @@ const UPDATE_FIELDS: &[ScalarFieldSchema] = &[
         key: "pi_spec",
         kind: ScalarFieldKind::Text,
         required: false,
-        default_input: "@mariozechner/pi-coding-agent",
+        default_input: DEFAULT_PI_SPEC,
     },
     ScalarFieldSchema {
         key: "minimum_release_age",

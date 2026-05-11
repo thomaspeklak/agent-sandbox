@@ -167,7 +167,7 @@ ags update-agents
 
 ### What it updates
 
-- Pi package (`pi_spec`)
+- Pi package (`pi_spec`), removing the legacy Pi package first to avoid stale `pi` binaries
 - Codex (`@openai/codex`)
 - Gemini (`@google/gemini-cli`)
 - Opencode (`opencode-ai`)

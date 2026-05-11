@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
+use super::defaults::DEFAULT_PI_SPEC;
+
 /// Validated, path-resolved configuration ready for use by the launch pipeline.
 #[derive(Debug, Clone)]
 pub struct ValidatedConfig {
@@ -178,7 +180,7 @@ pub struct PspConfig {
 impl Default for UpdateConfig {
     fn default() -> Self {
         Self {
-            pi_spec: "@mariozechner/pi-coding-agent".to_owned(),
+            pi_spec: DEFAULT_PI_SPEC.to_owned(),
             minimum_release_age: 1440,
         }
     }
