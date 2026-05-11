@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.11.4] — 2026-05-11
+
+### Chores / Other
+
+- chore(security): update vulnerable Rust deps (dbbea57)
+
 ## [v0.11.3] — 2026-05-11
 
 ### Chores / Other
