@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.11.3] — 2026-05-11
+
+### Chores / Other
+
+- Update Pi package scope (d17c49e)
+
 ## [v0.11.2] — 2026-05-01
 
 ### Bug Fixes
