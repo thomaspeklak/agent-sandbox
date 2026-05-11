@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.12.0] — 2026-05-11
+
+### Features
+
+- feat: clean old image after update-image (4aef1db)
+
+### Bug Fixes
+
+- fix sandbox agent pnpm resolution (b016056)
+
+### Chores / Other
+
+- Reduce sandbox image build artifacts (0da56c6)
+
 ## [v0.11.4] — 2026-05-11
 
 ### Chores / Other
