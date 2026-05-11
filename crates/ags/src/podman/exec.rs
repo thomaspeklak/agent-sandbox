@@ -58,7 +58,7 @@ pub fn ensure_image(image: &str, containerfile: &Path) -> Result<(), PodmanError
     let context_dir = containerfile.parent().unwrap_or_else(|| Path::new("."));
 
     let status = Command::new("podman")
-        .args(["build", "-t", image, "-f"])
+        .args(["build", "--pull", "-t", image, "-f"])
         .arg(containerfile)
         .arg(context_dir)
         .status()

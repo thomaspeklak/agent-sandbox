@@ -1,8 +1,28 @@
+FROM registry.fedoraproject.org/fedora:43 AS glimpse-builder
+
+RUN dnf -y install \
+      ca-certificates \
+      curl \
+      gcc \
+      pkgconf-pkg-config && \
+    dnf clean all
+
+ARG RUST_TOOLCHAIN=stable
+RUN mkdir -p /tmp/rustup /tmp/cargo && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+      env CARGO_HOME=/tmp/cargo RUSTUP_HOME=/tmp/rustup \
+      sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --no-modify-path
+
+COPY glimpse-shim/ /src/glimpse-shim/
+RUN cd /src/glimpse-shim && \
+    CARGO_HOME=/tmp/cargo RUSTUP_HOME=/tmp/rustup \
+    /tmp/cargo/bin/cargo build --release && \
+    install -D -m 0755 target/release/glimpse-shim /out/glimpse-shim
+
 FROM registry.fedoraproject.org/fedora:43
 
 # Stable base layer: core tools used in nearly every sandbox run.
-RUN dnf -y update && \
-    dnf -y install \
+RUN dnf -y install \
       bash \
       ca-certificates \
       coreutils \
@@ -138,13 +158,8 @@ RUN set -eu && \
     rm -f /tmp/dcg /tmp/dcg-release.json /tmp/dcg-*.tar.xz /tmp/dcg-*.tar.xz.sha256 && \
     dcg --version
 
-# Glimpse sandbox shim
-COPY glimpse-shim/ /tmp/glimpse-shim/
-RUN cd /tmp/glimpse-shim && \
-    CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup \
-    /usr/local/cargo/bin/cargo build --release && \
-    install -m 0755 target/release/glimpse-shim /opt/ags/glimpse-shim && \
-    rm -rf /tmp/glimpse-shim
+# Glimpse sandbox shim: build artifacts stay in the builder stage; the final image keeps only the binary.
+COPY --from=glimpse-builder /out/glimpse-shim /opt/ags/glimpse-shim
 
 # Extended tooling layer: project-specific and heavier dev dependencies.
 # Keep this near the end so package list tweaks rebuild quickly.
