@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.13.0] — 2026-05-16
+
+### Features
+
+- feat: add clipboard bridge (78ad203)
+
+### Bug Fixes
+
+- fix: route pi image paste through clipboard shim (802d1ea)
+
 ## [v0.12.0] — 2026-05-11
 
 ### Features
