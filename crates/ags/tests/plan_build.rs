@@ -253,6 +253,10 @@ fn clipboard_bridge_mounts_socket_and_shims_when_enabled() {
         find_plan_env(&plan, "AGS_CLIPBOARD_MODE"),
         Some("readwrite".to_owned())
     );
+    assert_eq!(
+        find_plan_env(&plan, "XDG_SESSION_TYPE"),
+        Some("wayland".to_owned())
+    );
 }
 
 #[test]

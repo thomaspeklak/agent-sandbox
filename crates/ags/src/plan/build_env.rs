@@ -85,6 +85,10 @@ fn build_env(
         ));
         inline.push(("AGS_CLIPBOARD_PROTOCOL".to_owned(), "1".to_owned()));
         inline.push(("AGS_CLIPBOARD_MODE".to_owned(), clipboard_mode.to_string()));
+        // Pi's Ctrl-V image paste chooses its wl-paste path when it detects a
+        // Wayland session. This env flag enables that code path without
+        // exposing a real compositor socket.
+        inline.push(("XDG_SESSION_TYPE".to_owned(), "wayland".to_owned()));
         inline.push((
             "AGS_CLIPBOARD_HINT".to_owned(),
             "[ags] Clipboard available through mounted socket; no compositor passthrough".to_owned(),

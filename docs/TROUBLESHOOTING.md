@@ -187,6 +187,7 @@ Expected:
 
 - `AGS_CLIPBOARD_SOCK=/run/ags-clipboard/clipboard.sock`
 - `AGS_CLIPBOARD_MODE=read` or `readwrite`
+- `XDG_SESSION_TYPE=wayland`
 - `wl-paste`/`wl-copy` resolve to `/home/dev/.local/bin/...`
 
 If the bridge is intentionally disabled, enable it in config:
