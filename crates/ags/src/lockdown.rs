@@ -101,6 +101,10 @@ pub fn validate(opts: &RunOptions) -> Result<(), LockdownError> {
         (opts.psp, "--psp"),
         (opts.psp_keep, "--psp-keep"),
         (opts.root, "--root"),
+        (
+            opts.wayland_compositor_passthrough,
+            "--wayland-compositor-passthrough",
+        ),
     ] {
         if enabled {
             return Err(LockdownError::IncompatibleFlag(flag));

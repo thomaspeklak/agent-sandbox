@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use crate::config::{MountWhen, SecretSource, ValidatedConfig};
+use crate::config::{ClipboardMode, MountWhen, SecretSource, ValidatedConfig};
 
 use super::doctor_util::{
     Checker, check_optional_cmd, check_required_cmd, file_non_empty, git_config_get, is_pid_alive,
@@ -52,6 +52,7 @@ fn run_checks(ck: &mut Checker, config: &ValidatedConfig) {
     check_sessions(ck, config);
     check_browser(ck, config);
     check_host_ui(ck, config);
+    check_clipboard(ck, config);
 }
 
 fn check_tooling(ck: &mut Checker) {
@@ -408,6 +409,22 @@ fn check_browser(ck: &mut Checker, config: &ValidatedConfig) {
         ));
     } else {
         ck.warn("browser pi skill path is empty; browser tooling skill won't auto-load");
+    }
+}
+
+fn check_clipboard(ck: &mut Checker, config: &ValidatedConfig) {
+    ck.section("Clipboard bridge");
+    let mode = config.clipboard.effective_mode();
+    if mode == ClipboardMode::Off {
+        ck.warn("clipboard bridge disabled in config");
+        return;
+    }
+    ck.ok(&format!("clipboard bridge mode: {mode}"));
+    if mode.can_read() {
+        check_optional_cmd(ck, "wl-paste");
+    }
+    if mode.can_write() {
+        check_optional_cmd(ck, "wl-copy");
     }
 }
 

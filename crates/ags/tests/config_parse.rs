@@ -38,6 +38,9 @@ fn minimal_config_parses() {
     assert!(cfg.tools.is_empty());
     assert!(cfg.secrets.is_empty());
     assert!(!cfg.browser.enabled);
+    assert_eq!(cfg.clipboard.mode.to_string(), "readwrite");
+    assert!(cfg.clipboard.enabled);
+    assert!(!cfg.desktop_passthrough.wayland);
     assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
 }
@@ -162,6 +165,35 @@ when = "never"
 "#,
     );
     assert!(err.contains("must be 'always' or 'browser'"), "got: {err}");
+}
+
+#[test]
+fn clipboard_config_parses() {
+    let cfg = parse_minimal(
+        r#"
+[clipboard]
+enabled = true
+mode = "read"
+max_bytes = 1024
+
+[desktop_passthrough]
+wayland = true
+"#,
+    );
+    assert_eq!(cfg.clipboard.mode.to_string(), "read");
+    assert_eq!(cfg.clipboard.max_bytes, 1024);
+    assert!(cfg.desktop_passthrough.wayland);
+}
+
+#[test]
+fn invalid_clipboard_mode_rejected() {
+    let err = parse_err(
+        r#"
+[clipboard]
+mode = "write"
+"#,
+    );
+    assert!(err.contains("[clipboard].mode must be"), "got: {err}");
 }
 
 #[test]

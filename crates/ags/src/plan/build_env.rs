@@ -9,6 +9,8 @@ fn build_env(
         write_roots,
         resolved_secrets,
         auth_proxy_runtime_dir,
+        clipboard_runtime_dir,
+        clipboard_mode,
         host_ui_runtime_dir,
         host_ui_session_id,
         webview_relay_runtime_dir,
@@ -73,6 +75,19 @@ fn build_env(
         inline.push((
             "BROWSER".to_owned(),
             format!("{CONTAINER_HOME}/.local/bin/auth-proxy-shim"),
+        ));
+    }
+
+    if !lockdown && clipboard_runtime_dir.is_some() {
+        inline.push((
+            "AGS_CLIPBOARD_SOCK".to_owned(),
+            ClipboardGuard::container_socket_path().to_owned(),
+        ));
+        inline.push(("AGS_CLIPBOARD_PROTOCOL".to_owned(), "1".to_owned()));
+        inline.push(("AGS_CLIPBOARD_MODE".to_owned(), clipboard_mode.to_string()));
+        inline.push((
+            "AGS_CLIPBOARD_HINT".to_owned(),
+            "[ags] Clipboard available through mounted socket; no compositor passthrough".to_owned(),
         ));
     }
 

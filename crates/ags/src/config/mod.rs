@@ -14,7 +14,7 @@ pub use parse::{parse_and_validate, parse_and_validate_with_overlay, parse_toml_
 pub const ADDITIVE_ARRAY_KEYS: &[&str] = &["mount", "agent_mount", "tool", "secret"];
 pub use raw::RawConfig;
 pub use types::{
-    AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,
-    SecretSource, UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret,
-    ValidatedTool,
+    AuthProxyConfig, BrowserConfig, ClipboardConfig, ClipboardMode, DesktopPassthroughConfig,
+    HostUiConfig, MountKind, MountMode, MountWhen, PspConfig, SecretSource, UpdateConfig,
+    ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret, ValidatedTool,
 };

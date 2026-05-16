@@ -16,6 +16,8 @@ pub struct ValidatedConfig {
     pub update: UpdateConfig,
     pub auth_proxy: AuthProxyConfig,
     pub host_ui: HostUiConfig,
+    pub clipboard: ClipboardConfig,
+    pub desktop_passthrough: DesktopPassthroughConfig,
     pub psp: PspConfig,
 }
 
@@ -146,6 +148,65 @@ pub struct UpdateConfig {
 #[derive(Debug, Clone, Default)]
 pub struct AuthProxyConfig {
     pub auto_allow_domains: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardMode {
+    Off,
+    Read,
+    ReadWrite,
+}
+
+impl ClipboardMode {
+    pub fn can_read(self) -> bool {
+        matches!(self, Self::Read | Self::ReadWrite)
+    }
+
+    pub fn can_write(self) -> bool {
+        matches!(self, Self::ReadWrite)
+    }
+}
+
+impl fmt::Display for ClipboardMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Off => f.write_str("off"),
+            Self::Read => f.write_str("read"),
+            Self::ReadWrite => f.write_str("readwrite"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ClipboardConfig {
+    pub enabled: bool,
+    pub mode: ClipboardMode,
+    pub max_bytes: usize,
+}
+
+impl ClipboardConfig {
+    pub fn effective_mode(&self) -> ClipboardMode {
+        if self.enabled {
+            self.mode
+        } else {
+            ClipboardMode::Off
+        }
+    }
+}
+
+impl Default for ClipboardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            mode: ClipboardMode::ReadWrite,
+            max_bytes: 32 * 1024 * 1024,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DesktopPassthroughConfig {
+    pub wayland: bool,
 }
 
 #[derive(Debug, Clone)]

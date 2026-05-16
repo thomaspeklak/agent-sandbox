@@ -256,10 +256,6 @@ struct WaylandInfo {
 }
 
 fn detect_wayland() -> Result<Option<WaylandInfo>, PlanError> {
-    if !clipboard_enabled()? {
-        return Ok(None);
-    }
-
     let runtime_dir = match std::env::var("XDG_RUNTIME_DIR") {
         Ok(d) if !d.is_empty() => d,
         _ => return Ok(None),
@@ -291,18 +287,6 @@ fn detect_wayland() -> Result<Option<WaylandInfo>, PlanError> {
         socket_path,
         display_name: display,
     }))
-}
-
-fn clipboard_enabled() -> Result<bool, PlanError> {
-    let raw = std::env::var("AGS_ENABLE_CLIPBOARD").unwrap_or_else(|_| "1".to_owned());
-    match raw.to_lowercase().as_str() {
-        "1" | "true" | "yes" | "on" => Ok(true),
-        "0" | "false" | "no" | "off" => Ok(false),
-        _ => Err(PlanError::InvalidEnv {
-            var: "AGS_ENABLE_CLIPBOARD".to_owned(),
-            value: raw,
-        }),
-    }
 }
 
 // --- environment assembly ---

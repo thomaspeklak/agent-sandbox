@@ -26,6 +26,10 @@ pub struct RawConfig {
     #[serde(default)]
     pub host_ui: RawHostUi,
     #[serde(default)]
+    pub clipboard: RawClipboard,
+    #[serde(default)]
+    pub desktop_passthrough: RawDesktopPassthrough,
+    #[serde(default)]
     pub psp: RawPsp,
 }
 
@@ -166,6 +170,32 @@ impl Default for RawHostUi {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RawClipboard {
+    #[serde(default = "default_clipboard_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_clipboard_mode")]
+    pub mode: String,
+    #[serde(default = "default_clipboard_max_bytes")]
+    pub max_bytes: usize,
+}
+
+impl Default for RawClipboard {
+    fn default() -> Self {
+        Self {
+            enabled: default_clipboard_enabled(),
+            mode: default_clipboard_mode(),
+            max_bytes: default_clipboard_max_bytes(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RawDesktopPassthrough {
+    #[serde(default)]
+    pub wayland: bool,
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct RawPsp {
     #[serde(default)]
@@ -210,4 +240,16 @@ fn default_host_ui_idle_timeout_ms() -> u64 {
 
 fn default_host_ui_log_level() -> String {
     "info".to_owned()
+}
+
+fn default_clipboard_enabled() -> bool {
+    true
+}
+
+fn default_clipboard_mode() -> String {
+    "readwrite".to_owned()
+}
+
+fn default_clipboard_max_bytes() -> usize {
+    32 * 1024 * 1024
 }

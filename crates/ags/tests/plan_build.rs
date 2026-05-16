@@ -1,10 +1,39 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use ags::cli::Agent;
-use ags::config::{MountMode, parse_toml_str};
+use ags::config::{ClipboardMode, MountMode, parse_toml_str};
 use ags::plan::{BuildLaunchPlanOptions, LaunchPlan, PlanError, build_launch_plan};
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct EnvVarGuard {
+    name: &'static str,
+    original: Option<OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let original = std::env::var_os(name);
+        unsafe { std::env::set_var(name, value) };
+        Self { name, original }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.original.take() {
+            Some(value) => unsafe { std::env::set_var(self.name, value) },
+            None => unsafe { std::env::remove_var(self.name) },
+        }
+    }
+}
 
 /// Look up an inline env var by key from a launch plan.
 fn find_plan_env(plan: &LaunchPlan, key: &str) -> Option<String> {
@@ -26,6 +55,8 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         ssh_auth_sock: None,
         resolved_secrets: secrets,
         auth_proxy_runtime_dir: None,
+        clipboard_runtime_dir: None,
+        clipboard_mode: ClipboardMode::Off,
         host_ui_runtime_dir: None,
         host_ui_session_id: None,
         webview_relay_runtime_dir: None,
@@ -35,6 +66,7 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         extra_mount_dirs: &[],
         stop_when_done: false,
         root_mode: false,
+        wayland_passthrough: false,
     }
 }
 
@@ -176,6 +208,113 @@ fn cache_mounts_created() {
         let found = plan.mounts.iter().any(|m| m.container == container);
         assert!(found, "missing cache mount: {container}");
     }
+}
+
+#[test]
+fn clipboard_bridge_mounts_socket_and_shims_when_enabled() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    fs::write(runtime.path().join("clipboard-shim"), "#!/bin/sh\n").unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            clipboard_runtime_dir: Some(runtime.path()),
+            clipboard_mode: ClipboardMode::ReadWrite,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|m| m.container == "/run/ags-clipboard")
+    );
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|m| m.container == "/home/dev/.local/bin/wl-paste")
+    );
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|m| m.container == "/home/dev/.local/bin/wl-copy")
+    );
+    assert_eq!(
+        find_plan_env(&plan, "AGS_CLIPBOARD_SOCK"),
+        Some("/run/ags-clipboard/clipboard.sock".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "AGS_CLIPBOARD_MODE"),
+        Some("readwrite".to_owned())
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn wayland_socket_is_not_mounted_without_explicit_passthrough() {
+    use std::os::unix::net::UnixListener;
+
+    let _guard = env_lock().lock().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let socket_path = runtime.path().join("wayland-test");
+    let _listener = UnixListener::bind(&socket_path).unwrap();
+    let _xdg = EnvVarGuard::set("XDG_RUNTIME_DIR", runtime.path());
+    let _display = EnvVarGuard::set("WAYLAND_DISPLAY", "wayland-test");
+
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from(&toml, workdir.path());
+
+    assert!(
+        plan.mounts
+            .iter()
+            .all(|m| m.container != "/tmp/wayland-test")
+    );
+    assert!(find_plan_env(&plan, "WAYLAND_DISPLAY").is_none());
+}
+
+#[test]
+#[cfg(unix)]
+fn explicit_wayland_passthrough_mounts_compositor_socket() {
+    use std::os::unix::net::UnixListener;
+
+    let _guard = env_lock().lock().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let socket_path = runtime.path().join("wayland-test");
+    let _listener = UnixListener::bind(&socket_path).unwrap();
+    let _xdg = EnvVarGuard::set("XDG_RUNTIME_DIR", runtime.path());
+    let _display = EnvVarGuard::set("WAYLAND_DISPLAY", "wayland-test");
+
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            wayland_passthrough: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|m| m.container == "/tmp/wayland-test")
+    );
+    assert_eq!(
+        find_plan_env(&plan, "WAYLAND_DISPLAY"),
+        Some("wayland-test".to_owned())
+    );
 }
 
 #[test]

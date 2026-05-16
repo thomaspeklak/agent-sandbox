@@ -5,12 +5,12 @@ use toml::Value;
 
 use crate::config::error::ConfigError;
 use crate::config::raw::{
-    RawAgentMount, RawBrowser, RawConfig, RawHostUi, RawMount, RawSecret, RawTool,
+    RawAgentMount, RawBrowser, RawClipboard, RawConfig, RawHostUi, RawMount, RawSecret, RawTool,
 };
 use crate::config::types::{
-    AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,
-    SecretSource, UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret,
-    ValidatedTool,
+    AuthProxyConfig, BrowserConfig, ClipboardConfig, ClipboardMode, DesktopPassthroughConfig,
+    HostUiConfig, MountKind, MountMode, MountWhen, PspConfig, SecretSource, UpdateConfig,
+    ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret, ValidatedTool,
 };
 
 /// Read, parse, and validate a config TOML file from disk.
@@ -134,6 +134,7 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
 
     let browser = validate_browser(&raw.browser)?;
     let host_ui = validate_host_ui(&raw.host_ui)?;
+    let clipboard = validate_clipboard(&raw.clipboard)?;
 
     Ok(ValidatedConfig {
         config_file: config_path.to_owned(),
@@ -150,6 +151,10 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
             auto_allow_domains: raw.auth_proxy.auto_allow_domains,
         },
         host_ui,
+        clipboard,
+        desktop_passthrough: DesktopPassthroughConfig {
+            wayland: raw.desktop_passthrough.wayland,
+        },
         psp: PspConfig {
             binary: raw.psp.binary,
         },
@@ -366,6 +371,29 @@ fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {
         debug_port: raw.debug_port,
         pi_skill_path: raw.pi_skill_path.clone(),
         command_args: raw.command_args.clone(),
+    })
+}
+
+fn validate_clipboard(raw: &RawClipboard) -> Result<ClipboardConfig, ConfigError> {
+    let mode = match raw.mode.to_lowercase().as_str() {
+        "off" => ClipboardMode::Off,
+        "read" => ClipboardMode::Read,
+        "readwrite" | "read_write" | "rw" => ClipboardMode::ReadWrite,
+        other => {
+            return Err(ConfigError::Validation(format!(
+                "[clipboard].mode must be 'off', 'read', or 'readwrite', got '{other}'"
+            )));
+        }
+    };
+    if raw.max_bytes == 0 {
+        return Err(ConfigError::Validation(
+            "[clipboard].max_bytes must be greater than zero".to_owned(),
+        ));
+    }
+    Ok(ClipboardConfig {
+        enabled: raw.enabled,
+        mode,
+        max_bytes: raw.max_bytes,
     })
 }
 

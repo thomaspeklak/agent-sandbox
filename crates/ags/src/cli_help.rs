@@ -39,6 +39,10 @@ Run flags:
 \
   --lockdown           Minimize host exposure for this run (fail-closed)
 \
+  --wayland-compositor-passthrough
+\
+                       Mount the real Wayland compositor socket (broad desktop access)
+\
   --stop-when-done     Exit container when agent finishes (tmux mode)
 \
   --defaults, -D       Apply AGS-managed defaults for the selected agent harness

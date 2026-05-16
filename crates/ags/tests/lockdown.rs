@@ -100,6 +100,7 @@ fn run_opts(agent: Agent) -> RunOptions {
         yolo: false,
         root: false,
         lockdown: true,
+        wayland_compositor_passthrough: false,
         stop_when_done: false,
         config_path: None,
         add_dirs: Vec::new(),
@@ -120,6 +121,8 @@ fn lockdown_options<'a>(
         ssh_auth_sock: None,
         resolved_secrets: secrets,
         auth_proxy_runtime_dir: None,
+        clipboard_runtime_dir: None,
+        clipboard_mode: ags::config::ClipboardMode::Off,
         host_ui_runtime_dir: None,
         host_ui_session_id: None,
         webview_relay_runtime_dir: None,
@@ -129,6 +132,7 @@ fn lockdown_options<'a>(
         extra_mount_dirs,
         stop_when_done: false,
         root_mode: false,
+        wayland_passthrough: false,
     }
 }
 
@@ -155,6 +159,11 @@ fn validate_rejects_incompatible_lockdown_flags() {
         {
             let mut opts = run_opts(Agent::Pi);
             opts.root = true;
+            opts
+        },
+        {
+            let mut opts = run_opts(Agent::Pi);
+            opts.wayland_compositor_passthrough = true;
             opts
         },
     ] {

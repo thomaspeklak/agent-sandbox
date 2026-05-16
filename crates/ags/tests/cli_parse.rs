@@ -21,6 +21,7 @@ fn parses_agent_and_passthrough_args() {
             assert!(!opts.psp);
             assert!(!opts.yolo);
             assert!(!opts.lockdown);
+            assert!(!opts.wayland_compositor_passthrough);
             assert!(opts.config_path.is_none());
         }
         _ => panic!("expected Run command"),
@@ -98,6 +99,21 @@ fn parses_lockdown_flag() {
     let cmd = parse_args(args(&["ags", "--agent", "pi", "--lockdown"])).unwrap();
     match cmd {
         Command::Run(opts) => assert!(opts.lockdown),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn parses_wayland_compositor_passthrough_flag() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "--agent",
+        "pi",
+        "--wayland-compositor-passthrough",
+    ]))
+    .unwrap();
+    match cmd {
+        Command::Run(opts) => assert!(opts.wayland_compositor_passthrough),
         _ => panic!("expected Run command"),
     }
 }
@@ -204,6 +220,7 @@ fn help_shows_update_image_but_not_deprecated_update_alias() {
     assert!(help.contains("--keep-existing Keep the previous image after a successful rebuild"));
     assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
     assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));
+    assert!(help.contains("--wayland-compositor-passthrough"));
     assert!(!help.contains("\n     \x20 update         Rebuild container image"));
 }
 

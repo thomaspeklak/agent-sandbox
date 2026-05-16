@@ -31,6 +31,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - Configurable mounts, tool binaries, and secret sources
 - Optional hardened `--lockdown` runs for inspecting untrusted/foreign repos with reduced host exposure
 - Optional browser sidecar support for browser-enabled workflows
+- Narrow clipboard bridge for Pi Ctrl-V image paste and copy flows without compositor passthrough
 - Auth proxy for secure sandbox browser opens and OAuth loopback callbacks
 - Health checks via `ags doctor`
 - Convenience alias/wrapper generation via `ags create-aliases`
@@ -384,6 +385,7 @@ ags completions --shell fish > ~/.config/fish/completions/ags.fish
 - `--yolo`
 - `--root`
 - `--lockdown` (harden the run by disabling host bridges, secrets, SSH agent, generic mounts/tools, direct agent-home mounts, host-loopback networking, and adding size-limited tmpfs mounts for that run)
+- `--wayland-compositor-passthrough` (mount the real host Wayland compositor socket; broad desktop access and separate from clipboard support)
 - `--defaults` / `-D` (prepend AGS-managed passthrough defaults for the selected harness)
 - `--config <path>`
 - `--add-dir <path>` / `-d <path>` (repeatable, run only; still allowed in lockdown)
@@ -433,6 +435,10 @@ Use `config/config.example.toml` for full schema examples.
   - `auto_allow_domains`: list of domains to skip the allow/deny prompt for (e.g. `["mcp.linear.app"]`)
 - `[browser]`
   - Enables browser sidecar integration used with `--browser`
+- `[clipboard]`
+  - Starts the socket-backed clipboard bridge (`off`, `read`, or `readwrite`)
+- `[desktop_passthrough]`
+  - Explicit broad desktop passthrough controls such as raw Wayland compositor access
 - `[update]`
   - Controls Pi package spec and pnpm minimum release age for updates
 
@@ -448,6 +454,8 @@ Use `config/config.example.toml` for full schema examples.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
 - npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
 - Rotate/revoke credentials quickly if compromise is suspected.
+- The clipboard bridge is narrower than raw Wayland passthrough, but sandboxed code can still read host clipboard contents whenever `[clipboard]` permits reads.
+- Raw Wayland compositor passthrough is disabled by default; enable it only with `[desktop_passthrough].wayland = true` or `--wayland-compositor-passthrough` when you intentionally want sandbox GUI clients on the host desktop.
 - The auth proxy requires explicit user approval (via desktop dialog) before opening any URL requested by the sandbox agent. URLs are never opened silently.
 - OAuth loopback callbacks are relayed through the host proxy — the container never listens on host network ports directly.
 - This repo ships a project-local dcg policy (`.dcg/packs/git-worktree-sandbox.yaml`) that blocks `git worktree prune` in sandbox sessions because not all host worktrees are necessarily visible from inside the container.

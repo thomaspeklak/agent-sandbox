@@ -3,6 +3,7 @@ pub mod assets;
 pub mod auth_proxy;
 pub mod browser;
 pub mod cli;
+pub mod clipboard;
 pub mod cmd;
 pub mod config;
 pub mod git;

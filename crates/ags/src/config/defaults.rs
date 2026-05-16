@@ -74,4 +74,12 @@ binary = "glimpse-host-ui"
 renderer = "stub"
 idle_timeout_ms = 0
 log_level = "info"
+
+[clipboard]
+enabled = true
+mode = "readwrite"
+max_bytes = 33554432
+
+[desktop_passthrough]
+wayland = false
 "#;

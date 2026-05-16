@@ -160,6 +160,47 @@ For a user-facing overview, see `docs/GLIMPSE.md`.
 
 ---
 
+## Pi Ctrl-V image paste or `/copy` clipboard actions fail
+
+Symptoms:
+
+- Pi Ctrl-V image paste reports no clipboard data or `wl-paste` errors
+- `/copy` reports clipboard failures from inside the sandbox
+- `echo "$AGS_CLIPBOARD_SOCK"` is empty
+
+Cause:
+
+- `[clipboard].enabled` is false or `mode = "off"`
+- the AGS binary/session predates the clipboard bridge
+- host `wl-paste`/`wl-copy` is unavailable or cannot access your host clipboard
+- payload exceeded `[clipboard].max_bytes`
+
+### Fix
+
+Verify bridge wiring in a fresh session:
+
+```bash
+ags --agent shell -- -lc 'echo "$AGS_CLIPBOARD_SOCK"; echo "$AGS_CLIPBOARD_MODE"; command -v wl-paste; command -v wl-copy'
+```
+
+Expected:
+
+- `AGS_CLIPBOARD_SOCK=/run/ags-clipboard/clipboard.sock`
+- `AGS_CLIPBOARD_MODE=read` or `readwrite`
+- `wl-paste`/`wl-copy` resolve to `/home/dev/.local/bin/...`
+
+If the bridge is intentionally disabled, enable it in config:
+
+```toml
+[clipboard]
+enabled = true
+mode = "readwrite"
+```
+
+For raw GUI clients, do not rely on clipboard settings; use the explicit `--wayland-compositor-passthrough` flag only when you intentionally want broad desktop access.
+
+---
+
 ## SELinux alerts mentioning `pasta` and your source tree
 
 Symptoms:

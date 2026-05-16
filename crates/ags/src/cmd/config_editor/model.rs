@@ -96,6 +96,16 @@ pub const SECTIONS: &[SectionInfo] = &[
         is_array: false,
     },
     SectionInfo {
+        label: "Clipboard",
+        toml_key: "clipboard",
+        is_array: false,
+    },
+    SectionInfo {
+        label: "Desktop Passthrough",
+        toml_key: "desktop_passthrough",
+        is_array: false,
+    },
+    SectionInfo {
         label: "PSP",
         toml_key: "psp",
         is_array: false,

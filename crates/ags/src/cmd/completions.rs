@@ -60,7 +60,7 @@ const BASH: &str = r#"_ags_completion() {
   done
 
   if (( COMP_CWORD == 1 )); then
-    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
     return 0
   fi
 
@@ -158,7 +158,7 @@ const BASH: &str = r#"_ags_completion() {
     return 0
   fi
 
-  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
+  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
 }
 
 complete -F _ags_completion ags
@@ -175,7 +175,7 @@ modes=(wrappers aliases both)
 if (( CURRENT == 2 )); then
   _alternative \
     'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions)' \
-    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --stop-when-done --defaults -D --config --add-dir -d -h --help)'
+    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help)'
   return
 fi
 
@@ -223,6 +223,7 @@ _arguments -S \
   '--yolo[Disable AGS guard integrations for this run]' \
   '--root[Run agent with root access inside the sandbox]' \
   '--lockdown[Minimize host exposure for this run]' \
+  '--wayland-compositor-passthrough[Mount the real Wayland compositor socket]' \
   '--stop-when-done[Exit container when the agent finishes in tmux mode]' \
   '--defaults[Apply AGS-managed defaults for the selected agent harness]' \
   '-D[Apply AGS-managed defaults for the selected agent harness]' \
@@ -257,6 +258,7 @@ complete -c ags -n "__fish_use_subcommand" -l psp-keep -d "Keep PSP-managed cont
 complete -c ags -n "__fish_use_subcommand" -l yolo -d "Disable AGS guard integrations for this run"
 complete -c ags -n "__fish_use_subcommand" -l root -d "Run agent with root access inside the sandbox"
 complete -c ags -n "__fish_use_subcommand" -l lockdown -d "Minimize host exposure for this run"
+complete -c ags -n "__fish_use_subcommand" -l wayland-compositor-passthrough -d "Mount the real Wayland compositor socket"
 complete -c ags -n "__fish_use_subcommand" -l stop-when-done -d "Exit container when the agent finishes in tmux mode"
 complete -c ags -n "__fish_use_subcommand" -l defaults -s D -d "Apply AGS-managed defaults for the selected agent harness"
 complete -c ags -n "__fish_use_subcommand" -l config -r -d "Override config file path"
@@ -301,6 +303,7 @@ mod tests {
         assert!(script.contains("--browser"));
         assert!(script.contains("--tmux"));
         assert!(script.contains("--lockdown"));
+        assert!(script.contains("--wayland-compositor-passthrough"));
         assert!(script.contains("--stop-when-done"));
         assert!(script.contains("--defaults"));
         assert!(script.contains("-D"));

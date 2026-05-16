@@ -10,6 +10,7 @@ pub const GUARD_SKILL_MD: &str = include_str!("../../../agent/hooks/skills/guard
 pub const GUARD_PLUGIN_JSON: &str = include_str!("../../../agent/hooks/.claude-plugin/plugin.json");
 pub const SETTINGS_EXAMPLE: &str = include_str!("../../../agent/settings.example.json");
 pub const AUTH_PROXY_SHIM: &str = include_str!("../../../agent/auth-proxy-shim");
+pub const CLIPBOARD_SHIM: &str = include_str!("../../../agent/clipboard-shim");
 pub const WEBVIEW_RELAY_SHIM: &str = include_str!("../../../agent/webview-relay-shim");
 pub const WEBVIEW_URL_HELPER: &str = include_str!("../../../agent/webview-url-helper");
 pub const GLIMPSE_SHIM_CARGO_TOML: &str = include_str!("../../../crates/glimpse-shim/Cargo.toml");
@@ -105,6 +106,11 @@ pub fn ensure_claude_guard_skill(hooks_dir: &Path) -> io::Result<()> {
 /// The shim is made executable (mode 0755).
 pub fn ensure_auth_proxy_shim(dir: &Path) -> io::Result<()> {
     write_asset(dir, "auth-proxy-shim", AUTH_PROXY_SHIM, Some(0o755))
+}
+
+/// Write the embedded clipboard shim to `<dir>/clipboard-shim`.
+pub fn ensure_clipboard_shim(dir: &Path) -> io::Result<()> {
+    write_asset(dir, "clipboard-shim", CLIPBOARD_SHIM, Some(0o755))
 }
 
 /// Write the embedded sandbox-side webview relay shim and helper into `dir`.

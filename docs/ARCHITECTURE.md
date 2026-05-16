@@ -36,12 +36,15 @@
 - `host_ui.rs`
   - Session-scoped host UI sidecar lifecycle for sandbox-safe Glimpse windows.
   - Starts `glimpse-host-ui`, waits for its Unix socket, and cleans it up on session end.
+- `clipboard.rs`
+  - Session-scoped clipboard bridge for sandbox `wl-paste`/`wl-copy` shims.
+  - Reads/writes the host clipboard through a narrow Unix socket instead of exposing the compositor.
 - `webview_relay.rs`
   - Session-scoped host HTTP relay for host-owned webviews that need to reach sandbox-local temporary app servers.
   - Pairs with embedded sandbox helper scripts written by `assets.rs`.
   - `glimpseui` is the intended owner of localhost-to-relay URL resolution for Glimpse-based packages.
 - `assets.rs`
-  - Writes embedded Containerfile/guard/settings/auth-proxy-shim/webview relay assets.
+  - Writes embedded Containerfile/guard/settings/auth-proxy-shim/clipboard/webview relay assets.
 
 ---
 

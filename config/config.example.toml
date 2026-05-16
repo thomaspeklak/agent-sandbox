@@ -133,6 +133,18 @@ renderer_bin = "/path/to/glimpse"
 idle_timeout_ms = 0
 log_level = "info"
 
+# Narrow clipboard bridge. This replaces the old implicit Wayland compositor
+# mount for Pi Ctrl-V image paste and clipboard copy operations.
+[clipboard]
+enabled = true
+mode = "readwrite"  # off | read | readwrite
+max_bytes = 33554432
+
+# Broad desktop passthrough. Keep disabled unless you intentionally want
+# sandbox processes to connect directly to the real Wayland compositor.
+[desktop_passthrough]
+wayland = false
+
 [update]
 pi_spec = "@earendil-works/pi-coding-agent"
 minimum_release_age = 1440

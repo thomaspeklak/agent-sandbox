@@ -7,8 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::agent::{self, AgentProfile};
 use crate::auth_proxy::host::AuthProxyGuard;
 use crate::cli::Agent;
+use crate::clipboard::ClipboardGuard;
 use crate::config::{
-    BrowserConfig, MountKind, MountMode, MountWhen, ValidatedConfig, ValidatedMount,
+    BrowserConfig, ClipboardMode, MountKind, MountMode, MountWhen, ValidatedConfig, ValidatedMount,
 };
 use crate::git;
 use crate::host_ui::HostUiGuard;
@@ -35,6 +36,8 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub ssh_auth_sock: Option<&'a Path>,
     pub resolved_secrets: &'a HashMap<String, String>,
     pub auth_proxy_runtime_dir: Option<&'a Path>,
+    pub clipboard_runtime_dir: Option<&'a Path>,
+    pub clipboard_mode: ClipboardMode,
     pub host_ui_runtime_dir: Option<&'a Path>,
     pub host_ui_session_id: Option<&'a str>,
     pub webview_relay_runtime_dir: Option<&'a Path>,
@@ -44,6 +47,7 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub extra_mount_dirs: &'a [PathBuf],
     pub stop_when_done: bool,
     pub root_mode: bool,
+    pub wayland_passthrough: bool,
 }
 
 /// Intermediate env-assembly context. Sidecar fields mirror
@@ -55,6 +59,8 @@ struct BuildEnvContext<'a> {
     write_roots: &'a [String],
     resolved_secrets: &'a HashMap<String, String>,
     auth_proxy_runtime_dir: Option<&'a Path>,
+    clipboard_runtime_dir: Option<&'a Path>,
+    clipboard_mode: ClipboardMode,
     host_ui_runtime_dir: Option<&'a Path>,
     host_ui_session_id: Option<&'a str>,
     webview_relay_runtime_dir: Option<&'a Path>,
@@ -93,6 +99,8 @@ pub fn build_launch_plan(
         ssh_auth_sock,
         resolved_secrets,
         auth_proxy_runtime_dir,
+        clipboard_runtime_dir,
+        clipboard_mode,
         host_ui_runtime_dir,
         host_ui_session_id,
         webview_relay_runtime_dir,
@@ -102,9 +110,16 @@ pub fn build_launch_plan(
         extra_mount_dirs,
         stop_when_done,
         root_mode,
+        wayland_passthrough,
     } = options;
     let effective_browser_mode = browser_mode && !lockdown;
     let auth_proxy_runtime_dir = auth_proxy_runtime_dir.filter(|_| !lockdown);
+    let clipboard_runtime_dir = clipboard_runtime_dir.filter(|_| !lockdown);
+    let clipboard_mode = if clipboard_runtime_dir.is_some() {
+        clipboard_mode
+    } else {
+        ClipboardMode::Off
+    };
     let host_ui_runtime_dir = host_ui_runtime_dir.filter(|_| !lockdown);
     let webview_relay_runtime_dir = webview_relay_runtime_dir.filter(|_| !lockdown);
     let psp_socket = psp_socket.filter(|_| !lockdown);
@@ -138,7 +153,11 @@ pub fn build_launch_plan(
         add_infrastructure_mounts(&mut mounts, config, cache_dir);
     }
 
-    let wayland = if lockdown { None } else { detect_wayland()? };
+    let wayland = if lockdown || !wayland_passthrough {
+        None
+    } else {
+        detect_wayland()?
+    };
     if let Some(ref w) = wayland {
         mounts.push(PlanMount {
             host: w.socket_path.clone(),
@@ -202,6 +221,22 @@ pub fn build_launch_plan(
             });
         }
 
+        if let Some(runtime_dir) = clipboard_runtime_dir {
+            mounts.push(PlanMount {
+                host: runtime_dir.to_owned(),
+                container: ClipboardGuard::container_runtime_dir().to_owned(),
+                mode: MountMode::Rw,
+            });
+            let shim_host = runtime_dir.join(crate::clipboard::SHIM_NAME);
+            for name in ["wl-paste", "wl-copy"] {
+                mounts.push(PlanMount {
+                    host: shim_host.clone(),
+                    container: format!("{CONTAINER_HOME}/.local/bin/{name}"),
+                    mode: MountMode::Ro,
+                });
+            }
+        }
+
         if let Some(runtime_dir) = host_ui_runtime_dir {
             mounts.push(PlanMount {
                 host: runtime_dir.to_owned(),
@@ -249,6 +284,8 @@ pub fn build_launch_plan(
             write_roots: &write_roots,
             resolved_secrets,
             auth_proxy_runtime_dir,
+            clipboard_runtime_dir,
+            clipboard_mode,
             host_ui_runtime_dir,
             host_ui_session_id,
             webview_relay_runtime_dir,

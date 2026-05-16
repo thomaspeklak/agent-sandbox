@@ -74,6 +74,7 @@ fn validate_options_rejects_psp_keep_without_psp() {
         yolo: false,
         root: false,
         lockdown: false,
+        wayland_compositor_passthrough: false,
         stop_when_done: false,
         config_path: None,
         add_dirs: Vec::new(),

@@ -263,6 +263,25 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             None
         };
 
+    let clipboard_mode = config.clipboard.effective_mode();
+    let _clipboard_guard = if !opts.lockdown && clipboard_mode.can_read() {
+        let dir = runtime_base.join(format!("ags-clipboard-{pid}"));
+        match ags::clipboard::start(&dir, clipboard_mode, config.clipboard.max_bytes) {
+            Ok(guard) => {
+                if let Err(e) = ags::assets::ensure_clipboard_shim(&guard.runtime_dir) {
+                    eprintln!("warning: clipboard shim write failed: {e}");
+                }
+                Some(guard)
+            }
+            Err(e) => {
+                eprintln!("warning: clipboard bridge: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let _webview_relay_guard = if opts.lockdown {
         None
     } else {
@@ -350,6 +369,8 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             ssh_auth_sock: ssh_sock.as_deref(),
             resolved_secrets: &resolved_secrets,
             auth_proxy_runtime_dir: _auth_proxy_guard.as_ref().map(|g| g.runtime_dir.as_path()),
+            clipboard_runtime_dir: _clipboard_guard.as_ref().map(|g| g.runtime_dir.as_path()),
+            clipboard_mode,
             host_ui_runtime_dir: _host_ui_guard.as_ref().map(|g| g.runtime_dir.as_path()),
             host_ui_session_id: _host_ui_guard.as_ref().map(|g| g.session_id.as_str()),
             webview_relay_runtime_dir: _webview_relay_guard
@@ -364,6 +385,8 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             extra_mount_dirs: &opts.add_dirs,
             stop_when_done: opts.stop_when_done,
             root_mode: opts.root,
+            wayland_passthrough: opts.wayland_compositor_passthrough
+                || config.desktop_passthrough.wayland,
         },
     ) {
         Ok(p) => p,

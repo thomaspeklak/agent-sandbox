@@ -379,6 +379,51 @@ Notes:
 
 ---
 
+## `[clipboard]`
+
+Controls the narrow AGS clipboard bridge. The bridge lets sandboxed `wl-paste`/`wl-copy` calls talk to a session-scoped host service instead of mounting the real Wayland compositor socket.
+
+```toml
+[clipboard]
+enabled = true
+mode = "readwrite"  # off | read | readwrite
+max_bytes = 33554432
+```
+
+### Fields
+
+- `enabled` (bool, default `true`)
+  - Starts the AGS clipboard sidecar for normal runs.
+  - Lockdown mode disables it regardless of config.
+- `mode` (string, default `readwrite`)
+  - `off`: no clipboard bridge.
+  - `read`: host → sandbox reads only, enough for Pi Ctrl-V image paste.
+  - `readwrite`: also allows sandbox → host writes for copy flows.
+- `max_bytes` (usize, default `33554432`)
+  - Maximum clipboard payload size for reads and writes.
+
+Security note: this is narrower than compositor passthrough, but sandboxed code can still request host clipboard contents whenever the bridge is enabled.
+
+---
+
+## `[desktop_passthrough]`
+
+Controls broad desktop/session primitive passthroughs. These should stay disabled unless explicitly needed for debugging GUI clients inside the sandbox.
+
+```toml
+[desktop_passthrough]
+wayland = false
+```
+
+### Fields
+
+- `wayland` (bool, default `false`)
+  - Mounts the real Wayland compositor socket and injects `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR`.
+  - This lets arbitrary Wayland-capable sandbox processes open host windows.
+  - Can also be enabled per run with `--wayland-compositor-passthrough`.
+
+---
+
 ## `[update]`
 
 Controls `ags update-agents` behavior.
