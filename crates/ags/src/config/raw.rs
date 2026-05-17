@@ -178,6 +178,12 @@ pub struct RawClipboard {
     pub mode: String,
     #[serde(default = "default_clipboard_max_bytes")]
     pub max_bytes: usize,
+    #[serde(default = "default_clipboard_approval_required")]
+    pub approval_required: bool,
+    #[serde(default = "default_clipboard_approval_seconds")]
+    pub approval_seconds: u64,
+    #[serde(default = "default_clipboard_approve_writes")]
+    pub approve_writes: bool,
 }
 
 impl Default for RawClipboard {
@@ -186,6 +192,9 @@ impl Default for RawClipboard {
             enabled: default_clipboard_enabled(),
             mode: default_clipboard_mode(),
             max_bytes: default_clipboard_max_bytes(),
+            approval_required: default_clipboard_approval_required(),
+            approval_seconds: default_clipboard_approval_seconds(),
+            approve_writes: default_clipboard_approve_writes(),
         }
     }
 }
@@ -252,4 +261,16 @@ fn default_clipboard_mode() -> String {
 
 fn default_clipboard_max_bytes() -> usize {
     32 * 1024 * 1024
+}
+
+fn default_clipboard_approval_required() -> bool {
+    true
+}
+
+fn default_clipboard_approval_seconds() -> u64 {
+    300
+}
+
+fn default_clipboard_approve_writes() -> bool {
+    false
 }

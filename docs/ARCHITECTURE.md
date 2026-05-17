@@ -32,13 +32,16 @@
 - `auth_proxy/*`
   - Ephemeral auth proxy for sandbox browser opens and OAuth loopback callbacks.
   - `protocol.rs`: JSON-over-Unix-socket message types (`ShimMessage`, `HostMessage`).
-  - `host.rs`: host-side proxy — Unix socket listener, user prompt via zenity/kdialog, callback relay.
+  - `host.rs`: host-side proxy — Unix socket listener, user prompt via shared AGS dialog, callback relay.
+- `host_dialog.rs`
+  - Shared host prompt abstraction with Glimpse host-UI renderer first and zenity/kdialog fallback.
 - `host_ui.rs`
   - Session-scoped host UI sidecar lifecycle for sandbox-safe Glimpse windows.
   - Starts `glimpse-host-ui`, waits for its Unix socket, and cleans it up on session end.
 - `clipboard.rs`
   - Session-scoped clipboard bridge for sandbox `wl-paste`/`wl-copy` shims.
   - Reads/writes the host clipboard through a narrow Unix socket instead of exposing the compositor.
+  - Gates clipboard contents reads through the shared host approval dialog by default.
 - `webview_relay.rs`
   - Session-scoped host HTTP relay for host-owned webviews that need to reach sandbox-local temporary app servers.
   - Pairs with embedded sandbox helper scripts written by `assets.rs`.

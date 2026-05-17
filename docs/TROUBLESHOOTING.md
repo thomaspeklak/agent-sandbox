@@ -174,13 +174,14 @@ Cause:
 - the AGS binary/session predates the clipboard bridge
 - host `wl-paste`/`wl-copy` is unavailable or cannot access your host clipboard
 - payload exceeded `[clipboard].max_bytes`
+- clipboard approval was denied or no dialog renderer was available
 
 ### Fix
 
 Verify bridge wiring in a fresh session:
 
 ```bash
-ags --agent shell -- -lc 'echo "$AGS_CLIPBOARD_SOCK"; echo "$AGS_CLIPBOARD_MODE"; command -v wl-paste; command -v wl-copy'
+ags --agent shell -- -lc 'echo "$AGS_CLIPBOARD_SOCK"; echo "$AGS_CLIPBOARD_MODE"; echo "$XDG_SESSION_TYPE"; command -v wl-paste; command -v wl-copy'
 ```
 
 Expected:
@@ -196,7 +197,11 @@ If the bridge is intentionally disabled, enable it in config:
 [clipboard]
 enabled = true
 mode = "readwrite"
+approval_required = true
+approval_seconds = 300
 ```
+
+Clipboard reads prompt on the host by default. Enable `[host_ui]` for the branded dark/light-aware dialog, or install `zenity`/`kdialog` for the fallback. If you intentionally want the old session-wide bridge behavior, set `approval_required = false`.
 
 For raw GUI clients, do not rely on clipboard settings; use the explicit `--wayland-compositor-passthrough` flag only when you intentionally want broad desktop access.
 
@@ -397,11 +402,11 @@ Symptoms:
 
 Cause:
 
-- Neither `zenity` nor `kdialog` is installed on the host, so the proxy cannot show the allow/deny dialog and defaults to deny.
+- No AGS dialog renderer is available, so the proxy cannot show the allow/deny dialog and defaults to deny.
 
 ### Fix
 
-Install a dialog tool:
+Enable the branded Glimpse-backed host UI dialog via `[host_ui]`, or install a fallback dialog tool:
 
 ```bash
 # Debian/Ubuntu (GNOME)

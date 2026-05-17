@@ -426,6 +426,20 @@ fn check_clipboard(ck: &mut Checker, config: &ValidatedConfig) {
     if mode.can_write() {
         check_optional_cmd(ck, "wl-copy");
     }
+    if config.clipboard.approval_required {
+        ck.ok(&format!(
+            "clipboard read approval window: {}s",
+            config.clipboard.approval_seconds
+        ));
+        if !config.host_ui.enabled
+            && !crate::util::has_command("zenity")
+            && !crate::util::has_command("kdialog")
+        {
+            ck.warn("clipboard approval prompts need [host_ui] or zenity/kdialog on PATH");
+        }
+    } else {
+        ck.warn("clipboard approval prompts disabled; reads are available for the whole session");
+    }
 }
 
 fn check_host_ui(ck: &mut Checker, config: &ValidatedConfig) {

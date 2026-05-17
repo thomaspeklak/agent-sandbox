@@ -341,7 +341,7 @@ command_args = []
 
 ## `[host_ui]`
 
-Controls optional host-owned Glimpse windows for sandboxed code.
+Controls optional host-owned Glimpse windows for sandboxed code and AGS's own branded approval dialogs.
 
 ```toml
 [host_ui]
@@ -374,6 +374,7 @@ log_level = "info"
 Notes:
 
 - AGS handles the sandbox wiring automatically once `[host_ui].enabled = true`.
+- Auth-proxy and clipboard approval prompts use the same host UI sidecar for branded, dark/light-aware dialogs; if disabled, they fall back to zenity/kdialog.
 - Users normally should not set Glimpse transport env vars manually.
 - For end-user setup and troubleshooting, see `docs/GLIMPSE.md`.
 
@@ -388,6 +389,9 @@ Controls the narrow AGS clipboard bridge. The bridge lets sandboxed `wl-paste`/`
 enabled = true
 mode = "readwrite"  # off | read | readwrite
 max_bytes = 33554432
+approval_required = true
+approval_seconds = 300
+approve_writes = false
 ```
 
 ### Fields
@@ -401,8 +405,16 @@ max_bytes = 33554432
   - `readwrite`: also allows sandbox → host writes for copy flows.
 - `max_bytes` (usize, default `33554432`)
   - Maximum clipboard payload size for reads and writes.
+- `approval_required` (bool, default `true`)
+  - Prompts on the host before sandboxed code can read clipboard contents.
+  - Set to `false` to restore session-wide read access while `[clipboard]` is enabled.
+- `approval_seconds` (u64, default `300`)
+  - Adds an **Allow for N seconds** choice to the approval dialog.
+  - Set to `0` to only offer one-shot approval.
+- `approve_writes` (bool, default `false`)
+  - Also require approval before sandboxed `wl-copy` writes to the host clipboard.
 
-Security note: this is narrower than compositor passthrough, but sandboxed code can still request host clipboard contents whenever the bridge is enabled.
+Security note: this is narrower than compositor passthrough. Clipboard reads are host-approved by default, but MIME type listing remains available so Pi can decide whether Ctrl-V image paste is possible.
 
 ---
 

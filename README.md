@@ -436,7 +436,7 @@ Use `config/config.example.toml` for full schema examples.
 - `[browser]`
   - Enables browser sidecar integration used with `--browser`
 - `[clipboard]`
-  - Starts the socket-backed clipboard bridge (`off`, `read`, or `readwrite`)
+  - Starts the socket-backed clipboard bridge (`off`, `read`, or `readwrite`) with host approval windows for reads by default
 - `[desktop_passthrough]`
   - Explicit broad desktop passthrough controls such as raw Wayland compositor access
 - `[update]`
@@ -454,9 +454,9 @@ Use `config/config.example.toml` for full schema examples.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
 - npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
 - Rotate/revoke credentials quickly if compromise is suspected.
-- The clipboard bridge is narrower than raw Wayland passthrough, but sandboxed code can still read host clipboard contents whenever `[clipboard]` permits reads.
+- The clipboard bridge is narrower than raw Wayland passthrough. Host clipboard reads require approval by default and can be allowed for `[clipboard].approval_seconds`; disabling approval restores session-wide read access.
 - Raw Wayland compositor passthrough is disabled by default; enable it only with `[desktop_passthrough].wayland = true` or `--wayland-compositor-passthrough` when you intentionally want sandbox GUI clients on the host desktop.
-- The auth proxy requires explicit user approval (via desktop dialog) before opening any URL requested by the sandbox agent. URLs are never opened silently.
+- The auth proxy requires explicit user approval via the shared AGS desktop dialog before opening any URL requested by the sandbox agent. URLs are never opened silently.
 - OAuth loopback callbacks are relayed through the host proxy — the container never listens on host network ports directly.
 - This repo ships a project-local dcg policy (`.dcg/packs/git-worktree-sandbox.yaml`) that blocks `git worktree prune` in sandbox sessions because not all host worktrees are necessarily visible from inside the container.
 

@@ -79,6 +79,9 @@ log_level = "info"
 enabled = true
 mode = "readwrite"
 max_bytes = 33554432
+approval_required = true
+approval_seconds = 300
+approve_writes = false
 
 [desktop_passthrough]
 wayland = false

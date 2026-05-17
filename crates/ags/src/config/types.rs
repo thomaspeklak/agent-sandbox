@@ -182,6 +182,9 @@ pub struct ClipboardConfig {
     pub enabled: bool,
     pub mode: ClipboardMode,
     pub max_bytes: usize,
+    pub approval_required: bool,
+    pub approval_seconds: u64,
+    pub approve_writes: bool,
 }
 
 impl ClipboardConfig {
@@ -200,6 +203,9 @@ impl Default for ClipboardConfig {
             enabled: true,
             mode: ClipboardMode::ReadWrite,
             max_bytes: 32 * 1024 * 1024,
+            approval_required: true,
+            approval_seconds: 300,
+            approve_writes: false,
         }
     }
 }

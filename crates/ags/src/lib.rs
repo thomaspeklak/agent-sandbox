@@ -7,6 +7,7 @@ pub mod clipboard;
 pub mod cmd;
 pub mod config;
 pub mod git;
+pub mod host_dialog;
 pub mod host_ui;
 pub mod lockdown;
 pub mod paths;

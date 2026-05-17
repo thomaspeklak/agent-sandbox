@@ -187,6 +187,27 @@ const CLIPBOARD_FIELDS: &[ScalarFieldSchema] = &[
         required: false,
         default_input: "33554432",
     },
+    ScalarFieldSchema {
+        key: "approval_required",
+        kind: ScalarFieldKind::Bool,
+        required: false,
+        default_input: "true",
+    },
+    ScalarFieldSchema {
+        key: "approval_seconds",
+        kind: ScalarFieldKind::Number {
+            min: 0,
+            max: u64::MAX,
+        },
+        required: false,
+        default_input: "300",
+    },
+    ScalarFieldSchema {
+        key: "approve_writes",
+        kind: ScalarFieldKind::Bool,
+        required: false,
+        default_input: "false",
+    },
 ];
 
 const DESKTOP_PASSTHROUGH_FIELDS: &[ScalarFieldSchema] = &[ScalarFieldSchema {

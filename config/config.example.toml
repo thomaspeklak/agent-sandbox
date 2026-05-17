@@ -123,7 +123,7 @@ debug_port = 9222
 pi_skill_path = "/home/dev/example-browser-skill"
 command_args = []
 
-# Optional host-owned Glimpse windows for sandboxed code.
+# Optional host-owned Glimpse windows for sandboxed code and branded AGS dialogs.
 # Typical real setup uses renderer = "process" plus a renderer_bin path.
 [host_ui]
 enabled = false
@@ -139,6 +139,11 @@ log_level = "info"
 enabled = true
 mode = "readwrite"  # off | read | readwrite
 max_bytes = 33554432
+# Prompt before host clipboard contents are read. Set approval_required = false
+# to restore session-wide clipboard access while [clipboard] is enabled.
+approval_required = true
+approval_seconds = 300
+approve_writes = false
 
 # Broad desktop passthrough. Keep disabled unless you intentionally want
 # sandbox processes to connect directly to the real Wayland compositor.

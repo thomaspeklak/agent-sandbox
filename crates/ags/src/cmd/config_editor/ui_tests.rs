@@ -146,7 +146,17 @@ sign_key = "/tmp/sign"
                 "log_level",
             ],
         ),
-        ("clipboard", vec!["enabled", "mode", "max_bytes"]),
+        (
+            "clipboard",
+            vec![
+                "enabled",
+                "mode",
+                "max_bytes",
+                "approval_required",
+                "approval_seconds",
+                "approve_writes",
+            ],
+        ),
         ("desktop_passthrough", vec!["wayland"]),
         ("psp", vec!["binary"]),
         ("update", vec!["pi_spec", "minimum_release_age"]),

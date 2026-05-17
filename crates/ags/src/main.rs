@@ -266,7 +266,18 @@ fn run_agent(opts: RunOptions) -> ExitCode {
     let clipboard_mode = config.clipboard.effective_mode();
     let _clipboard_guard = if !opts.lockdown && clipboard_mode.can_read() {
         let dir = runtime_base.join(format!("ags-clipboard-{pid}"));
-        match ags::clipboard::start(&dir, clipboard_mode, config.clipboard.max_bytes) {
+        let clipboard_approval = ags::clipboard::ClipboardApprovalConfig {
+            required: config.clipboard.approval_required,
+            window_seconds: config.clipboard.approval_seconds,
+            approve_writes: config.clipboard.approve_writes,
+        };
+        match ags::clipboard::start(
+            &dir,
+            clipboard_mode,
+            config.clipboard.max_bytes,
+            clipboard_approval,
+            _host_ui_guard.as_ref().map(|g| g.socket_path.as_path()),
+        ) {
             Ok(guard) => {
                 if let Err(e) = ags::assets::ensure_clipboard_shim(&guard.runtime_dir) {
                     eprintln!("warning: clipboard shim write failed: {e}");

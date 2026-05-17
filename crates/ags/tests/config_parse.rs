@@ -40,6 +40,9 @@ fn minimal_config_parses() {
     assert!(!cfg.browser.enabled);
     assert_eq!(cfg.clipboard.mode.to_string(), "readwrite");
     assert!(cfg.clipboard.enabled);
+    assert!(cfg.clipboard.approval_required);
+    assert_eq!(cfg.clipboard.approval_seconds, 300);
+    assert!(!cfg.clipboard.approve_writes);
     assert!(!cfg.desktop_passthrough.wayland);
     assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
@@ -175,6 +178,9 @@ fn clipboard_config_parses() {
 enabled = true
 mode = "read"
 max_bytes = 1024
+approval_required = true
+approval_seconds = 60
+approve_writes = true
 
 [desktop_passthrough]
 wayland = true
@@ -182,6 +188,9 @@ wayland = true
     );
     assert_eq!(cfg.clipboard.mode.to_string(), "read");
     assert_eq!(cfg.clipboard.max_bytes, 1024);
+    assert!(cfg.clipboard.approval_required);
+    assert_eq!(cfg.clipboard.approval_seconds, 60);
+    assert!(cfg.clipboard.approve_writes);
     assert!(cfg.desktop_passthrough.wayland);
 }
 

@@ -5,8 +5,10 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use serde_json::{Value, json};
@@ -17,6 +19,13 @@ pub const SOCKET_NAME: &str = "clipboard.sock";
 pub const SHIM_NAME: &str = "clipboard-shim";
 const CONTAINER_RUNTIME_DIR: &str = "/run/ags-clipboard";
 const CONTAINER_SOCKET_PATH: &str = "/run/ags-clipboard/clipboard.sock";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipboardApprovalConfig {
+    pub required: bool,
+    pub window_seconds: u64,
+    pub approve_writes: bool,
+}
 
 #[derive(Debug)]
 pub enum ClipboardError {
@@ -69,14 +78,26 @@ pub fn start(
     runtime_dir: &Path,
     mode: ClipboardMode,
     max_bytes: usize,
+    approval: ClipboardApprovalConfig,
+    host_ui_socket: Option<&Path>,
 ) -> Result<ClipboardGuard, ClipboardError> {
-    start_with_backend(runtime_dir, mode, max_bytes, Arc::new(OsClipboardBackend))
+    start_with_backend(
+        runtime_dir,
+        mode,
+        max_bytes,
+        Arc::new(PromptingClipboardAccess::new(
+            approval,
+            host_ui_socket.map(Path::to_owned),
+        )),
+        Arc::new(OsClipboardBackend),
+    )
 }
 
 fn start_with_backend(
     runtime_dir: &Path,
     mode: ClipboardMode,
     max_bytes: usize,
+    access: Arc<dyn ClipboardAccessAuthorizer>,
     backend: Arc<dyn ClipboardBackend>,
 ) -> Result<ClipboardGuard, ClipboardError> {
     crate::util::ensure_private_dir(runtime_dir).map_err(ClipboardError::RuntimeDirCreate)?;
@@ -87,6 +108,7 @@ fn start_with_backend(
     let listener = UnixListener::bind(&socket_path).map_err(ClipboardError::SocketBind)?;
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = Arc::clone(&shutdown);
+    let access_clone = Arc::clone(&access);
     let backend_clone = Arc::clone(&backend);
 
     let thread = thread::spawn(move || {
@@ -96,8 +118,9 @@ fn start_with_backend(
             }
             match stream {
                 Ok(stream) => {
+                    let access = Arc::clone(&access_clone);
                     let backend = Arc::clone(&backend_clone);
-                    thread::spawn(move || handle_client(stream, mode, max_bytes, backend));
+                    thread::spawn(move || handle_client(stream, mode, max_bytes, access, backend));
                 }
                 Err(err) => {
                     if !shutdown_clone.load(Ordering::Relaxed) {
@@ -114,6 +137,84 @@ fn start_with_backend(
         shutdown,
         thread: Some(thread),
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClipboardOperation {
+    Read,
+    Write,
+}
+
+trait ClipboardAccessAuthorizer: Send + Sync + 'static {
+    fn authorize(&self, operation: ClipboardOperation, mime: Option<&str>) -> Result<(), String>;
+}
+
+#[cfg(test)]
+struct AllowAllClipboardAccess;
+
+#[cfg(test)]
+impl ClipboardAccessAuthorizer for AllowAllClipboardAccess {
+    fn authorize(&self, _operation: ClipboardOperation, _mime: Option<&str>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+struct PromptingClipboardAccess {
+    approval: ClipboardApprovalConfig,
+    host_ui_socket: Option<PathBuf>,
+    approved_until: Mutex<Option<Instant>>,
+}
+
+impl PromptingClipboardAccess {
+    fn new(approval: ClipboardApprovalConfig, host_ui_socket: Option<PathBuf>) -> Self {
+        Self {
+            approval,
+            host_ui_socket,
+            approved_until: Mutex::new(None),
+        }
+    }
+
+    fn requires_prompt(&self, operation: ClipboardOperation) -> bool {
+        self.approval.required
+            && (matches!(operation, ClipboardOperation::Read)
+                || (self.approval.approve_writes && matches!(operation, ClipboardOperation::Write)))
+    }
+}
+
+impl ClipboardAccessAuthorizer for PromptingClipboardAccess {
+    fn authorize(&self, operation: ClipboardOperation, mime: Option<&str>) -> Result<(), String> {
+        if !self.requires_prompt(operation) {
+            return Ok(());
+        }
+
+        let mut approved_until = self
+            .approved_until
+            .lock()
+            .map_err(|_| "clipboard approval state lock poisoned".to_owned())?;
+        if approved_until.is_some_and(|until| Instant::now() < until) {
+            return Ok(());
+        }
+
+        match prompt_clipboard_access(operation, mime, self.approval, self.host_ui_socket.as_deref()) {
+            ClipboardApprovalDecision::AllowOnce => Ok(()),
+            ClipboardApprovalDecision::AllowWindow => {
+                *approved_until = Some(Instant::now() + Duration::from_secs(self.approval.window_seconds));
+                Ok(())
+            }
+            ClipboardApprovalDecision::Deny => Err("clipboard access denied by user".to_owned()),
+            ClipboardApprovalDecision::Unavailable => {
+                Err("clipboard access denied: no dialog tool available (enable [host_ui] or install zenity/kdialog, or set [clipboard].approval_required = false)".to_owned())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClipboardApprovalDecision {
+    AllowOnce,
+    AllowWindow,
+    Deny,
+    Unavailable,
 }
 
 trait ClipboardBackend: Send + Sync + 'static {
@@ -196,13 +297,98 @@ fn command_error(command: &str, stderr: &[u8]) -> String {
     }
 }
 
+fn prompt_clipboard_access(
+    operation: ClipboardOperation,
+    mime: Option<&str>,
+    approval: ClipboardApprovalConfig,
+    host_ui_socket: Option<&Path>,
+) -> ClipboardApprovalDecision {
+    let action = match operation {
+        ClipboardOperation::Read => "read host clipboard contents",
+        ClipboardOperation::Write => "write to the host clipboard",
+    };
+    let mut choices = Vec::new();
+    if approval.window_seconds > 0 {
+        choices.push(crate::host_dialog::DialogChoice::new(
+            "allow_window",
+            format!("Allow for {}", format_duration(approval.window_seconds)),
+            crate::host_dialog::DialogChoiceRole::Primary,
+        ));
+    }
+    choices.push(crate::host_dialog::DialogChoice::new(
+        "allow_once",
+        "Allow once",
+        if approval.window_seconds > 0 {
+            crate::host_dialog::DialogChoiceRole::Secondary
+        } else {
+            crate::host_dialog::DialogChoiceRole::Primary
+        },
+    ));
+    choices.push(crate::host_dialog::DialogChoice::new(
+        "deny",
+        "Deny",
+        crate::host_dialog::DialogChoiceRole::Cancel,
+    ));
+
+    let request = crate::host_dialog::DialogRequest {
+        title: "AGS Clipboard".to_owned(),
+        heading: "Allow sandbox clipboard access?".to_owned(),
+        message: format!("A sandbox process wants to {action}."),
+        details: vec![
+            crate::host_dialog::DialogDetail::new(
+                "Operation",
+                match operation {
+                    ClipboardOperation::Read => "Read host clipboard",
+                    ClipboardOperation::Write => "Write host clipboard",
+                },
+            ),
+            crate::host_dialog::DialogDetail::new(
+                "MIME type",
+                mime.unwrap_or("default selection"),
+            ),
+        ],
+        note: Some(
+            "This grants clipboard access through the narrow AGS bridge; it does not expose the raw Wayland compositor socket."
+                .to_owned(),
+        ),
+        choices,
+        width: 540,
+        height: 380,
+    };
+
+    match crate::host_dialog::prompt_choice(&request, host_ui_socket) {
+        crate::host_dialog::DialogOutcome::Choice(choice) if choice == "allow_once" => {
+            ClipboardApprovalDecision::AllowOnce
+        }
+        crate::host_dialog::DialogOutcome::Choice(choice) if choice == "allow_window" => {
+            ClipboardApprovalDecision::AllowWindow
+        }
+        crate::host_dialog::DialogOutcome::Choice(_)
+        | crate::host_dialog::DialogOutcome::Cancelled => ClipboardApprovalDecision::Deny,
+        crate::host_dialog::DialogOutcome::Unavailable => ClipboardApprovalDecision::Unavailable,
+    }
+}
+
+fn format_duration(seconds: u64) -> String {
+    if seconds.is_multiple_of(3600) {
+        let hours = seconds / 3600;
+        format!("{hours} hour{}", if hours == 1 { "" } else { "s" })
+    } else if seconds.is_multiple_of(60) {
+        let minutes = seconds / 60;
+        format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
+    } else {
+        format!("{seconds} second{}", if seconds == 1 { "" } else { "s" })
+    }
+}
+
 fn handle_client(
     stream: UnixStream,
     mode: ClipboardMode,
     max_bytes: usize,
+    access: Arc<dyn ClipboardAccessAuthorizer>,
     backend: Arc<dyn ClipboardBackend>,
 ) {
-    if let Err(err) = handle_client_result(stream, mode, max_bytes, backend) {
+    if let Err(err) = handle_client_result(stream, mode, max_bytes, access, backend) {
         eprintln!("[ags clipboard] client error: {err}");
     }
 }
@@ -211,12 +397,13 @@ fn handle_client_result(
     mut stream: UnixStream,
     mode: ClipboardMode,
     max_bytes: usize,
+    access: Arc<dyn ClipboardAccessAuthorizer>,
     backend: Arc<dyn ClipboardBackend>,
 ) -> io::Result<()> {
     let mut line = String::new();
     BufReader::new(stream.try_clone()?).read_line(&mut line)?;
     let response = match serde_json::from_str::<Value>(&line) {
-        Ok(request) => handle_request(&request, mode, max_bytes, backend.as_ref()),
+        Ok(request) => handle_request(&request, mode, max_bytes, access.as_ref(), backend.as_ref()),
         Err(err) => json!({ "ok": false, "error": format!("invalid JSON: {err}") }),
     };
     let encoded = serde_json::to_string(&response).map_err(io::Error::other)?;
@@ -229,6 +416,7 @@ fn handle_request(
     request: &Value,
     mode: ClipboardMode,
     max_bytes: usize,
+    access: &dyn ClipboardAccessAuthorizer,
     backend: &dyn ClipboardBackend,
 ) -> Value {
     match request.get("op").and_then(Value::as_str) {
@@ -241,6 +429,9 @@ fn handle_request(
                 .get("mime")
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty());
+            if let Err(error) = access.authorize(ClipboardOperation::Read, mime) {
+                return json!({ "ok": false, "error": error });
+            }
             match backend.read(mime, max_bytes) {
                 Ok((mime, data)) => json!({
                     "ok": true,
@@ -260,6 +451,9 @@ fn handle_request(
                 .get("data_b64")
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            if let Err(error) = access.authorize(ClipboardOperation::Write, Some(mime)) {
+                return json!({ "ok": false, "error": error });
+            }
             match decode_limited(encoded, max_bytes).and_then(|data| backend.write(mime, &data)) {
                 Ok(()) => json!({ "ok": true }),
                 Err(error) => json!({ "ok": false, "error": error }),
@@ -289,74 +483,5 @@ fn decode_limited(encoded: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Mutex;
-
-    #[derive(Default)]
-    struct MockBackend {
-        writes: Mutex<Vec<(String, Vec<u8>)>>,
-    }
-
-    impl ClipboardBackend for MockBackend {
-        fn list_types(&self) -> Result<Vec<String>, String> {
-            Ok(vec!["text/plain".to_owned(), "image/png".to_owned()])
-        }
-
-        fn read(&self, mime: Option<&str>, _max_bytes: usize) -> Result<(String, Vec<u8>), String> {
-            Ok((mime.unwrap_or("text/plain").to_owned(), b"hello".to_vec()))
-        }
-
-        fn write(&self, mime: &str, data: &[u8]) -> Result<(), String> {
-            self.writes
-                .lock()
-                .unwrap()
-                .push((mime.to_owned(), data.to_vec()));
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn read_request_returns_base64_payload() {
-        let backend = MockBackend::default();
-        let response = handle_request(
-            &json!({"op":"read", "mime":"text/plain"}),
-            ClipboardMode::Read,
-            1024,
-            &backend,
-        );
-        assert_eq!(response["ok"], true);
-        assert_eq!(response["data_b64"], "aGVsbG8=");
-    }
-
-    #[test]
-    fn write_request_respects_mode() {
-        let backend = MockBackend::default();
-        let response = handle_request(
-            &json!({"op":"write", "mime":"text/plain", "data_b64":"aGk="}),
-            ClipboardMode::Read,
-            1024,
-            &backend,
-        );
-        assert_eq!(response["ok"], false);
-        assert!(
-            response["error"]
-                .as_str()
-                .unwrap()
-                .contains("write disabled")
-        );
-    }
-
-    #[test]
-    fn oversized_write_is_rejected() {
-        let backend = MockBackend::default();
-        let response = handle_request(
-            &json!({"op":"write", "data_b64":"aGVsbG8="}),
-            ClipboardMode::ReadWrite,
-            2,
-            &backend,
-        );
-        assert_eq!(response["ok"], false);
-        assert!(response["error"].as_str().unwrap().contains("above limit"));
-    }
-}
+#[path = "clipboard_tests.rs"]
+mod tests;

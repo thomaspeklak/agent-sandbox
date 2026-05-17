@@ -21,6 +21,9 @@ sign_key = "/tmp/sign"
     assert!(!raw.browser.enabled);
     assert!(raw.clipboard.enabled);
     assert_eq!(raw.clipboard.mode, "readwrite");
+    assert!(raw.clipboard.approval_required);
+    assert_eq!(raw.clipboard.approval_seconds, 300);
+    assert!(!raw.clipboard.approve_writes);
     assert!(!raw.desktop_passthrough.wayland);
     assert_eq!(raw.update.minimum_release_age, 1440);
 }

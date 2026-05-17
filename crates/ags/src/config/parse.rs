@@ -394,6 +394,9 @@ fn validate_clipboard(raw: &RawClipboard) -> Result<ClipboardConfig, ConfigError
         enabled: raw.enabled,
         mode,
         max_bytes: raw.max_bytes,
+        approval_required: raw.approval_required,
+        approval_seconds: raw.approval_seconds,
+        approve_writes: raw.approve_writes,
     })
 }
 
