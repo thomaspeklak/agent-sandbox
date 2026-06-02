@@ -1,6 +1,6 @@
 [
   {
-    "package": "development",
+    "package": "general",
     "tools": [
       {
         "name": "gh",
@@ -38,6 +38,8 @@
         "name": "fd",
         "description": "Fast filesystem search.",
         "install": {
+          "apt": "fd-find",
+          "apt_binary": "fdfind",
           "dnf": "fd-find"
         },
         "secrets": {}

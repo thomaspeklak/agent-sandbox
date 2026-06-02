@@ -9,7 +9,7 @@ use ratatui::widgets::*;
 use super::install::{InstallCommand, ToolInstaller, detect_host_tool_installer};
 use super::model::{
     PackageState, PathToolResolver, SaveReport, SecretInput, ToolConfigError, ToolResolver,
-    ToolSelectionState, ToolState, load_package_file, write_selected_tools,
+    ToolSelectionState, ToolState, load_package_file, resolve_tool_path, write_selected_tools,
 };
 
 #[derive(Clone, Copy)]
@@ -47,8 +47,8 @@ impl App {
         }
 
         let packages = load_package_file(packages_path)?;
-        let state = ToolSelectionState::from_packages(packages, resolver)?;
         let installer = detect_host_tool_installer();
+        let state = ToolSelectionState::from_packages(packages, resolver, installer)?;
         let has_installable_missing_tools = installer.is_some_and(|installer| {
             state.packages.iter().any(|package| {
                 package
@@ -226,7 +226,7 @@ impl App {
             .get_mut(package_index)?
             .tools
             .get_mut(tool_index)?;
-        let host_path = PathToolResolver.resolve_tool(&tool.definition.name);
+        let host_path = resolve_tool_path(&tool.definition, &PathToolResolver, self.installer);
         tool.host_path = host_path.clone();
         if tool.host_path.is_some() {
             tool.selected = true;

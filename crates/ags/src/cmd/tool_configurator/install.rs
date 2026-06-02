@@ -10,7 +10,11 @@ pub struct InstallDefinition {
     #[serde(default)]
     pub apt: Option<String>,
     #[serde(default)]
+    pub apt_binary: Option<String>,
+    #[serde(default)]
     pub dnf: Option<String>,
+    #[serde(default)]
+    pub dnf_binary: Option<String>,
 }
 
 impl InstallDefinition {
@@ -18,6 +22,13 @@ impl InstallDefinition {
         match manager {
             PackageManager::Apt => self.apt.as_deref(),
             PackageManager::Dnf => self.dnf.as_deref(),
+        }
+    }
+
+    pub fn binary_for(&self, manager: PackageManager) -> Option<&str> {
+        match manager {
+            PackageManager::Apt => self.apt_binary.as_deref(),
+            PackageManager::Dnf => self.dnf_binary.as_deref(),
         }
     }
 }
@@ -87,20 +98,39 @@ impl ToolInstaller {
     }
 }
 
-pub fn validate_install_package(
+pub fn validate_install_definition(
     package: &str,
     tool: &str,
-    manager: &str,
-    install_package: &str,
+    install: &InstallDefinition,
 ) -> Result<(), ToolConfigError> {
-    if install_package.trim().is_empty()
-        || install_package.starts_with('-')
-        || install_package
-            .chars()
-            .any(|c| c.is_whitespace() || c.is_control())
+    if let Some(install_package) = &install.apt {
+        validate_install_name(package, tool, "apt package", install_package)?;
+    }
+    if let Some(binary) = &install.apt_binary {
+        validate_install_name(package, tool, "apt binary", binary)?;
+    }
+    if let Some(install_package) = &install.dnf {
+        validate_install_name(package, tool, "dnf package", install_package)?;
+    }
+    if let Some(binary) = &install.dnf_binary {
+        validate_install_name(package, tool, "dnf binary", binary)?;
+    }
+
+    Ok(())
+}
+
+fn validate_install_name(
+    package: &str,
+    tool: &str,
+    kind: &str,
+    value: &str,
+) -> Result<(), ToolConfigError> {
+    if value.trim().is_empty()
+        || value.starts_with('-')
+        || value.chars().any(|c| c.is_whitespace() || c.is_control())
     {
         return Err(ToolConfigError::InvalidPackage(format!(
-            "install package for tool '{tool}' in package '{package}' under '{manager}' must be a package name, not a shell expression"
+            "{kind} for tool '{tool}' in package '{package}' must be a name, not a shell expression"
         )));
     }
 
@@ -190,7 +220,7 @@ fn running_as_root() -> bool {
     }
 }
 
-fn find_on_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn find_on_path(name: &str) -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path_var) {
         let candidate = if dir.as_os_str().is_empty() {

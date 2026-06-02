@@ -49,7 +49,7 @@ fn unavailable_tools_are_not_selected() {
     }];
     let resolver = MockResolver::new(&[("gh", "/usr/bin/gh")]);
 
-    let state = ToolSelectionState::from_packages(packages, &resolver).unwrap();
+    let state = ToolSelectionState::from_packages(packages, &resolver, None).unwrap();
     let package = &state.packages[0];
 
     assert_eq!(package.available_count(), 1);
@@ -84,7 +84,7 @@ fn apply_selection_replaces_only_managed_tool_entries() {
         ],
     }];
     let resolver = MockResolver::new(&[("gh", "/usr/bin/gh"), ("jq", "/usr/bin/jq")]);
-    let mut state = ToolSelectionState::from_packages(packages, &resolver).unwrap();
+    let mut state = ToolSelectionState::from_packages(packages, &resolver, None).unwrap();
     state.packages[0].tools[1].selected = false;
 
     let mut doc: DocumentMut = r#"
@@ -139,7 +139,7 @@ fn package_validation_rejects_binary_paths() {
     }];
     let resolver = MockResolver::new(&[]);
 
-    let error = ToolSelectionState::from_packages(packages, &resolver).unwrap_err();
+    let error = ToolSelectionState::from_packages(packages, &resolver, None).unwrap_err();
     assert!(error.to_string().contains("must be a command name"));
 }
 
@@ -154,11 +154,12 @@ fn install_command_is_only_available_for_missing_tools_with_matching_manager_met
             install: InstallDefinition {
                 apt: Some("ripgrep".to_owned()),
                 dnf: Some("ripgrep".to_owned()),
+                ..InstallDefinition::default()
             },
         }],
     }];
     let resolver = MockResolver::new(&[]);
-    let state = ToolSelectionState::from_packages(packages, &resolver).unwrap();
+    let state = ToolSelectionState::from_packages(packages, &resolver, None).unwrap();
     let tool = &state.packages[0].tools[0];
 
     let command = tool
@@ -180,10 +181,11 @@ fn install_command_is_only_available_for_missing_tools_with_matching_manager_met
             install: InstallDefinition {
                 apt: Some("ripgrep".to_owned()),
                 dnf: Some("ripgrep".to_owned()),
+                ..InstallDefinition::default()
             },
         }],
     }];
-    let state = ToolSelectionState::from_packages(packages, &resolver).unwrap();
+    let state = ToolSelectionState::from_packages(packages, &resolver, None).unwrap();
 
     assert!(
         state.packages[0].tools[0]
@@ -192,6 +194,42 @@ fn install_command_is_only_available_for_missing_tools_with_matching_manager_met
                 use_sudo: true,
             })
             .is_none()
+    );
+}
+
+#[test]
+fn distro_binary_override_is_used_for_path_resolution() {
+    let packages = vec![ToolPackage {
+        package: "development".to_owned(),
+        tools: vec![ToolDefinition {
+            name: "fd".to_owned(),
+            description: String::new(),
+            secrets: BTreeMap::new(),
+            install: InstallDefinition {
+                apt: Some("fd-find".to_owned()),
+                apt_binary: Some("fdfind".to_owned()),
+                dnf: Some("fd-find".to_owned()),
+                ..InstallDefinition::default()
+            },
+        }],
+    }];
+    let resolver = MockResolver::new(&[("fdfind", "/usr/bin/fdfind")]);
+
+    let state = ToolSelectionState::from_packages(
+        packages,
+        &resolver,
+        Some(ToolInstaller {
+            manager: PackageManager::Apt,
+            use_sudo: true,
+        }),
+    )
+    .unwrap();
+
+    let tool = &state.packages[0].tools[0];
+    assert!(tool.available());
+    assert_eq!(
+        tool.host_path.as_deref(),
+        Some(PathBuf::from("/usr/bin/fdfind").as_path())
     );
 }
 
@@ -215,6 +253,6 @@ fn example_package_json_loads() {
 
     let packages = load_package_file(&path).unwrap();
     assert_eq!(packages.len(), 2);
-    assert_eq!(packages[0].package, "development");
+    assert_eq!(packages[0].package, "general");
     assert_eq!(packages[1].package, "ops");
 }

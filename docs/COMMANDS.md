@@ -40,7 +40,7 @@ ags tools config/tool-packages.example.json --config ~/.config/ags/config.toml
 
 What it does:
 
-- Reads a JSON package file shaped as `[{"package":"development","tools":[...]}]`.
+- Reads a JSON package file shaped as `[{"package":"general","tools":[...]}]`.
 - Shows one TUI screen per package.
 - Preselects packages and tools that are available on the host `PATH`.
 - Disables tools that are missing on the host until their path can be resolved.
@@ -48,7 +48,7 @@ What it does:
 - Saves selected available tools as managed `[[tool]]` entries in the AGS TOML config.
 - Records only secret names and configured source metadata, never secret values.
 
-The package JSON must use command names, not host binary paths. AGS resolves host paths during configuration using `PATH` lookup. Optional install metadata currently supports Debian-like systems through `apt` and Fedora/RPM-like systems through `dnf`.
+The package JSON must use command names, not host binary paths. AGS resolves host paths during configuration using `PATH` lookup. Optional install metadata currently supports Debian-like systems through `apt` and Fedora/RPM-like systems through `dnf`. If a distro installs a different host binary name, declare `apt_binary` or `dnf_binary`; AGS still mounts it into the sandbox under the tool `name`.
 
 ---
 

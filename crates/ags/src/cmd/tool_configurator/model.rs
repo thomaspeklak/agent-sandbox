@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use toml_edit::{ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
-use super::install::{InstallCommand, InstallDefinition, ToolInstaller, validate_install_package};
+use super::install::{
+    InstallCommand, InstallDefinition, ToolInstaller, find_on_path, validate_install_definition,
+};
 
 pub const MANAGED_BY_KEY: &str = "ags_managed_by";
 pub const MANAGED_BY_VALUE: &str = "tool-configurator";
@@ -198,6 +200,7 @@ impl ToolSelectionState {
     pub fn from_packages(
         packages: Vec<ToolPackage>,
         resolver: &dyn ToolResolver,
+        installer: Option<ToolInstaller>,
     ) -> Result<Self, ToolConfigError> {
         validate_packages(&packages)?;
 
@@ -208,7 +211,7 @@ impl ToolSelectionState {
                     .tools
                     .into_iter()
                     .map(|definition| {
-                        let host_path = resolver.resolve_tool(&definition.name);
+                        let host_path = resolve_tool_path(&definition, resolver, installer);
                         let selected = host_path.is_some();
                         ToolState {
                             definition,
@@ -296,12 +299,7 @@ fn validate_packages(packages: &[ToolPackage]) -> Result<(), ToolConfigError> {
         }
         for tool in &package.tools {
             validate_tool_name(&package.package, &tool.name)?;
-            if let Some(install_package) = &tool.install.apt {
-                validate_install_package(&package.package, &tool.name, "apt", install_package)?;
-            }
-            if let Some(install_package) = &tool.install.dnf {
-                validate_install_package(&package.package, &tool.name, "dnf", install_package)?;
-            }
+            validate_install_definition(&package.package, &tool.name, &tool.install)?;
         }
     }
 
@@ -324,39 +322,19 @@ fn validate_tool_name(package: &str, name: &str) -> Result<(), ToolConfigError> 
     Ok(())
 }
 
-fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = if dir.as_os_str().is_empty() {
-            PathBuf::from(name)
-        } else {
-            dir.join(name)
-        };
-        if is_executable_file(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn is_executable_file(path: &Path) -> bool {
-    let Ok(metadata) = fs::metadata(path) else {
-        return false;
-    };
-    if !metadata.is_file() {
-        return false;
-    }
-
-    #[cfg(unix)]
+pub fn resolve_tool_path(
+    definition: &ToolDefinition,
+    resolver: &dyn ToolResolver,
+    installer: Option<ToolInstaller>,
+) -> Option<PathBuf> {
+    if let Some(binary) =
+        installer.and_then(|installer| definition.install.binary_for(installer.manager))
+        && let Some(path) = resolver.resolve_tool(binary)
     {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.permissions().mode() & 0o111 != 0
+        return Some(path);
     }
 
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    resolver.resolve_tool(&definition.name)
 }
 
 fn remove_managed_tools(doc: &mut DocumentMut) -> usize {
