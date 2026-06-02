@@ -5,6 +5,10 @@
       {
         "name": "gh",
         "description": "GitHub CLI for issue, pull request, and repository workflows.",
+        "install": {
+          "apt": "gh",
+          "dnf": "gh"
+        },
         "secrets": {
           "GH_TOKEN": {
             "description": "GitHub token supplied by the host environment.",
@@ -15,21 +19,36 @@
       {
         "name": "jq",
         "description": "Command-line JSON processor.",
+        "install": {
+          "apt": "jq",
+          "dnf": "jq"
+        },
         "secrets": {}
       },
       {
         "name": "rg",
         "description": "ripgrep source and text search.",
+        "install": {
+          "apt": "ripgrep",
+          "dnf": "ripgrep"
+        },
         "secrets": {}
       },
       {
         "name": "fd",
         "description": "Fast filesystem search.",
+        "install": {
+          "dnf": "fd-find"
+        },
         "secrets": {}
       },
       {
         "name": "cargo",
         "description": "Rust package manager and build tool.",
+        "install": {
+          "apt": "cargo",
+          "dnf": "cargo"
+        },
         "secrets": {
           "CARGO_REGISTRY_TOKEN": {
             "description": "Optional crates.io publishing token.",

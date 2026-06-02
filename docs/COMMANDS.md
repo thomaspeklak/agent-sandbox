@@ -43,11 +43,12 @@ What it does:
 - Reads a JSON package file shaped as `[{"package":"development","tools":[...]}]`.
 - Shows one TUI screen per package.
 - Preselects packages and tools that are available on the host `PATH`.
-- Disables tools that are missing on the host; it does not install or configure them.
+- Disables tools that are missing on the host until their path can be resolved.
+- Offers an install action for missing tools when the package JSON declares a package for the detected host package manager.
 - Saves selected available tools as managed `[[tool]]` entries in the AGS TOML config.
 - Records only secret names and configured source metadata, never secret values.
 
-The package JSON must use command names, not host binary paths. AGS resolves host paths during configuration using `PATH` lookup.
+The package JSON must use command names, not host binary paths. AGS resolves host paths during configuration using `PATH` lookup. Optional install metadata currently supports Debian-like systems through `apt` and Fedora/RPM-like systems through `dnf`.
 
 ---
 

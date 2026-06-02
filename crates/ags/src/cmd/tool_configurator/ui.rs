@@ -1,12 +1,15 @@
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
+use super::install::{InstallCommand, ToolInstaller, detect_host_tool_installer};
 use super::model::{
-    PackageState, SaveReport, SecretInput, ToolConfigError, ToolResolver, ToolSelectionState,
-    ToolState, load_package_file, write_selected_tools,
+    PackageState, PathToolResolver, SaveReport, SecretInput, ToolConfigError, ToolResolver,
+    ToolSelectionState, ToolState, load_package_file, write_selected_tools,
 };
 
 #[derive(Clone, Copy)]
@@ -27,6 +30,7 @@ pub struct App {
     show_help: bool,
     status_message: Option<(String, StatusKind)>,
     save_report: Option<SaveReport>,
+    installer: Option<ToolInstaller>,
 }
 
 impl App {
@@ -44,6 +48,16 @@ impl App {
 
         let packages = load_package_file(packages_path)?;
         let state = ToolSelectionState::from_packages(packages, resolver)?;
+        let installer = detect_host_tool_installer();
+        let has_installable_missing_tools = installer.is_some_and(|installer| {
+            state.packages.iter().any(|package| {
+                package
+                    .tools
+                    .iter()
+                    .any(|tool| tool.install_command(installer).is_some())
+            })
+        });
+        let status_message = initial_status_message(installer, has_installable_missing_tools);
 
         Ok(Self {
             config_path: config_path.to_owned(),
@@ -53,11 +67,9 @@ impl App {
             current_package: 0,
             selected_tool: 0,
             show_help: false,
-            status_message: Some((
-                "Available tools were preselected. Missing tools are disabled.".to_owned(),
-                StatusKind::Info,
-            )),
+            status_message,
             save_report: None,
+            installer,
         })
     }
 
@@ -78,7 +90,7 @@ impl App {
             terminal.draw(|frame| self.render(frame))?;
 
             if let Event::Key(key) = event::read()? {
-                self.handle_key(key);
+                self.handle_key(key, terminal);
             }
         }
         Ok(())
@@ -116,7 +128,7 @@ impl App {
             .and_then(|package| package.tools.get(self.selected_tool))
     }
 
-    fn handle_key(&mut self, key: KeyEvent) {
+    fn handle_key(&mut self, key: KeyEvent, terminal: &mut ratatui::DefaultTerminal) {
         if self.show_help {
             self.show_help = false;
             return;
@@ -126,6 +138,7 @@ impl App {
             KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
             KeyCode::Char('s') => self.save_and_quit(),
+            KeyCode::Char('i') | KeyCode::Char('I') => self.install_current_tool(terminal),
             KeyCode::Char('p') | KeyCode::Char('P') => self.toggle_current_package(),
             KeyCode::Char(' ') => self.toggle_current_tool(),
             KeyCode::Right | KeyCode::Char('l') => self.move_package(1),
@@ -134,6 +147,95 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.move_tool(-1),
             _ => {}
         }
+    }
+
+    fn install_current_tool(&mut self, terminal: &mut ratatui::DefaultTerminal) {
+        let Some(tool) = self.current_tool() else {
+            self.status_message = Some(("No tool is selected.".to_owned(), StatusKind::Warning));
+            return;
+        };
+        if tool.available() {
+            self.status_message = Some((
+                "Install is only offered for tools missing on PATH.".to_owned(),
+                StatusKind::Warning,
+            ));
+            return;
+        }
+        let Some(installer) = self.installer else {
+            self.status_message = Some((
+                "No supported host package manager was detected.".to_owned(),
+                StatusKind::Warning,
+            ));
+            return;
+        };
+        let Some(command) = tool.install_command(installer) else {
+            self.status_message = Some((
+                format!(
+                    "No install package is available for {}.",
+                    tool.definition.name
+                ),
+                StatusKind::Warning,
+            ));
+            return;
+        };
+
+        let package_index = self.current_package;
+        let tool_index = self.selected_tool;
+        let tool_name = tool.definition.name.clone();
+
+        ratatui::restore();
+        let status = run_install_command(&tool_name, &command);
+        *terminal = ratatui::init();
+
+        match status {
+            Ok(status) if status.success() => {
+                if let Some(path) = self.refresh_tool_path(package_index, tool_index) {
+                    self.status_message = Some((
+                        format!(
+                            "Installed {tool_name}; resolved host path {}.",
+                            path.display()
+                        ),
+                        StatusKind::Success,
+                    ));
+                } else {
+                    self.status_message = Some((
+                        format!("Install completed, but {tool_name} is still missing on PATH."),
+                        StatusKind::Warning,
+                    ));
+                }
+            }
+            Ok(status) => {
+                self.status_message = Some((
+                    format!("Install command exited with status {status}."),
+                    StatusKind::Warning,
+                ));
+            }
+            Err(error) => {
+                self.status_message = Some((
+                    format!("Install command failed to start: {error}"),
+                    StatusKind::Error,
+                ));
+            }
+        }
+    }
+
+    fn refresh_tool_path(&mut self, package_index: usize, tool_index: usize) -> Option<PathBuf> {
+        let tool = self
+            .state
+            .packages
+            .get_mut(package_index)?
+            .tools
+            .get_mut(tool_index)?;
+        let host_path = PathToolResolver.resolve_tool(&tool.definition.name);
+        tool.host_path = host_path.clone();
+        if tool.host_path.is_some() {
+            tool.selected = true;
+        }
+        host_path
+    }
+
+    fn install_command_for_tool(&self, tool: &ToolState) -> Option<InstallCommand> {
+        tool.install_command(self.installer?)
     }
 
     fn move_package(&mut self, delta: isize) {
@@ -234,6 +336,36 @@ impl App {
             }
         }
     }
+}
+
+fn initial_status_message(
+    installer: Option<ToolInstaller>,
+    has_installable_missing_tools: bool,
+) -> Option<(String, StatusKind)> {
+    let message = match (installer, has_installable_missing_tools) {
+        (Some(installer), true) => format!(
+            "Available tools were preselected. Select a missing tool and press i to install it with {}.",
+            installer.manager.label()
+        ),
+        _ => "Available tools were preselected. Missing tools are disabled.".to_owned(),
+    };
+
+    Some((message, StatusKind::Info))
+}
+
+fn run_install_command(
+    tool_name: &str,
+    command: &InstallCommand,
+) -> io::Result<std::process::ExitStatus> {
+    println!("Installing {tool_name} with: {}", command.display_command());
+    println!();
+    let status = Command::new(&command.program).args(&command.args).status();
+    println!();
+    print!("Press Enter to return to AGS Tool Configurator...");
+    let _ = io::stdout().flush();
+    let mut line = String::new();
+    let _ = io::stdin().read_line(&mut line);
+    status
 }
 
 include!("ui_render.rs");

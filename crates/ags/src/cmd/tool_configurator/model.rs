@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use toml_edit::{ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
+use super::install::{InstallCommand, InstallDefinition, ToolInstaller, validate_install_package};
+
 pub const MANAGED_BY_KEY: &str = "ags_managed_by";
 pub const MANAGED_BY_VALUE: &str = "tool-configurator";
 pub const MANAGED_PACKAGE_KEY: &str = "ags_package";
@@ -68,6 +70,8 @@ pub struct ToolDefinition {
     pub description: String,
     #[serde(default)]
     pub secrets: BTreeMap<String, SecretInput>,
+    #[serde(default)]
+    pub install: InstallDefinition,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -145,6 +149,15 @@ pub struct ToolState {
 impl ToolState {
     pub fn available(&self) -> bool {
         self.host_path.is_some()
+    }
+
+    pub fn install_command(&self, installer: ToolInstaller) -> Option<InstallCommand> {
+        if self.available() {
+            return None;
+        }
+
+        let package = self.definition.install.package_for(installer.manager)?;
+        Some(installer.command_for(package))
     }
 }
 
@@ -283,6 +296,12 @@ fn validate_packages(packages: &[ToolPackage]) -> Result<(), ToolConfigError> {
         }
         for tool in &package.tools {
             validate_tool_name(&package.package, &tool.name)?;
+            if let Some(install_package) = &tool.install.apt {
+                validate_install_package(&package.package, &tool.name, "apt", install_package)?;
+            }
+            if let Some(install_package) = &tool.install.dnf {
+                validate_install_package(&package.package, &tool.name, "dnf", install_package)?;
+            }
         }
     }
 

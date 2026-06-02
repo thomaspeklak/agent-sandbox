@@ -1,3 +1,4 @@
+pub mod install;
 pub mod model;
 mod ui;
 

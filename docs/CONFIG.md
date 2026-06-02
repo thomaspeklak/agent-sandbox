@@ -232,7 +232,7 @@ This keeps dcg core protections on (implicit) and adds common AGS-adjacent packs
 
 Declares a tool binary mount, optional directories, optional secrets.
 
-`ags tools --packages <json>` can generate managed `[[tool]]` entries from a package JSON file. Package definitions intentionally contain command names rather than host binary paths; AGS resolves host binaries from the user's `PATH` while configuring and disables missing tools in the TUI.
+`ags tools --packages <json>` can generate managed `[[tool]]` entries from a package JSON file. Package definitions intentionally contain command names rather than host binary paths; AGS resolves host binaries from the user's `PATH` while configuring and disables missing tools in the TUI. Missing tools can show an install action when the package JSON includes package-manager metadata for the current host (`apt` for Debian-like systems or `dnf` for Fedora/RPM-like systems).
 
 ```toml
 [[tool]]

@@ -215,6 +215,14 @@ impl App {
                     Span::raw("Host binary: "),
                     Span::styled(path.display().to_string(), Style::default().fg(Color::Green)),
                 ]));
+            } else if let Some(command) = self.install_command_for_tool(tool) {
+                lines.push(Line::from(vec![
+                    Span::raw("Install: "),
+                    Span::styled(
+                        format!("press i to run `{}`", command.display_command()),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                ]));
             }
 
             if tool.definition.secrets.is_empty() {
@@ -266,12 +274,13 @@ impl App {
             .border_style(Style::default().fg(Color::Cyan));
         let text = vec![
             Line::from(
-                "Configure tool package selections. This does not install or configure host tools.",
+                "Configure tool package selections. Missing tools can be installed when supported.",
             ),
             Line::from(""),
             Line::from("Left/Right or h/l  Change package screen"),
             Line::from("Up/Down or j/k     Move through tools"),
             Line::from("Space              Toggle selected tool (available tools only)"),
+            Line::from("i                  Install selected missing tool when available"),
             Line::from("p                  Toggle entire package"),
             Line::from("s                  Save selected tools to config and quit"),
             Line::from("q or Esc           Quit without saving"),
@@ -289,12 +298,24 @@ impl App {
         let (text, style) = match &self.status_message {
             Some((message, kind)) => (message.clone(), status_style(*kind)),
             None => (
-                "h/l package  j/k tool  Space toggle  p package  s save  q quit  ? help"
-                    .to_owned(),
+                self.default_bottom_bar_text(),
                 Style::default().fg(Color::DarkGray),
             ),
         };
         frame.render_widget(Paragraph::new(text).style(style), area);
+    }
+
+    fn default_bottom_bar_text(&self) -> String {
+        if self
+            .current_tool()
+            .and_then(|tool| self.install_command_for_tool(tool))
+            .is_some()
+        {
+            "h/l package  j/k tool  i install  Space toggle  p package  s save  q quit  ? help"
+                .to_owned()
+        } else {
+            "h/l package  j/k tool  Space toggle  p package  s save  q quit  ? help".to_owned()
+        }
     }
 }
 

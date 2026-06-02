@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use ags::cmd::tool_configurator::install::{
+    InstallDefinition, PackageManager, ToolInstaller, package_manager_from_os_release,
+};
 use ags::cmd::tool_configurator::model::{
     MANAGED_BY_KEY, MANAGED_BY_VALUE, SecretDefinition, SecretInput, ToolDefinition, ToolPackage,
     ToolResolver, ToolSelectionState, apply_selection_to_document, container_path_for_tool,
@@ -34,6 +37,7 @@ fn tool(name: &str) -> ToolDefinition {
         name: name.to_owned(),
         description: String::new(),
         secrets: BTreeMap::new(),
+        install: InstallDefinition::default(),
     }
 }
 
@@ -74,6 +78,7 @@ fn apply_selection_replaces_only_managed_tool_entries() {
                 name: "gh".to_owned(),
                 description: "GitHub CLI".to_owned(),
                 secrets,
+                install: InstallDefinition::default(),
             },
             tool("jq"),
         ],
@@ -136,6 +141,71 @@ fn package_validation_rejects_binary_paths() {
 
     let error = ToolSelectionState::from_packages(packages, &resolver).unwrap_err();
     assert!(error.to_string().contains("must be a command name"));
+}
+
+#[test]
+fn install_command_is_only_available_for_missing_tools_with_matching_manager_metadata() {
+    let packages = vec![ToolPackage {
+        package: "development".to_owned(),
+        tools: vec![ToolDefinition {
+            name: "rg".to_owned(),
+            description: String::new(),
+            secrets: BTreeMap::new(),
+            install: InstallDefinition {
+                apt: Some("ripgrep".to_owned()),
+                dnf: Some("ripgrep".to_owned()),
+            },
+        }],
+    }];
+    let resolver = MockResolver::new(&[]);
+    let state = ToolSelectionState::from_packages(packages, &resolver).unwrap();
+    let tool = &state.packages[0].tools[0];
+
+    let command = tool
+        .install_command(ToolInstaller {
+            manager: PackageManager::Apt,
+            use_sudo: true,
+        })
+        .unwrap();
+
+    assert_eq!(command.display_command(), "sudo apt install ripgrep");
+
+    let resolver = MockResolver::new(&[("rg", "/usr/bin/rg")]);
+    let packages = vec![ToolPackage {
+        package: "development".to_owned(),
+        tools: vec![ToolDefinition {
+            name: "rg".to_owned(),
+            description: String::new(),
+            secrets: BTreeMap::new(),
+            install: InstallDefinition {
+                apt: Some("ripgrep".to_owned()),
+                dnf: Some("ripgrep".to_owned()),
+            },
+        }],
+    }];
+    let state = ToolSelectionState::from_packages(packages, &resolver).unwrap();
+
+    assert!(
+        state.packages[0].tools[0]
+            .install_command(ToolInstaller {
+                manager: PackageManager::Apt,
+                use_sudo: true,
+            })
+            .is_none()
+    );
+}
+
+#[test]
+fn os_release_detection_selects_supported_linux_package_manager() {
+    assert_eq!(
+        package_manager_from_os_release("ID=ubuntu\nID_LIKE=debian\n"),
+        Some(PackageManager::Apt)
+    );
+    assert_eq!(
+        package_manager_from_os_release("ID=fedora\n"),
+        Some(PackageManager::Dnf)
+    );
+    assert_eq!(package_manager_from_os_release("ID=arch\n"), None);
 }
 
 #[test]

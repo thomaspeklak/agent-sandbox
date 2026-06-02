@@ -64,7 +64,7 @@ Optional tool package configuration:
 ags tools --packages config/tool-packages.example.json
 ```
 
-This only configures tools that already exist on your host `PATH`; it does not install tools or create their host-side config.
+This configures tools that exist on your host `PATH`. For missing tools, the TUI can offer an install action when the package file declares an apt/dnf package for your host OS.
 
 ---
 
