@@ -8,7 +8,7 @@ Commands:
 \
   doctor         Run health checks on sandbox configuration
 \
-  update-image   Rebuild container image and refresh bundled br/bv/dcg
+  update-image   Rebuild container image and refresh bundled br/dcg
 \
   update-agents  Install/update agents in persistent volumes
 \

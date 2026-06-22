@@ -9,6 +9,7 @@ use crate::config::ValidatedConfig;
 const BR_REPO: &str = "Dicklesworthstone/beads_rust";
 const BV_REPO: &str = "Dicklesworthstone/beads_viewer";
 const DCG_REPO: &str = "Dicklesworthstone/destructive_command_guard";
+const BUNDLE_BEADS_VIEWER: bool = false;
 
 /// Options for the update command.
 pub struct UpdateOptions {
@@ -53,7 +54,7 @@ impl fmt::Display for UpdateError {
 
 impl std::error::Error for UpdateError {}
 
-/// Rebuild the sandbox container image and refresh bundled br/bv/dcg release binaries.
+/// Rebuild the sandbox container image and refresh bundled br/dcg release binaries.
 pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateError> {
     let image = &config.sandbox.image;
     let containerfile = &config.sandbox.containerfile;
@@ -65,7 +66,11 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
     }
 
     let br_version = resolve_latest_tag(BR_REPO)?;
-    let bv_version = resolve_latest_tag(BV_REPO)?;
+    let bv_version = if BUNDLE_BEADS_VIEWER {
+        Some(resolve_latest_tag(BV_REPO)?)
+    } else {
+        None
+    };
     let dcg_version = resolve_latest_tag(DCG_REPO)?;
 
     let context_dir = containerfile
@@ -83,14 +88,18 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
         containerfile,
         context_dir,
         &br_version,
-        &bv_version,
+        bv_version.as_deref(),
         &dcg_version,
         opts.pull,
     );
 
     println!("Rebuilding {image}");
     println!("  br release: {br_version}");
-    println!("  bv release: {bv_version}");
+    if let Some(bv_version) = bv_version.as_deref() {
+        println!("  bv release: {bv_version}");
+    } else {
+        println!("  bv release: disabled (not bundled)");
+    }
     println!("  dcg release: {dcg_version}");
 
     let status = Command::new("podman")
@@ -108,8 +117,13 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
         println!("Removed previous image {}.", short_image_id(&id));
     }
 
-    println!("\nDone. Image rebuilt with br/bv/dcg refreshed.");
-    println!("Verify inside sandbox with: br --version && bv --version && dcg --version");
+    if BUNDLE_BEADS_VIEWER {
+        println!("\nDone. Image rebuilt with br/bv/dcg refreshed.");
+        println!("Verify inside sandbox with: br --version && bv --version && dcg --version");
+    } else {
+        println!("\nDone. Image rebuilt with br/dcg refreshed. bv is not bundled.");
+        println!("Verify inside sandbox with: br --version && dcg --version");
+    }
     println!("Run 'ags update-agents' to install/update agent CLIs in volumes.");
     Ok(())
 }
@@ -220,7 +234,7 @@ fn build_podman_build_args(
     containerfile: &Path,
     context_dir: &Path,
     br_version: &str,
-    bv_version: &str,
+    bv_version: Option<&str>,
     dcg_version: &str,
     pull: bool,
 ) -> Vec<String> {
@@ -232,13 +246,20 @@ fn build_podman_build_args(
         containerfile.display().to_string(),
     ];
 
-    for (name, version) in [
-        ("BR_VERSION", br_version),
-        ("BV_VERSION", bv_version),
-        ("DCG_VERSION", dcg_version),
-    ] {
+    for (name, version) in [("BR_VERSION", br_version), ("DCG_VERSION", dcg_version)] {
         args.push("--build-arg".to_owned());
         args.push(format!("{name}={version}"));
+    }
+
+    args.push("--build-arg".to_owned());
+    args.push(format!(
+        "INSTALL_BV={}",
+        if bv_version.is_some() { "1" } else { "0" }
+    ));
+
+    if let Some(version) = bv_version {
+        args.push("--build-arg".to_owned());
+        args.push(format!("BV_VERSION={version}"));
     }
 
     if pull {
@@ -332,21 +353,40 @@ mod tests {
     }
 
     #[test]
-    fn build_args_include_dcg_version_and_pull_flag() {
+    fn build_args_disable_bv_by_default() {
         let args = build_podman_build_args(
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
             "v1.0.0",
-            "v2.0.0",
+            None,
             "v3.0.0",
             true,
         );
 
         assert!(args.contains(&"--pull".to_owned()));
         assert!(args.contains(&"BR_VERSION=v1.0.0".to_owned()));
-        assert!(args.contains(&"BV_VERSION=v2.0.0".to_owned()));
         assert!(args.contains(&"DCG_VERSION=v3.0.0".to_owned()));
+        assert!(args.contains(&"INSTALL_BV=0".to_owned()));
+        assert!(!args.iter().any(|arg| arg.starts_with("BV_VERSION=")));
+        assert_eq!(args.last().unwrap(), "/tmp");
+    }
+
+    #[test]
+    fn build_args_can_enable_bv_with_version() {
+        let args = build_podman_build_args(
+            "localhost/agent-sandbox:latest",
+            Path::new("/tmp/Containerfile"),
+            Path::new("/tmp"),
+            "v1.0.0",
+            Some("v2.0.0"),
+            "v3.0.0",
+            false,
+        );
+
+        assert!(args.contains(&"INSTALL_BV=1".to_owned()));
+        assert!(args.contains(&"BV_VERSION=v2.0.0".to_owned()));
+        assert!(!args.contains(&"--pull".to_owned()));
         assert_eq!(args.last().unwrap(), "/tmp");
     }
 

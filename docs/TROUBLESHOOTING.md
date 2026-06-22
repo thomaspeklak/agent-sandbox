@@ -43,7 +43,7 @@ ags update-agents
 
 ---
 
-## `br` / `bv` / `dcg` missing inside container
+## `br` / `dcg` missing inside container
 
 If bundled sandbox commands are missing or stale.
 
@@ -51,14 +51,15 @@ If bundled sandbox commands are missing or stale.
 
 ```bash
 ags update-image
-ags --agent shell -- -lc 'br --version && bv --version && dcg --version'
+ags --agent shell -- -lc 'br --version && dcg --version'
 ```
 
 `ags update-image` refreshes from upstream releases:
 
 - `beads_rust` (`br`): https://github.com/Dicklesworthstone/beads_rust/releases
-- `beads_viewer` (`bv`): https://github.com/Dicklesworthstone/beads_viewer/releases
 - `destructive_command_guard` (`dcg`): https://github.com/Dicklesworthstone/destructive_command_guard/releases
+
+`beads_viewer` (`bv`) is temporarily not bundled while its release asset naming is unstable.
 
 ---
 
