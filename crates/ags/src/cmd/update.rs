@@ -7,7 +7,6 @@ use serde::Deserialize;
 use crate::config::ValidatedConfig;
 
 const BR_REPO: &str = "Dicklesworthstone/beads_rust";
-const BV_REPO: &str = "Dicklesworthstone/beads_viewer";
 const DCG_REPO: &str = "Dicklesworthstone/destructive_command_guard";
 
 /// Options for the update command.
@@ -53,7 +52,7 @@ impl fmt::Display for UpdateError {
 
 impl std::error::Error for UpdateError {}
 
-/// Rebuild the sandbox container image and refresh bundled br/bv/dcg release binaries.
+/// Rebuild the sandbox container image and refresh bundled br/dcg release binaries.
 pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateError> {
     let image = &config.sandbox.image;
     let containerfile = &config.sandbox.containerfile;
@@ -65,7 +64,6 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
     }
 
     let br_version = resolve_latest_tag(BR_REPO)?;
-    let bv_version = resolve_latest_tag(BV_REPO)?;
     let dcg_version = resolve_latest_tag(DCG_REPO)?;
 
     let context_dir = containerfile
@@ -83,14 +81,12 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
         containerfile,
         context_dir,
         &br_version,
-        &bv_version,
         &dcg_version,
         opts.pull,
     );
 
     println!("Rebuilding {image}");
     println!("  br release: {br_version}");
-    println!("  bv release: {bv_version}");
     println!("  dcg release: {dcg_version}");
 
     let status = Command::new("podman")
@@ -108,8 +104,8 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
         println!("Removed previous image {}.", short_image_id(&id));
     }
 
-    println!("\nDone. Image rebuilt with br/bv/dcg refreshed.");
-    println!("Verify inside sandbox with: br --version && bv --version && dcg --version");
+    println!("\nDone. Image rebuilt with br/dcg refreshed.");
+    println!("Verify inside sandbox with: br --version && dcg --version");
     println!("Run 'ags update-agents' to install/update agent CLIs in volumes.");
     Ok(())
 }
@@ -220,7 +216,6 @@ fn build_podman_build_args(
     containerfile: &Path,
     context_dir: &Path,
     br_version: &str,
-    bv_version: &str,
     dcg_version: &str,
     pull: bool,
 ) -> Vec<String> {
@@ -232,11 +227,7 @@ fn build_podman_build_args(
         containerfile.display().to_string(),
     ];
 
-    for (name, version) in [
-        ("BR_VERSION", br_version),
-        ("BV_VERSION", bv_version),
-        ("DCG_VERSION", dcg_version),
-    ] {
+    for (name, version) in [("BR_VERSION", br_version), ("DCG_VERSION", dcg_version)] {
         args.push("--build-arg".to_owned());
         args.push(format!("{name}={version}"));
     }
@@ -338,14 +329,13 @@ mod tests {
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
             "v1.0.0",
-            "v2.0.0",
             "v3.0.0",
             true,
         );
 
         assert!(args.contains(&"--pull".to_owned()));
         assert!(args.contains(&"BR_VERSION=v1.0.0".to_owned()));
-        assert!(args.contains(&"BV_VERSION=v2.0.0".to_owned()));
+        assert!(!args.iter().any(|arg| arg.starts_with("BV_VERSION=")));
         assert!(args.contains(&"DCG_VERSION=v3.0.0".to_owned()));
         assert_eq!(args.last().unwrap(), "/tmp");
     }
