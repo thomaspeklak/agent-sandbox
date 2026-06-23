@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.14.0] — 2026-06-23
+
+### Features
+
+- feat: add clipboard approval dialogs (58bd652)
+
+### Chores / Other
+
+- Remove bv from sandbox image (1ed1bc9)
+
 ## [v0.13.0] — 2026-05-16
 
 ### Features
