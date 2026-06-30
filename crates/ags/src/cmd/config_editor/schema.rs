@@ -31,6 +31,12 @@ const SANDBOX_FIELDS: &[ScalarFieldSchema] = &[
         default_input: "~/.config/ags/Containerfile",
     },
     ScalarFieldSchema {
+        key: "podman_network",
+        kind: ScalarFieldKind::Enum(&["pasta", "slirp4netns"]),
+        required: false,
+        default_input: "pasta",
+    },
+    ScalarFieldSchema {
         key: "cache_dir",
         kind: ScalarFieldKind::Text,
         required: true,

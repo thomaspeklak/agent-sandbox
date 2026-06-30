@@ -4,6 +4,7 @@ use ags::config::{
     DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource, ValidatedConfig,
     parse_and_validate_with_overlay, parse_toml_str,
 };
+use ags::network::PodmanNetwork;
 use tempfile::tempdir;
 
 fn minimal_sandbox_toml() -> &'static str {
@@ -34,6 +35,7 @@ fn parse_err(extra: &str) -> String {
 fn minimal_config_parses() {
     let cfg = parse_minimal("");
     assert_eq!(cfg.sandbox.image, "localhost/agent-sandbox:latest");
+    assert_eq!(cfg.sandbox.podman_network, PodmanNetwork::Pasta);
     assert!(cfg.mounts.is_empty());
     assert!(cfg.tools.is_empty());
     assert!(cfg.secrets.is_empty());
@@ -46,6 +48,28 @@ fn minimal_config_parses() {
     assert!(!cfg.desktop_passthrough.wayland);
     assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
+}
+
+#[test]
+fn sandbox_podman_network_parses() {
+    let toml = minimal_sandbox_toml().replace(
+        "containerfile =",
+        "podman_network = \"slirp4netns\"\ncontainerfile =",
+    );
+    let cfg = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    assert_eq!(cfg.sandbox.podman_network, PodmanNetwork::Slirp4netns);
+}
+
+#[test]
+fn invalid_podman_network_rejected() {
+    let toml = minimal_sandbox_toml().replace(
+        "containerfile =",
+        "podman_network = \"bridge\"\ncontainerfile =",
+    );
+    let err = parse_toml_str(&toml, Path::new("/test/config.toml"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("expected pasta|slirp4netns"), "got: {err}");
 }
 
 #[test]

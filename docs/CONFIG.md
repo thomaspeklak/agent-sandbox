@@ -82,6 +82,7 @@ Core runtime settings.
 [sandbox]
 image = "localhost/agent-sandbox:latest"
 containerfile = "~/.config/ags/Containerfile"
+podman_network = "pasta"
 cache_dir = "~/.cache/ags"
 gitconfig_path = "~/.config/ags/gitconfig-agent"
 auth_key = "~/.ssh/ags-agent-auth"
@@ -97,6 +98,8 @@ passthrough_env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
   - Podman image tag used for runs.
 - `containerfile` (path, required)
   - Containerfile path used by `ags update-image` and auto-build fallback.
+- `podman_network` (`pasta` or `slirp4netns`, optional)
+  - Podman rootless network backend. Defaults to `pasta`. Browser mode adds `--map-host-loopback=169.254.1.2` for the browser bridge. `slirp4netns` is explicit compatibility mode for older hosts.
 - `cache_dir` (path, required)
   - Host cache dir for ssh-agent env/socket and tool caches.
 - `gitconfig_path` (path, required)

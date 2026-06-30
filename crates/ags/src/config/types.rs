@@ -3,6 +3,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use super::defaults::DEFAULT_PI_SPEC;
+use crate::network::PodmanNetwork;
 
 /// Validated, path-resolved configuration ready for use by the launch pipeline.
 #[derive(Debug, Clone)]
@@ -25,6 +26,7 @@ pub struct ValidatedConfig {
 pub struct ValidatedSandbox {
     pub image: String,
     pub containerfile: PathBuf,
+    pub podman_network: PodmanNetwork,
     pub cache_dir: PathBuf,
     pub gitconfig_path: PathBuf,
     pub auth_key: PathBuf,

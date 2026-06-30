@@ -11,6 +11,7 @@ use crate::podman::args::build_run_args;
 pub enum PodmanError {
     ImageBuild(String),
     EnvFileCreate(io::Error),
+    MissingNetworkBackend(String),
     SpawnFailed(io::Error),
 }
 
@@ -19,6 +20,7 @@ impl fmt::Display for PodmanError {
         match self {
             Self::ImageBuild(msg) => write!(f, "image build failed: {msg}"),
             Self::EnvFileCreate(e) => write!(f, "failed to create env file: {e}"),
+            Self::MissingNetworkBackend(msg) => f.write_str(msg),
             Self::SpawnFailed(e) => write!(f, "failed to start podman: {e}"),
         }
     }
@@ -127,6 +129,8 @@ fn validate_env_file_entry(key: &str, value: &str) -> io::Result<()> {
 /// builds the podman args, runs the container, and returns the exit code.
 /// Cleans up the env file on return.
 pub fn execute(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, PodmanError> {
+    ensure_network_backend_available(&plan.network_mode)?;
+
     // Ensure image
     ensure_image(&plan.image, &plan.containerfile)?;
 
@@ -141,6 +145,82 @@ pub fn execute(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, Pod
     let _ = fs::remove_file(&env_file);
 
     result
+}
+
+fn ensure_network_backend_available(network_mode: &str) -> Result<(), PodmanError> {
+    if required_network_binary(network_mode) == Some("pasta") {
+        if podman_pasta_executable()?.is_some() {
+            return Ok(());
+        }
+        return Err(PodmanError::MissingNetworkBackend(
+            "Podman did not report a pasta executable; install the package providing pasta where Podman runs (commonly passt)".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn podman_pasta_executable() -> Result<Option<String>, PodmanError> {
+    let output = Command::new("podman")
+        .args(["info", "--format", "{{.Host.Pasta.Executable}}"])
+        .output()
+        .map_err(PodmanError::SpawnFailed)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        let detail = if stderr.is_empty() {
+            format!("podman info exited with {}", output.status)
+        } else {
+            stderr
+        };
+        return Err(PodmanError::MissingNetworkBackend(format!(
+            "failed to inspect Podman's pasta backend: {detail}"
+        )));
+    }
+
+    Ok(parse_pasta_executable(&output.stdout))
+}
+
+fn parse_pasta_executable(stdout: &[u8]) -> Option<String> {
+    let executable = String::from_utf8_lossy(stdout).trim().to_owned();
+    if executable.is_empty() || executable == "<no value>" {
+        None
+    } else {
+        Some(executable)
+    }
+}
+
+fn required_network_binary(network_mode: &str) -> Option<&'static str> {
+    if network_mode == "pasta" || network_mode.starts_with("pasta:") {
+        Some("pasta")
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_pasta_executable, required_network_binary};
+
+    #[test]
+    fn pasta_network_requires_podman_pasta_backend() {
+        assert_eq!(required_network_binary("pasta"), Some("pasta"));
+        assert_eq!(required_network_binary("pasta:--map-gw"), Some("pasta"));
+        assert_eq!(
+            required_network_binary("pasta:--map-host-loopback=169.254.1.2"),
+            Some("pasta")
+        );
+        assert_eq!(required_network_binary("slirp4netns"), None);
+    }
+
+    #[test]
+    fn parses_podman_pasta_executable() {
+        assert_eq!(
+            parse_pasta_executable(b"/usr/bin/pasta\n"),
+            Some("/usr/bin/pasta".to_owned())
+        );
+        assert_eq!(parse_pasta_executable(b"\n"), None);
+        assert_eq!(parse_pasta_executable(b"<no value>\n"), None);
+    }
 }
 
 fn run_container(

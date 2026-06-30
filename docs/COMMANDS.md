@@ -57,18 +57,21 @@ ags --agent claude -d ~/code -d ~/Downloads
 12. If running with `--lockdown`, stage a sanitized per-run agent home/runtime for the selected agent.
 13. Build launch plan (mounts/env/security/network/entrypoint).
 14. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
-15. Ensure image exists (builds if missing), then run `podman run`.
+15. Verify the selected Podman network backend is available.
+16. Ensure image exists (builds if missing), then run `podman run`.
 
 ### Notes
 
 - Args after `--` are passed directly to agent CLI.
 - `--defaults` / `-D` prepends AGS-managed default passthrough args for the selected agent harness. Today that means Claude gets `--strict-mcp-config --dangerously-skip-permissions`, Gemini gets `--yolo`, and other agents currently add nothing.
 - `--add-dir <path>` / `-d <path>` adds an extra same-path directory mount for the current run only; repeat it to add multiple directories.
+- `--podman-network <pasta|slirp4netns>` overrides `[sandbox].podman_network` for one run. Default is `pasta`; `slirp4netns` is explicit compatibility mode only.
 - `--yolo` disables AGS-managed Pi/Claude guard integrations for that run. For Pi, the AGS guard extension sees `AGS_GUARD_YOLO=1` and becomes a no-op; for Claude, AGS omits its PreToolUse guard hook wiring.
 - `--lockdown` minimizes host exposure for the current run. It disables configured secrets and passthrough env, SSH agent wiring, sandbox git config, generic `[[mount]]` entries, `[[tool]]`-derived mounts/secrets, host bridges/sidecars (including config-enabled host UI for that run), and direct mounting of the selected agent home. Instead AGS stages a sanitized ephemeral home/runtime for the selected agent and discards prior/current session history artifacts when the run exits.
 - In lockdown mode, `--add-dir` still works, network access stays enabled, and exact workspace/external git metadata mounts still work as usual.
 - Incompatible with `--browser`, `--psp`, `--psp-keep`, `--root`, and `--wayland-compositor-passthrough`.
 - Container runs with rootless user namespace (`keep-id`), dropped capabilities, and `no-new-privileges`.
+- Container networking defaults to Podman `--network=pasta`. Browser mode uses `pasta:--map-host-loopback=169.254.1.2` so the browser bridge can reach host loopback debug ports. Missing `pasta` is a hard error; AGS does not silently fall back to `slirp4netns`.
 - Agent host state normally comes from explicit `[[agent_mount]]` / `[[mount]]` entries; lockdown overrides that with staged per-run agent state.
 - Agent processes run inside the container: `localhost` is container-local. Use `host.containers.internal` for host machine ports/services.
 - Outside lockdown, runtime env vars are injected for discoverability: `AGS_HOST_SERVICES_HOST` and `AGS_HOST_SERVICES_HINT`.

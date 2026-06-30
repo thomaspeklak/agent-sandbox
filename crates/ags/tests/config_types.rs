@@ -15,6 +15,7 @@ sign_key = "/tmp/sign"
 "#;
     let raw: ags::config::RawConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(raw.sandbox.image, "localhost/agent-sandbox:latest");
+    assert!(raw.sandbox.podman_network.is_empty());
     assert!(raw.mount.is_empty());
     assert!(raw.tool.is_empty());
     assert!(raw.secret.is_empty());

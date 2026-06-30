@@ -67,6 +67,7 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         stop_when_done: false,
         root_mode: false,
         wayland_passthrough: false,
+        podman_network: None,
     }
 }
 
@@ -483,7 +484,7 @@ fn network_mode_without_browser() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
-    assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=false");
+    assert_eq!(plan.network_mode, "pasta");
 }
 
 #[test]
@@ -512,7 +513,81 @@ debug_port = 9222
         },
     )
     .unwrap();
+    assert_eq!(plan.network_mode, "pasta:--map-host-loopback=169.254.1.2");
+    assert!(
+        plan.entrypoint
+            .contains("TCP:host.containers.internal:9222"),
+        "pasta browser bridge should use Podman host alias: {}",
+        plan.entrypoint
+    );
+}
+
+#[test]
+fn network_mode_can_use_slirp4netns_from_config() {
+    let toml = minimal_config_toml().replace(
+        "containerfile =",
+        "podman_network = \"slirp4netns\"\ncontainerfile =",
+    );
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from(&toml, workdir.path());
+    assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=false");
+}
+
+#[test]
+fn network_mode_slirp_browser_preserves_host_loopback_bridge() {
+    let toml = format!(
+        "{}\n{}",
+        minimal_config_toml().replace(
+            "containerfile =",
+            "podman_network = \"slirp4netns\"\ncontainerfile =",
+        ),
+        r#"
+[browser]
+enabled = true
+command = "google-chrome"
+profile_dir = "/tmp/chrome"
+debug_port = 9222
+"#
+    );
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            browser_mode: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
     assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=true");
+    assert!(
+        plan.entrypoint.contains("TCP:10.0.2.2:9222"),
+        "slirp browser bridge should use old slirp gateway: {}",
+        plan.entrypoint
+    );
+}
+
+#[test]
+fn network_mode_cli_override_wins() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            podman_network: Some(ags::network::PodmanNetwork::Slirp4netns),
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+    assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=false");
 }
 
 #[test]

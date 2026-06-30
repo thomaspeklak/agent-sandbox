@@ -49,6 +49,10 @@ Run flags:
 \
   --config <path>      Use an alternate AGS config file
 \
+  --podman-network <mode>
+\
+                       Podman network backend (pasta|slirp4netns; default: pasta)
+\
   --add-dir, -d <path> Add an extra host directory mount (repeatable)
 
 \

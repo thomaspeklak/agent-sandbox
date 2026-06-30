@@ -190,6 +190,7 @@ struct EntryPointContext<'a> {
     profile: &'a AgentProfile,
     browser: &'a BrowserConfig,
     browser_mode: bool,
+    podman_network: PodmanNetwork,
     tmux_mode: bool,
     webview_relay_enabled: bool,
     show_host_services_hint: bool,
@@ -202,6 +203,7 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         profile,
         browser,
         browser_mode,
+        podman_network,
         tmux_mode,
         webview_relay_enabled,
         show_host_services_hint,
@@ -227,7 +229,8 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
     if browser_mode && browser.enabled {
         script.push_str(&format!(
             "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-             TCP:10.0.2.2:{port} >/tmp/ags-socat.log 2>&1 & ",
+             TCP:{host}:{port} >/tmp/ags-socat.log 2>&1 & ",
+            host = podman_network.browser_host(),
             port = browser.debug_port
         ));
     }

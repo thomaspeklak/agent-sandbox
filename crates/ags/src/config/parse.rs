@@ -12,6 +12,7 @@ use crate::config::types::{
     HostUiConfig, MountKind, MountMode, MountWhen, PspConfig, SecretSource, UpdateConfig,
     ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret, ValidatedTool,
 };
+use crate::network::PodmanNetwork;
 
 /// Read, parse, and validate a config TOML file from disk.
 pub fn parse_and_validate(path: &Path) -> Result<ValidatedConfig, ConfigError> {
@@ -165,6 +166,7 @@ fn validate_sandbox(raw: &crate::config::raw::RawSandbox) -> Result<ValidatedSan
     Ok(ValidatedSandbox {
         image: require_non_empty(&raw.image, "[sandbox].image")?.to_owned(),
         containerfile: expand_path(&raw.containerfile, "[sandbox].containerfile")?,
+        podman_network: validate_podman_network(&raw.podman_network)?,
         cache_dir: expand_path(&raw.cache_dir, "[sandbox].cache_dir")?,
         gitconfig_path: expand_path(&raw.gitconfig_path, "[sandbox].gitconfig_path")?,
         auth_key: expand_path(&raw.auth_key, "[sandbox].auth_key")?,
@@ -176,6 +178,13 @@ fn validate_sandbox(raw: &crate::config::raw::RawSandbox) -> Result<ValidatedSan
         )?,
         passthrough_env: validate_string_list(&raw.passthrough_env, "[sandbox].passthrough_env")?,
     })
+}
+
+fn validate_podman_network(value: &str) -> Result<PodmanNetwork, ConfigError> {
+    if value.is_empty() {
+        return Ok(PodmanNetwork::default());
+    }
+    PodmanNetwork::parse(value).map_err(ConfigError::Validation)
 }
 
 fn validate_mount(raw: &RawMount, ctx: &str) -> Result<ValidatedMount, ConfigError> {

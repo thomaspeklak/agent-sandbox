@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use ags::browser;
 use ags::config::BrowserConfig;
+use ags::network::PodmanNetwork;
 
 fn make_config(enabled: bool, port: u16) -> BrowserConfig {
     BrowserConfig {
@@ -93,17 +94,35 @@ fn socat_command_format() {
     config.command = "unused".to_owned();
 
     let result = browser::start_if_needed(true, &config).unwrap().unwrap();
-    let socat = result.socat_command();
+    let socat = result.socat_command(PodmanNetwork::Pasta);
 
     assert!(
         socat.contains(&format!("TCP-LISTEN:{port}")),
         "socat should listen on port: {socat}"
     );
     assert!(
-        socat.contains(&format!("TCP:10.0.2.2:{port}")),
-        "socat should forward to host via slirp4netns: {socat}"
+        socat.contains(&format!("TCP:host.containers.internal:{port}")),
+        "socat should forward to host via Podman host alias: {socat}"
     );
     assert!(socat.contains("fork"), "socat should fork: {socat}");
+
+    drop(listener);
+}
+
+#[test]
+fn socat_command_slirp_uses_loopback_gateway() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let mut config = make_config(true, port);
+    config.command = "unused".to_owned();
+
+    let result = browser::start_if_needed(true, &config).unwrap().unwrap();
+    let socat = result.socat_command(PodmanNetwork::Slirp4netns);
+
+    assert!(
+        socat.contains(&format!("TCP:10.0.2.2:{port}")),
+        "slirp bridge should use loopback gateway: {socat}"
+    );
 
     drop(listener);
 }
