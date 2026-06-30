@@ -7,6 +7,7 @@ use ags::config::{
     MountKind, MountMode, MountWhen, PspConfig, UpdateConfig, ValidatedConfig, ValidatedMount,
     ValidatedSandbox,
 };
+use ags::network::PodmanNetwork;
 
 fn minimal_config(tmp: &Path) -> ValidatedConfig {
     let pi_root = tmp.join("pi");
@@ -29,6 +30,7 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
         sandbox: ValidatedSandbox {
             image: "test-image:latest".into(),
             containerfile,
+            podman_network: PodmanNetwork::Pasta,
             cache_dir,
             gitconfig_path: gitconfig,
             auth_key,

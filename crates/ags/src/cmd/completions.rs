@@ -51,6 +51,7 @@ const BASH: &str = r#"_ags_completion() {
   local agents="pi claude codex gemini opencode shell"
   local shells="fish zsh bash"
   local modes="wrappers aliases both"
+  local podman_networks="pasta slirp4netns"
 
   local word
   for word in "${COMP_WORDS[@]}"; do
@@ -60,7 +61,7 @@ const BASH: &str = r#"_ags_completion() {
   done
 
   if (( COMP_CWORD == 1 )); then
-    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --podman-network --add-dir -d -h --help" -- "$cur") )
     return 0
   fi
 
@@ -135,6 +136,10 @@ const BASH: &str = r#"_ags_completion() {
       COMPREPLY=( $(compgen -d -- "$cur") )
       return 0
       ;;
+    --podman-network)
+      COMPREPLY=( $(compgen -W "$podman_networks" -- "$cur") )
+      return 0
+      ;;
   esac
 
   if [[ "$cur" == --agent=* ]]; then
@@ -151,6 +156,13 @@ const BASH: &str = r#"_ags_completion() {
     return 0
   fi
 
+  if [[ "$cur" == --podman-network=* ]]; then
+    local value="${cur#--podman-network=}"
+    COMPREPLY=( $(compgen -W "$podman_networks" -- "$value") )
+    COMPREPLY=( "${COMPREPLY[@]/#/--podman-network=}" )
+    return 0
+  fi
+
   if [[ "$cur" == --add-dir=* ]]; then
     local value="${cur#--add-dir=}"
     COMPREPLY=( $(compgen -d -- "$value") )
@@ -158,7 +170,7 @@ const BASH: &str = r#"_ags_completion() {
     return 0
   fi
 
-  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
+  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --podman-network --add-dir -d -h --help" -- "$cur") )
 }
 
 complete -F _ags_completion ags
@@ -166,16 +178,17 @@ complete -F _ags_completion ags
 
 const ZSH: &str = r#"#compdef ags
 
-local -a commands agents shells modes
+local -a commands agents shells modes podman_networks
 commands=(setup doctor update-image update-agents install uninstall create-aliases completions)
 agents=(pi claude codex gemini opencode shell)
 shells=(fish zsh bash)
 modes=(wrappers aliases both)
+podman_networks=(pasta slirp4netns)
 
 if (( CURRENT == 2 )); then
   _alternative \
     'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions)' \
-    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help)'
+    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --podman-network --add-dir -d -h --help)'
   return
 fi
 
@@ -228,6 +241,7 @@ _arguments -S \
   '--defaults[Apply AGS-managed defaults for the selected agent harness]' \
   '-D[Apply AGS-managed defaults for the selected agent harness]' \
   '--config[Override config file path]:config file:_files' \
+  '--podman-network[Podman network backend]:podman network:(pasta slirp4netns)' \
   '(-d)--add-dir[Add an extra same-path directory mount for this run]:host directory:_files -/' \
   '(--add-dir)-d[Add an extra same-path directory mount for this run]:host directory:_files -/' \
   '(-h --help)'{-h,--help}'[Show help]'
@@ -239,6 +253,7 @@ set -l __ags_subcommands setup doctor update-image update-agents install uninsta
 set -l __ags_agents pi claude codex gemini opencode shell
 set -l __ags_shells fish zsh bash
 set -l __ags_modes wrappers aliases both
+set -l __ags_podman_networks pasta slirp4netns
 
 # Top-level: subcommands + run-mode flags.
 complete -c ags -n "__fish_use_subcommand" -a setup -d "Generate SSH keys and configure secrets"
@@ -262,6 +277,7 @@ complete -c ags -n "__fish_use_subcommand" -l wayland-compositor-passthrough -d 
 complete -c ags -n "__fish_use_subcommand" -l stop-when-done -d "Exit container when the agent finishes in tmux mode"
 complete -c ags -n "__fish_use_subcommand" -l defaults -s D -d "Apply AGS-managed defaults for the selected agent harness"
 complete -c ags -n "__fish_use_subcommand" -l config -r -d "Override config file path"
+complete -c ags -n "__fish_use_subcommand" -l podman-network -r -a "$__ags_podman_networks" -d "Podman network backend"
 complete -c ags -n "__fish_use_subcommand" -l add-dir -s d -r -d "Add an extra same-path directory mount for this run"
 complete -c ags -n "__fish_use_subcommand" -s h -l help -d "Show help"
 
@@ -306,6 +322,7 @@ mod tests {
         assert!(script.contains("--wayland-compositor-passthrough"));
         assert!(script.contains("--stop-when-done"));
         assert!(script.contains("--defaults"));
+        assert!(script.contains("--podman-network"));
         assert!(script.contains("-D"));
         assert!(script.contains("create-aliases"));
         assert!(script.contains("completions"));
@@ -324,6 +341,7 @@ mod tests {
             script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
         );
         assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
+        assert!(script.contains("--podman-network[Podman network backend]"));
         assert!(
             script.contains(
                 "--psp-keep[Keep PSP-managed containers on exit (debug; requires --psp)]"
@@ -340,6 +358,7 @@ mod tests {
             "-l keep-existing -d \"Keep the previous image after a successful rebuild\""
         ));
         assert!(script.contains("-l psp -d \"Enable podman-socket-proxy mode (policy-gated)\""));
+        assert!(script.contains("-l podman-network"));
         assert!(script.contains(
             "-l psp-keep -d \"Keep PSP-managed containers on exit (debug; requires --psp)\""
         ));

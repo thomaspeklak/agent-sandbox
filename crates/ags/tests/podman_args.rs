@@ -29,7 +29,7 @@ fn minimal_plan() -> LaunchPlan {
             write_roots_json: r#"["/home/user/project","/tmp"]"#.to_owned(),
         },
         security: SecurityConfig::default(),
-        network_mode: "slirp4netns:allow_host_loopback=false".to_owned(),
+        network_mode: "pasta".to_owned(),
         boot_dirs: vec!["/home/dev/.ssh".to_owned()],
         entrypoint: "exec pi \"$@\"".to_owned(),
     }
@@ -112,7 +112,7 @@ fn args_include_network_mode() {
     let plan = minimal_plan();
     let args = build_run_args(&plan, Path::new("/tmp/env"));
     let net_idx = args.iter().position(|a| a == "--network").unwrap();
-    assert_eq!(args[net_idx + 1], "slirp4netns:allow_host_loopback=false");
+    assert_eq!(args[net_idx + 1], "pasta");
 }
 
 #[test]

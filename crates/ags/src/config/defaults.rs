@@ -19,6 +19,7 @@ pub fn default_config_path() -> PathBuf {
 pub const DEFAULT_CONFIG: &str = r#"[sandbox]
 image = "localhost/agent-sandbox:latest"
 containerfile = "~/.config/ags/Containerfile"
+podman_network = "pasta"
 cache_dir = "~/.cache/ags"
 gitconfig_path = "~/.config/ags/gitconfig-agent"
 auth_key = "~/.ssh/ags-agent-auth"

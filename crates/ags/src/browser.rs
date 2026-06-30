@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use crate::config::BrowserConfig;
+use crate::network::PodmanNetwork;
 
 /// How long to wait for the browser debug endpoint to become reachable.
 const READY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -75,12 +76,13 @@ impl fmt::Debug for BrowserSidecar {
 impl BrowserSidecar {
     /// Build the socat proxy command for use inside the container.
     ///
-    /// The container uses socat to forward localhost:{port} to the host's
-    /// browser via slirp4netns (10.0.2.2).
-    pub fn socat_command(&self) -> String {
+    /// The container uses socat to forward localhost:{port} to the host browser
+    /// through Podman's host alias.
+    pub fn socat_command(&self, podman_network: PodmanNetwork) -> String {
         format!(
             "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-             TCP:10.0.2.2:{port} >/tmp/ags-socat.log 2>&1 &",
+             TCP:{host}:{port} >/tmp/ags-socat.log 2>&1 &",
+            host = podman_network.browser_host(),
             port = self.port
         )
     }

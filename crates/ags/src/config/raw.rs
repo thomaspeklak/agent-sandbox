@@ -37,6 +37,8 @@ pub struct RawConfig {
 pub struct RawSandbox {
     pub image: String,
     pub containerfile: String,
+    #[serde(default)]
+    pub podman_network: String,
     pub cache_dir: String,
     pub gitconfig_path: String,
     pub auth_key: String,

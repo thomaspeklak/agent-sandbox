@@ -102,6 +102,7 @@ fn run_opts(agent: Agent) -> RunOptions {
         lockdown: true,
         wayland_compositor_passthrough: false,
         stop_when_done: false,
+        podman_network: None,
         config_path: None,
         add_dirs: Vec::new(),
         passthrough_args: Vec::new(),
@@ -133,6 +134,7 @@ fn lockdown_options<'a>(
         stop_when_done: false,
         root_mode: false,
         wayland_passthrough: false,
+        podman_network: None,
     }
 }
 
@@ -410,7 +412,7 @@ fn lockdown_plan_ignores_host_bridge_inputs() {
     )
     .unwrap();
 
-    assert_eq!(plan.network_mode, "slirp4netns:allow_host_loopback=false");
+    assert_eq!(plan.network_mode, "pasta");
     assert!(!plan.entrypoint.contains("socat TCP-LISTEN"));
     assert!(!plan.entrypoint.contains("webview-relay-shim"));
 

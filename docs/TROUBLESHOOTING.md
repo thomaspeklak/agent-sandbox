@@ -267,6 +267,8 @@ Symptoms:
 Cause:
 
 - Agent runs inside container, so `localhost` points to container itself.
+- AGS defaults to Podman `pasta`; use Podman's host alias, not the old slirp gateway `10.0.2.2`.
+- Browser mode adds `--map-host-loopback=169.254.1.2` so the browser bridge can reach host debug ports bound only to `127.0.0.1`.
 
 ### Fix
 
@@ -568,12 +570,14 @@ Symptoms:
 ### Check
 
 - Podman installed and working rootless
+- `pasta` binary available where Podman runs, which may be the host when running AGS from distrobox
 - user session has required Podman setup
 
 Run a quick check:
 
 ```bash
 podman info
+podman info --format '{{.Host.Pasta.Executable}}'
 ```
 
 Then rerun:

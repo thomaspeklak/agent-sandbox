@@ -8,6 +8,7 @@ This project is a Rust CLI (`ags`) for running coding agents inside a Podman san
 
 - Rust toolchain
 - Podman
+- pasta/passt
 - git
 - bash
 
@@ -65,7 +66,7 @@ podman run --rm -it \
     echo "PKG=$pkg"
     test -n "$pkg"
     pacman -U --noconfirm "$pkg"
-    command -v ags git ssh-keygen ssh-add podman
+    command -v ags git ssh-keygen ssh-add podman pasta
     ags --help
   '
 ```

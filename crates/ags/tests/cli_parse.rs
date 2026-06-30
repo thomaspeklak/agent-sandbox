@@ -2,6 +2,7 @@ use ags::cli::{
     Agent, AliasMode, CliError, Command, CompletionsOptions, CreateAliasesOptions, InstallOptions,
     Shell, SubCommand, UpdateImageOptions, help_text, parse_args,
 };
+use ags::network::PodmanNetwork;
 
 fn args(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| s.to_string()).collect()
@@ -22,6 +23,7 @@ fn parses_agent_and_passthrough_args() {
             assert!(!opts.yolo);
             assert!(!opts.lockdown);
             assert!(!opts.wayland_compositor_passthrough);
+            assert!(opts.podman_network.is_none());
             assert!(opts.config_path.is_none());
         }
         _ => panic!("expected Run command"),
@@ -171,6 +173,38 @@ fn parses_config_flag() {
 }
 
 #[test]
+fn parses_podman_network_flag() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "--agent",
+        "pi",
+        "--podman-network",
+        "slirp4netns",
+    ]))
+    .unwrap();
+    match cmd {
+        Command::Run(opts) => assert_eq!(opts.podman_network, Some(PodmanNetwork::Slirp4netns)),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn parses_podman_network_equals_flag() {
+    let cmd = parse_args(args(&["ags", "--agent", "pi", "--podman-network=pasta"])).unwrap();
+    match cmd {
+        Command::Run(opts) => assert_eq!(opts.podman_network, Some(PodmanNetwork::Pasta)),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn rejects_missing_podman_network_value() {
+    let err = parse_args(args(&["ags", "--agent", "pi", "--podman-network="]))
+        .expect_err("expected parse error");
+    assert_eq!(err, CliError::MissingPodmanNetworkValue);
+}
+
+#[test]
 fn parses_subcommands() {
     for (arg, expected) in [
         ("setup", SubCommand::Setup),
@@ -220,6 +254,7 @@ fn help_shows_update_image_but_not_deprecated_update_alias() {
     assert!(help.contains("--keep-existing Keep the previous image after a successful rebuild"));
     assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
     assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));
+    assert!(help.contains("--podman-network <mode>"));
     assert!(help.contains("--wayland-compositor-passthrough"));
     assert!(!help.contains("\n     \x20 update         Rebuild container image"));
 }

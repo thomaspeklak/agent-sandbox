@@ -5,6 +5,7 @@ mod subcommands;
 #[path = "cli_update_image.rs"]
 mod update_image;
 
+use crate::network::PodmanNetwork;
 use crate::run_defaults;
 use help::HELP_TEXT;
 use std::fmt;
@@ -69,6 +70,7 @@ pub struct RunOptions {
     pub lockdown: bool,
     pub wayland_compositor_passthrough: bool,
     pub stop_when_done: bool,
+    pub podman_network: Option<PodmanNetwork>,
     pub config_path: Option<PathBuf>,
     pub add_dirs: Vec<PathBuf>,
     pub passthrough_args: Vec<String>,
@@ -157,9 +159,11 @@ pub enum CliError {
     MissingShellValue,
     MissingAliasModeValue,
     MissingMountPathValue,
+    MissingPodmanNetworkValue,
     InvalidAgent(String),
     InvalidShell(String),
     InvalidAliasMode(String),
+    InvalidPodmanNetwork(String),
     UnexpectedFlag(String),
     UnexpectedPositional(String),
 }
@@ -176,6 +180,7 @@ impl fmt::Display for CliError {
             Self::MissingShellValue => f.write_str("missing value for --shell"),
             Self::MissingAliasModeValue => f.write_str("missing value for --mode"),
             Self::MissingMountPathValue => f.write_str("missing value for --add-dir / -d"),
+            Self::MissingPodmanNetworkValue => f.write_str("missing value for --podman-network"),
             Self::InvalidAgent(agent) => write!(f, "invalid agent '{agent}'"),
             Self::InvalidShell(shell) => {
                 write!(f, "invalid shell '{shell}' (expected fish|zsh|bash)")
@@ -183,6 +188,7 @@ impl fmt::Display for CliError {
             Self::InvalidAliasMode(mode) => {
                 write!(f, "invalid mode '{mode}' (expected wrappers|aliases|both)")
             }
+            Self::InvalidPodmanNetwork(msg) => f.write_str(msg),
             Self::UnexpectedFlag(flag) => write!(f, "unexpected flag '{flag}'"),
             Self::UnexpectedPositional(arg) => write!(
                 f,
@@ -268,6 +274,7 @@ where
         lockdown: state.lockdown,
         wayland_compositor_passthrough: state.wayland_compositor_passthrough,
         stop_when_done: state.stop_when_done,
+        podman_network: state.podman_network,
         config_path: state.config_path,
         add_dirs: state.add_dirs,
         passthrough_args,
@@ -288,6 +295,7 @@ struct RunParseState {
     stop_when_done: bool,
     use_defaults: bool,
     config_path: Option<PathBuf>,
+    podman_network: Option<PodmanNetwork>,
     add_dirs: Vec<PathBuf>,
 }
 
@@ -378,6 +386,20 @@ fn parse_run_arg<I: Iterator<Item = String>>(
         return Ok(());
     }
 
+    if arg == "--podman-network" {
+        let raw = iter.next().ok_or(CliError::MissingPodmanNetworkValue)?;
+        state.podman_network = Some(parse_podman_network(&raw)?);
+        return Ok(());
+    }
+
+    if let Some(raw) = arg.strip_prefix("--podman-network=") {
+        if raw.is_empty() {
+            return Err(CliError::MissingPodmanNetworkValue);
+        }
+        state.podman_network = Some(parse_podman_network(raw)?);
+        return Ok(());
+    }
+
     if arg == "--add-dir" || arg == "-d" {
         let raw = iter.next().ok_or(CliError::MissingMountPathValue)?;
         state.add_dirs.push(PathBuf::from(raw));
@@ -397,6 +419,10 @@ fn parse_run_arg<I: Iterator<Item = String>>(
     }
 
     Err(CliError::UnexpectedPositional(arg.to_owned()))
+}
+
+fn parse_podman_network(value: &str) -> Result<PodmanNetwork, CliError> {
+    PodmanNetwork::parse(value).map_err(CliError::InvalidPodmanNetwork)
 }
 
 pub fn help_text() -> &'static str {

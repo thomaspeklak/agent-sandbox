@@ -44,6 +44,7 @@ Required on host:
 
 - Rust toolchain (to build/run `ags` from source)
 - Podman (rootless recommended)
+- `pasta` for Podman rootless networking (package commonly named `passt`)
 - `git`
 - `ssh-keygen`
 - `ssh-add`
@@ -304,6 +305,8 @@ auto_allow_domains = ["mcp.linear.app"]
 
 To connect to services running on your host machine, use `host.containers.internal` instead.
 
+AGS defaults to Podman `--network=pasta`. Browser mode adds `--map-host-loopback=169.254.1.2` so the in-container browser bridge can still reach a host browser debug port bound only to loopback. Do not use the old slirp gateway `10.0.2.2`; use `host.containers.internal` for host services.
+
 `ags` also exports runtime hints inside the container:
 
 - `AGS_HOST_SERVICES_HOST=host.containers.internal`
@@ -384,10 +387,11 @@ ags completions --shell fish > ~/.config/fish/completions/ags.fish
 - `--psp-keep`
 - `--yolo`
 - `--root`
-- `--lockdown` (harden the run by disabling host bridges, secrets, SSH agent, generic mounts/tools, direct agent-home mounts, host-loopback networking, and adding size-limited tmpfs mounts for that run)
+- `--lockdown` (harden the run by disabling host bridges/sidecars, secrets, SSH agent, generic mounts/tools, direct agent-home mounts, host-service hints, and adding size-limited tmpfs mounts for that run)
 - `--wayland-compositor-passthrough` (mount the real host Wayland compositor socket; broad desktop access and separate from clipboard support)
 - `--defaults` / `-D` (prepend AGS-managed passthrough defaults for the selected harness)
 - `--config <path>`
+- `--podman-network <pasta|slirp4netns>` (default `pasta`; `slirp4netns` is explicit compatibility mode only)
 - `--add-dir <path>` / `-d <path>` (repeatable, run only; still allowed in lockdown)
 
 ---
@@ -480,6 +484,7 @@ Use `config/config.example.toml` for full schema examples.
 - Run `ags doctor` first.
 - If image is missing/stale: run `ags update-image`.
 - If agent CLIs are missing/stale: run `ags update-agents`.
+- If AGS reports that Podman did not report a `pasta` executable: install the package providing `pasta` where Podman runs (commonly `passt`) and retry.
 - If browser mode fails:
   - ensure `[browser].enabled = true`
   - verify `[browser].command` is valid

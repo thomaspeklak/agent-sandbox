@@ -13,6 +13,7 @@ use crate::config::{
 };
 use crate::git;
 use crate::host_ui::HostUiGuard;
+use crate::network::{HOST_SERVICES_HOST, PodmanNetwork};
 use crate::plan::types::*;
 use crate::util::shell_quote;
 use crate::webview_relay::WebviewRelayGuard;
@@ -24,7 +25,6 @@ const CONTAINER_SSH_SOCK: &str = "/ssh-agent";
 const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin";
 const PNPM_STORE_DIR: &str = "/usr/local/pnpm/.store";
 const PNPM_GLOBAL_BIN_DIR: &str = "/usr/local/pnpm";
-const HOST_SERVICES_HOST: &str = "host.containers.internal";
 const HOST_SERVICES_HINT: &str =
     "[ags] Host services: use host.containers.internal (localhost is container-local)";
 
@@ -48,6 +48,7 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub stop_when_done: bool,
     pub root_mode: bool,
     pub wayland_passthrough: bool,
+    pub podman_network: Option<PodmanNetwork>,
 }
 
 /// Intermediate env-assembly context. Sidecar fields mirror
@@ -111,6 +112,7 @@ pub fn build_launch_plan(
         stop_when_done,
         root_mode,
         wayland_passthrough,
+        podman_network,
     } = options;
     let effective_browser_mode = browser_mode && !lockdown;
     let auth_proxy_runtime_dir = auth_proxy_runtime_dir.filter(|_| !lockdown);
@@ -297,12 +299,10 @@ pub fn build_launch_plan(
     );
 
     // Network mode
-    let network_mode = if effective_browser_mode {
-        "slirp4netns:allow_host_loopback=true"
-    } else {
-        "slirp4netns:allow_host_loopback=false"
-    }
-    .to_owned();
+    let podman_network = podman_network.unwrap_or(config.sandbox.podman_network);
+    let network_mode = podman_network
+        .podman_mode(effective_browser_mode)
+        .to_owned();
 
     // Entrypoint bash script
     let entrypoint = build_entrypoint(EntryPointContext {
@@ -310,6 +310,7 @@ pub fn build_launch_plan(
         profile: &profile,
         browser: &config.browser,
         browser_mode: effective_browser_mode,
+        podman_network,
         tmux_mode,
         webview_relay_enabled: webview_relay_runtime_dir.is_some(),
         show_host_services_hint: !lockdown,

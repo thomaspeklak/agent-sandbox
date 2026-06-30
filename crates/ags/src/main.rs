@@ -398,6 +398,7 @@ fn run_agent(opts: RunOptions) -> ExitCode {
             root_mode: opts.root,
             wayland_passthrough: opts.wayland_compositor_passthrough
                 || config.desktop_passthrough.wayland,
+            podman_network: opts.podman_network,
         },
     ) {
         Ok(p) => p,
