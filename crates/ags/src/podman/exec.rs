@@ -8,6 +8,7 @@ use crate::plan::LaunchPlan;
 use crate::podman::args::build_run_args;
 use crate::podman::network::{
     adapt_network_mode_for_installed_podman, fallback_network_mode_after_run_failure,
+    should_probe_network_mode_after_run_failure,
 };
 
 #[derive(Debug)]
@@ -163,8 +164,12 @@ fn run_container(
         .map_err(PodmanError::SpawnFailed)?;
 
     let exit_code = status.code().unwrap_or(1) as u8;
-    if let Some(network_mode) =
-        fallback_network_mode_after_run_failure(&plan.network_mode, exit_code)
+    if should_probe_network_mode_after_run_failure(&plan.network_mode, exit_code)
+        && let Some(network_mode) = fallback_network_mode_after_run_failure(
+            &plan.network_mode,
+            exit_code,
+            &probe_network_mode_failure(plan)?,
+        )
     {
         eprintln!(
             "[ags] Podman rejected --network={}; retrying with --network={network_mode}",
@@ -184,4 +189,19 @@ fn run_container(
     }
 
     Ok(exit_code)
+}
+
+fn probe_network_mode_failure(plan: &LaunchPlan) -> Result<String, PodmanError> {
+    let output = Command::new("podman")
+        .args(["run", "--rm", "--pull=never", "--network"])
+        .arg(&plan.network_mode)
+        .args(["--entrypoint", "bash"])
+        .arg(&plan.image)
+        .args(["-lc", "true"])
+        .output()
+        .map_err(PodmanError::SpawnFailed)?;
+
+    let mut message = String::from_utf8_lossy(&output.stderr).into_owned();
+    message.push_str(&String::from_utf8_lossy(&output.stdout));
+    Ok(message)
 }

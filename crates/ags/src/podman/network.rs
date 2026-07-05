@@ -33,12 +33,24 @@ fn network_mode_for_podman_version(current: &str, version: &str) -> String {
 pub(crate) fn fallback_network_mode_after_run_failure(
     current: &str,
     exit_code: u8,
+    failure_output: &str,
 ) -> Option<String> {
-    if exit_code == PODMAN_RUN_ERROR_EXIT_CODE && is_slirp4netns_mode(current) {
+    if should_probe_network_mode_after_run_failure(current, exit_code)
+        && is_slirp4netns_removed_error(failure_output)
+    {
         Some(PASTA_NETWORK_MODE.to_owned())
     } else {
         None
     }
+}
+
+pub(crate) fn should_probe_network_mode_after_run_failure(current: &str, exit_code: u8) -> bool {
+    exit_code == PODMAN_RUN_ERROR_EXIT_CODE && is_slirp4netns_mode(current)
+}
+
+fn is_slirp4netns_removed_error(output: &str) -> bool {
+    output.contains("slirp4netns support has been removed")
+        || (output.contains("slirp4netns") && output.contains("--network=pasta"))
 }
 
 fn podman_version() -> Result<String, std::io::Error> {
@@ -105,17 +117,51 @@ mod tests {
     #[test]
     fn falls_back_to_pasta_after_podman_run_error() {
         assert_eq!(
-            fallback_network_mode_after_run_failure("slirp4netns:allow_host_loopback=false", 125),
+            fallback_network_mode_after_run_failure(
+                "slirp4netns:allow_host_loopback=false",
+                125,
+                "Error: slirp4netns support has been removed, use --network=pasta instead"
+            ),
             Some("pasta".to_owned())
         );
     }
 
     #[test]
-    fn does_not_retry_container_exit_codes_or_non_slirp_modes() {
+    fn does_not_retry_without_network_failure_signal() {
         assert_eq!(
-            fallback_network_mode_after_run_failure("slirp4netns:allow_host_loopback=false", 1),
+            fallback_network_mode_after_run_failure(
+                "slirp4netns:allow_host_loopback=false",
+                125,
+                ""
+            ),
             None
         );
-        assert_eq!(fallback_network_mode_after_run_failure("pasta", 125), None);
+        assert_eq!(
+            fallback_network_mode_after_run_failure("slirp4netns:allow_host_loopback=false", 1, ""),
+            None
+        );
+        assert_eq!(
+            fallback_network_mode_after_run_failure(
+                "pasta",
+                125,
+                "Error: slirp4netns support has been removed, use --network=pasta instead"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn probes_only_slirp_podman_run_errors() {
+        assert!(super::should_probe_network_mode_after_run_failure(
+            "slirp4netns:allow_host_loopback=false",
+            125
+        ));
+        assert!(!super::should_probe_network_mode_after_run_failure(
+            "slirp4netns:allow_host_loopback=false",
+            1
+        ));
+        assert!(!super::should_probe_network_mode_after_run_failure(
+            "pasta", 125
+        ));
     }
 }
