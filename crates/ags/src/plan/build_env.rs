@@ -227,7 +227,8 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
     if browser_mode && browser.enabled {
         script.push_str(&format!(
             "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-             TCP:10.0.2.2:{port} >/tmp/ags-socat.log 2>&1 & ",
+             TCP:{host}:{port} >/tmp/ags-socat.log 2>&1 & ",
+            host = HOST_SERVICES_HOST,
             port = browser.debug_port
         ));
     }

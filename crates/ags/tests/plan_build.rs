@@ -898,6 +898,12 @@ pi_skill_path = "/home/dev/browser-tools"
         plan.entrypoint
     );
     assert!(
+        plan.entrypoint
+            .contains("TCP:host.containers.internal:9222"),
+        "browser mode entrypoint should forward through Podman's host alias: {}",
+        plan.entrypoint
+    );
+    assert!(
         plan.entrypoint.contains("--skill /home/dev/browser-tools"),
         "should have --skill flag: {}",
         plan.entrypoint

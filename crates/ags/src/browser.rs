@@ -13,6 +13,7 @@ const READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long to sleep between readiness polls.
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
+const HOST_SERVICES_HOST: &str = "host.containers.internal";
 
 #[derive(Debug)]
 pub enum BrowserError {
@@ -76,11 +77,12 @@ impl BrowserSidecar {
     /// Build the socat proxy command for use inside the container.
     ///
     /// The container uses socat to forward localhost:{port} to the host's
-    /// browser via slirp4netns (10.0.2.2).
+    /// browser via Podman's host alias.
     pub fn socat_command(&self) -> String {
         format!(
             "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-             TCP:10.0.2.2:{port} >/tmp/ags-socat.log 2>&1 &",
+             TCP:{host}:{port} >/tmp/ags-socat.log 2>&1 &",
+            host = HOST_SERVICES_HOST,
             port = self.port
         )
     }

@@ -100,8 +100,8 @@ fn socat_command_format() {
         "socat should listen on port: {socat}"
     );
     assert!(
-        socat.contains(&format!("TCP:10.0.2.2:{port}")),
-        "socat should forward to host via slirp4netns: {socat}"
+        socat.contains(&format!("TCP:host.containers.internal:{port}")),
+        "socat should forward to host via Podman's host alias: {socat}"
     );
     assert!(socat.contains("fork"), "socat should fork: {socat}");
 
