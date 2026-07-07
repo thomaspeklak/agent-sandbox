@@ -3,6 +3,8 @@ use std::process::Command;
 use crate::plan::LaunchPlan;
 
 const PASTA_NETWORK_MODE: &str = "pasta";
+const PASTA_HOST_LOOPBACK_NETWORK_MODE: &str =
+    "pasta:--map-host-loopback,10.0.2.2";
 const PODMAN_RUN_ERROR_EXIT_CODE: u8 = 125;
 
 /// Adapt legacy rootless networking for Podman versions that removed
@@ -24,7 +26,7 @@ pub(crate) fn adapt_network_mode_for_installed_podman(plan: &mut LaunchPlan) {
 
 fn network_mode_for_podman_version(current: &str, version: &str) -> String {
     if is_slirp4netns_mode(current) && podman_version_requires_pasta(version) {
-        PASTA_NETWORK_MODE.to_owned()
+        pasta_network_mode_for_slirp(current).to_owned()
     } else {
         current.to_owned()
     }
@@ -38,7 +40,7 @@ pub(crate) fn fallback_network_mode_after_run_failure(
     if should_probe_network_mode_after_run_failure(current, exit_code)
         && is_slirp4netns_removed_error(failure_output)
     {
-        Some(PASTA_NETWORK_MODE.to_owned())
+        Some(pasta_network_mode_for_slirp(current).to_owned())
     } else {
         None
     }
@@ -49,8 +51,13 @@ pub(crate) fn should_probe_network_mode_after_run_failure(current: &str, exit_co
 }
 
 fn is_slirp4netns_removed_error(output: &str) -> bool {
-    output.contains("slirp4netns support has been removed")
-        || (output.contains("slirp4netns") && output.contains("--network=pasta"))
+    let output = output.to_ascii_lowercase();
+    output.contains("slirp4netns")
+        && (output.contains("pasta")
+            || output.contains("removed")
+            || output.contains("not supported")
+            || output.contains("no longer supported")
+            || output.contains("unsupported"))
 }
 
 fn podman_version() -> Result<String, std::io::Error> {
@@ -67,6 +74,24 @@ fn podman_version() -> Result<String, std::io::Error> {
 
 fn is_slirp4netns_mode(network_mode: &str) -> bool {
     network_mode == "slirp4netns" || network_mode.starts_with("slirp4netns:")
+}
+
+fn slirp4netns_allows_host_loopback(network_mode: &str) -> bool {
+    network_mode
+        .strip_prefix("slirp4netns:")
+        .is_some_and(|options| {
+            options
+                .split(',')
+                .any(|option| option.trim() == "allow_host_loopback=true")
+        })
+}
+
+fn pasta_network_mode_for_slirp(network_mode: &str) -> &'static str {
+    if slirp4netns_allows_host_loopback(network_mode) {
+        PASTA_HOST_LOOPBACK_NETWORK_MODE
+    } else {
+        PASTA_NETWORK_MODE
+    }
 }
 
 fn podman_version_requires_pasta(version: &str) -> bool {
@@ -95,8 +120,23 @@ mod tests {
             "pasta"
         );
         assert_eq!(
-            network_mode_for_podman_version("slirp4netns:allow_host_loopback=true", "6.0.0"),
+            network_mode_for_podman_version("slirp4netns", "6.0.0"),
             "pasta"
+        );
+    }
+
+    #[test]
+    fn preserves_host_loopback_when_switching_to_pasta_for_podman_6() {
+        assert_eq!(
+            network_mode_for_podman_version("slirp4netns:allow_host_loopback=true", "6.0.0"),
+            "pasta:--map-host-loopback,10.0.2.2"
+        );
+        assert_eq!(
+            network_mode_for_podman_version(
+                "slirp4netns:mtu=1500,allow_host_loopback=true",
+                "6.0.0"
+            ),
+            "pasta:--map-host-loopback,10.0.2.2"
         );
     }
 
@@ -115,12 +155,32 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_pasta_after_podman_run_error() {
+    fn falls_back_to_matching_pasta_mode_after_podman_run_error() {
         assert_eq!(
             fallback_network_mode_after_run_failure(
                 "slirp4netns:allow_host_loopback=false",
                 125,
                 "Error: slirp4netns support has been removed, use --network=pasta instead"
+            ),
+            Some("pasta".to_owned())
+        );
+        assert_eq!(
+            fallback_network_mode_after_run_failure(
+                "slirp4netns:allow_host_loopback=true",
+                125,
+                "Error: slirp4netns support has been removed, use --network=pasta instead"
+            ),
+            Some("pasta:--map-host-loopback,10.0.2.2".to_owned())
+        );
+    }
+
+    #[test]
+    fn accepts_broader_slirp_removed_messages() {
+        assert_eq!(
+            fallback_network_mode_after_run_failure(
+                "slirp4netns:allow_host_loopback=false",
+                125,
+                "Error: network backend slirp4netns is no longer supported; use pasta"
             ),
             Some("pasta".to_owned())
         );

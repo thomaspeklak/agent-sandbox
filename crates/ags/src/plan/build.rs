@@ -25,6 +25,7 @@ const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/de
 const PNPM_STORE_DIR: &str = "/usr/local/pnpm/.store";
 const PNPM_GLOBAL_BIN_DIR: &str = "/usr/local/pnpm";
 const HOST_SERVICES_HOST: &str = "host.containers.internal";
+const BROWSER_HOST_LOOPBACK: &str = "10.0.2.2";
 const HOST_SERVICES_HINT: &str =
     "[ags] Host services: use host.containers.internal (localhost is container-local)";
 
