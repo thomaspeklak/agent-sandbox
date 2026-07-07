@@ -1,10 +1,10 @@
 use std::process::Command;
 
+use crate::BROWSER_HOST_LOOPBACK;
 use crate::plan::LaunchPlan;
 
 const PASTA_NETWORK_MODE: &str = "pasta";
-const PASTA_HOST_LOOPBACK_NETWORK_MODE: &str =
-    "pasta:--map-host-loopback,10.0.2.2";
+const PASTA_HOST_LOOPBACK_NETWORK_MODE_PREFIX: &str = "pasta:--map-host-loopback";
 const PODMAN_RUN_ERROR_EXIT_CODE: u8 = 125;
 
 /// Adapt legacy rootless networking for Podman versions that removed
@@ -26,7 +26,7 @@ pub(crate) fn adapt_network_mode_for_installed_podman(plan: &mut LaunchPlan) {
 
 fn network_mode_for_podman_version(current: &str, version: &str) -> String {
     if is_slirp4netns_mode(current) && podman_version_requires_pasta(version) {
-        pasta_network_mode_for_slirp(current).to_owned()
+        pasta_network_mode_for_slirp(current)
     } else {
         current.to_owned()
     }
@@ -40,7 +40,7 @@ pub(crate) fn fallback_network_mode_after_run_failure(
     if should_probe_network_mode_after_run_failure(current, exit_code)
         && is_slirp4netns_removed_error(failure_output)
     {
-        Some(pasta_network_mode_for_slirp(current).to_owned())
+        Some(pasta_network_mode_for_slirp(current))
     } else {
         None
     }
@@ -86,11 +86,11 @@ fn slirp4netns_allows_host_loopback(network_mode: &str) -> bool {
         })
 }
 
-fn pasta_network_mode_for_slirp(network_mode: &str) -> &'static str {
+fn pasta_network_mode_for_slirp(network_mode: &str) -> String {
     if slirp4netns_allows_host_loopback(network_mode) {
-        PASTA_HOST_LOOPBACK_NETWORK_MODE
+        format!("{PASTA_HOST_LOOPBACK_NETWORK_MODE_PREFIX},{BROWSER_HOST_LOOPBACK}")
     } else {
-        PASTA_NETWORK_MODE
+        PASTA_NETWORK_MODE.to_owned()
     }
 }
 

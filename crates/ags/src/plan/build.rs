@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::BROWSER_HOST_LOOPBACK;
 use crate::agent::{self, AgentProfile};
 use crate::auth_proxy::host::AuthProxyGuard;
 use crate::cli::Agent;
@@ -25,7 +26,6 @@ const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/de
 const PNPM_STORE_DIR: &str = "/usr/local/pnpm/.store";
 const PNPM_GLOBAL_BIN_DIR: &str = "/usr/local/pnpm";
 const HOST_SERVICES_HOST: &str = "host.containers.internal";
-const BROWSER_HOST_LOOPBACK: &str = "10.0.2.2";
 const HOST_SERVICES_HINT: &str =
     "[ags] Host services: use host.containers.internal (localhost is container-local)";
 

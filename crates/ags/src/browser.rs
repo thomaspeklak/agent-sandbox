@@ -6,6 +6,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+use crate::BROWSER_HOST_LOOPBACK;
 use crate::config::BrowserConfig;
 
 /// How long to wait for the browser debug endpoint to become reachable.
@@ -13,7 +14,6 @@ const READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long to sleep between readiness polls.
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
-const BROWSER_HOST_LOOPBACK: &str = "10.0.2.2";
 
 #[derive(Debug)]
 pub enum BrowserError {
