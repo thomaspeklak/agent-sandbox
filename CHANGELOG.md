@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.14.1] — 2026-07-08
+
+### Bug Fixes
+
+- Fix Podman pasta networking compatibility (#10) (dd7b139)
+
 ## [v0.14.0] — 2026-06-23
 
 ### Features
