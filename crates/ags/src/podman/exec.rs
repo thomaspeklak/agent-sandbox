@@ -6,6 +6,10 @@ use std::process::Command;
 
 use crate::plan::LaunchPlan;
 use crate::podman::args::build_run_args;
+use crate::podman::network::{
+    adapt_network_mode_for_installed_podman, fallback_network_mode_after_run_failure,
+    should_probe_network_mode_after_run_failure,
+};
 
 #[derive(Debug)]
 pub enum PodmanError {
@@ -127,6 +131,9 @@ fn validate_env_file_entry(key: &str, value: &str) -> io::Result<()> {
 /// builds the podman args, runs the container, and returns the exit code.
 /// Cleans up the env file on return.
 pub fn execute(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, PodmanError> {
+    let mut plan = plan.clone();
+    adapt_network_mode_for_installed_podman(&mut plan);
+
     // Ensure image
     ensure_image(&plan.image, &plan.containerfile)?;
 
@@ -135,7 +142,7 @@ pub fn execute(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, Pod
 
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
 
-    let result = run_container(plan, &env_file, passthrough_args);
+    let result = run_container(&plan, &env_file, passthrough_args);
 
     // Cleanup env file
     let _ = fs::remove_file(&env_file);
@@ -156,5 +163,45 @@ fn run_container(
         .status()
         .map_err(PodmanError::SpawnFailed)?;
 
-    Ok(status.code().unwrap_or(1) as u8)
+    let exit_code = status.code().unwrap_or(1) as u8;
+    if should_probe_network_mode_after_run_failure(&plan.network_mode, exit_code)
+        && let Some(network_mode) = fallback_network_mode_after_run_failure(
+            &plan.network_mode,
+            exit_code,
+            &probe_network_mode_failure(plan)?,
+        )
+    {
+        eprintln!(
+            "[ags] Podman rejected --network={}; retrying with --network={network_mode}",
+            plan.network_mode
+        );
+
+        let mut retry_plan = plan.clone();
+        retry_plan.network_mode = network_mode;
+        let mut retry_args = build_run_args(&retry_plan, env_file);
+        retry_args.extend(passthrough_args.iter().cloned());
+
+        let retry_status = Command::new("podman")
+            .args(&retry_args)
+            .status()
+            .map_err(PodmanError::SpawnFailed)?;
+        return Ok(retry_status.code().unwrap_or(1) as u8);
+    }
+
+    Ok(exit_code)
+}
+
+fn probe_network_mode_failure(plan: &LaunchPlan) -> Result<String, PodmanError> {
+    let output = Command::new("podman")
+        .args(["run", "--rm", "--pull=never", "--network"])
+        .arg(&plan.network_mode)
+        .args(["--entrypoint", "bash"])
+        .arg(&plan.image)
+        .args(["-lc", "true"])
+        .output()
+        .map_err(PodmanError::SpawnFailed)?;
+
+    let mut message = String::from_utf8_lossy(&output.stderr).into_owned();
+    message.push_str(&String::from_utf8_lossy(&output.stdout));
+    Ok(message)
 }

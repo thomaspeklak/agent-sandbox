@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::BROWSER_HOST_LOOPBACK;
 use crate::agent::{self, AgentProfile};
 use crate::auth_proxy::host::AuthProxyGuard;
 use crate::cli::Agent;

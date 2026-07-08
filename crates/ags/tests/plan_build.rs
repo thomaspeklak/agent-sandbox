@@ -898,6 +898,11 @@ pi_skill_path = "/home/dev/browser-tools"
         plan.entrypoint
     );
     assert!(
+        plan.entrypoint.contains("TCP:10.0.2.2:9222"),
+        "browser mode entrypoint should forward through the mapped host-loopback address: {}",
+        plan.entrypoint
+    );
+    assert!(
         plan.entrypoint.contains("--skill /home/dev/browser-tools"),
         "should have --skill flag: {}",
         plan.entrypoint

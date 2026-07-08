@@ -101,7 +101,7 @@ fn socat_command_format() {
     );
     assert!(
         socat.contains(&format!("TCP:10.0.2.2:{port}")),
-        "socat should forward to host via slirp4netns: {socat}"
+        "socat should forward to the mapped host-loopback address: {socat}"
     );
     assert!(socat.contains("fork"), "socat should fork: {socat}");
 

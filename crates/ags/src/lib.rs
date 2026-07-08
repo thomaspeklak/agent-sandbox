@@ -21,3 +21,5 @@ pub mod trust;
 pub mod update_check;
 pub mod util;
 pub mod webview_relay;
+
+pub(crate) const BROWSER_HOST_LOOPBACK: &str = "10.0.2.2";
