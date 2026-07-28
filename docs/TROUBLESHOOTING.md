@@ -59,6 +59,8 @@ ags --agent shell -- -lc 'br --version && dcg --version'
 - `beads_rust` (`br`): https://github.com/Dicklesworthstone/beads_rust/releases
 - `destructive_command_guard` (`dcg`): https://github.com/Dicklesworthstone/destructive_command_guard/releases
 
+For each tool, AGS selects the newest stable release containing both the required archive and its checksum for the image architecture. If a newer release only publishes assets for other platforms, AGS warns and uses the newest compatible release instead.
+
 ---
 
 ## Startup warning: `dcg` is missing and Pi/Claude guards will fail open

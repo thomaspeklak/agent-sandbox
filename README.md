@@ -342,7 +342,7 @@ Start here:
 
 - `ags setup` — generate keys, ensure Pi assets in mounted host path, optional keyring secret setup
 - `ags doctor` — run environment + config health checks
-- `ags update-image [--keep-existing]` — rebuild container image from `Containerfile`, refresh bundled `br`/`dcg` binaries, and remove the previous image after a successful rebuild unless `--keep-existing` is set
+- `ags update-image [--keep-existing]` — rebuild container image from `Containerfile`, refresh bundled `br`/`dcg` binaries, and remove the previous image after a successful rebuild unless it is still referenced by a container or `--keep-existing` is set
 - `ags update-agents` — install/update agent CLIs in persistent volumes
 - `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
 - `ags uninstall` — currently reserved/no-op cleanup

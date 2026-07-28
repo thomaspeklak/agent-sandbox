@@ -95,21 +95,47 @@ RUN set -eu && \
     esac && \
     br_tag="$BR_VERSION" && \
     if [ "$br_tag" = "latest" ]; then \
-      curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
-        https://api.github.com/repos/Dicklesworthstone/beads_rust/releases/latest \
-        -o /tmp/br-release.json && \
-      br_tag="$(jq -r '.tag_name' /tmp/br-release.json)"; \
+      br_tag=""; \
+      page=1; \
+      while [ -z "$br_tag" ]; do \
+        curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1 \
+          -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
+          "https://api.github.com/repos/Dicklesworthstone/beads_rust/releases?per_page=100&page=${page}" \
+          -o /tmp/br-releases.json; \
+        release_count="$(jq 'length' /tmp/br-releases.json)"; \
+        if [ "$release_count" -eq 0 ]; then break; fi; \
+        br_tag="$(jq -r --arg arch "$arch" ' \
+          first( \
+            .[] \
+            | select(.draft == false and .prerelease == false) \
+            | .tag_name as $tag \
+            | ($tag | sub("^v"; "")) as $version \
+            | ("br-" + $version + "-linux_" + $arch + ".tar.gz") as $asset \
+            | select( \
+                any(.assets[]; .name == $asset and .state == "uploaded" and .size > 0) and \
+                any(.assets[]; .name == ($asset + ".sha256") and .state == "uploaded" and .size > 0) \
+              ) \
+            | $tag \
+          ) // empty \
+        ' /tmp/br-releases.json)"; \
+        if [ -n "$br_tag" ] || [ "$release_count" -lt 100 ]; then break; fi; \
+        page=$((page + 1)); \
+      done; \
     fi && \
-    [ -n "$br_tag" ] && [ "$br_tag" != "null" ] && \
+    if [ -z "$br_tag" ] || [ "$br_tag" = "null" ]; then \
+      echo "no compatible beads_rust release found for linux/$arch" >&2; exit 1; \
+    fi && \
     br_version="${br_tag#v}" && \
     br_asset="br-${br_version}-linux_${arch}.tar.gz" && \
     br_base_url="https://github.com/Dicklesworthstone/beads_rust/releases/download/${br_tag}" && \
-    curl -fsSL "${br_base_url}/${br_asset}" -o "/tmp/${br_asset}" && \
-    curl -fsSL "${br_base_url}/${br_asset}.sha256" -o "/tmp/${br_asset}.sha256" && \
+    curl -fsSL --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 1 \
+      "${br_base_url}/${br_asset}" -o "/tmp/${br_asset}" && \
+    curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1 \
+      "${br_base_url}/${br_asset}.sha256" -o "/tmp/${br_asset}.sha256" && \
     (cd /tmp && sha256sum -c "${br_asset}.sha256") && \
     tar -xzf "/tmp/${br_asset}" -C /tmp br && \
     install -m 0755 /tmp/br /usr/local/bin/br && \
-    rm -rf /tmp/br /tmp/br-release.json /tmp/br-*.tar.gz /tmp/br-*.tar.gz.sha256 && \
+    rm -rf /tmp/br /tmp/br-releases.json /tmp/br-*.tar.gz /tmp/br-*.tar.gz.sha256 && \
     br --version
 
 RUN set -eu && \
@@ -119,22 +145,45 @@ RUN set -eu && \
       aarch64|arm64) dcg_target="aarch64-unknown-linux-gnu" ;; \
       *) echo "unsupported architecture for dcg binary: $arch" >&2; exit 1 ;; \
     esac && \
+    dcg_asset="dcg-${dcg_target}.tar.xz" && \
     dcg_tag="$DCG_VERSION" && \
     if [ "$dcg_tag" = "latest" ]; then \
-      curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
-        https://api.github.com/repos/Dicklesworthstone/destructive_command_guard/releases/latest \
-        -o /tmp/dcg-release.json && \
-      dcg_tag="$(jq -r '.tag_name' /tmp/dcg-release.json)"; \
+      dcg_tag=""; \
+      page=1; \
+      while [ -z "$dcg_tag" ]; do \
+        curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1 \
+          -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
+          "https://api.github.com/repos/Dicklesworthstone/destructive_command_guard/releases?per_page=100&page=${page}" \
+          -o /tmp/dcg-releases.json; \
+        release_count="$(jq 'length' /tmp/dcg-releases.json)"; \
+        if [ "$release_count" -eq 0 ]; then break; fi; \
+        dcg_tag="$(jq -r --arg asset "$dcg_asset" ' \
+          first( \
+            .[] \
+            | select(.draft == false and .prerelease == false) \
+            | select( \
+                any(.assets[]; .name == $asset and .state == "uploaded" and .size > 0) and \
+                any(.assets[]; .name == ($asset + ".sha256") and .state == "uploaded" and .size > 0) \
+              ) \
+            | .tag_name \
+          ) // empty \
+        ' /tmp/dcg-releases.json)"; \
+        if [ -n "$dcg_tag" ] || [ "$release_count" -lt 100 ]; then break; fi; \
+        page=$((page + 1)); \
+      done; \
     fi && \
-    [ -n "$dcg_tag" ] && [ "$dcg_tag" != "null" ] && \
-    dcg_asset="dcg-${dcg_target}.tar.xz" && \
+    if [ -z "$dcg_tag" ] || [ "$dcg_tag" = "null" ]; then \
+      echo "no compatible destructive_command_guard release found for $dcg_target" >&2; exit 1; \
+    fi && \
     dcg_base_url="https://github.com/Dicklesworthstone/destructive_command_guard/releases/download/${dcg_tag}" && \
-    curl -fsSL "${dcg_base_url}/${dcg_asset}" -o "/tmp/${dcg_asset}" && \
-    curl -fsSL "${dcg_base_url}/${dcg_asset}.sha256" -o "/tmp/${dcg_asset}.sha256" && \
+    curl -fsSL --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 1 \
+      "${dcg_base_url}/${dcg_asset}" -o "/tmp/${dcg_asset}" && \
+    curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1 \
+      "${dcg_base_url}/${dcg_asset}.sha256" -o "/tmp/${dcg_asset}.sha256" && \
     (cd /tmp && sha256sum -c "${dcg_asset}.sha256") && \
     tar -xJf "/tmp/${dcg_asset}" -C /tmp dcg && \
     install -m 0755 /tmp/dcg /usr/local/bin/dcg && \
-    rm -f /tmp/dcg /tmp/dcg-release.json /tmp/dcg-*.tar.xz /tmp/dcg-*.tar.xz.sha256 && \
+    rm -f /tmp/dcg /tmp/dcg-releases.json /tmp/dcg-*.tar.xz /tmp/dcg-*.tar.xz.sha256 && \
     dcg --version
 
 # Glimpse sandbox shim: build artifacts stay in the builder stage; the final image keeps only the binary.

@@ -146,9 +146,11 @@ ags update-image
 ags update-image --keep-existing
 ```
 
-- Resolves latest release tags from GitHub and passes them into the image build
-- Verifies release checksums during image build
-- Removes the previously tagged sandbox image after the new build succeeds
+- Resolves the newest stable release that provides the required archive and checksum for the image architecture
+- Skips incomplete or platform-specific newer releases with a warning instead of failing on a missing asset
+- Verifies release checksums during image build and refuses releases without a checksum asset
+- Removes the previously tagged sandbox image after the new build succeeds, unless a container still references it
+- Referenced previous images are retained with a warning listing the blocking container IDs
 - `--keep-existing` keeps the previous image for manual rollback/debugging
 - Does **not** update agent CLIs installed in persistent volumes
 
