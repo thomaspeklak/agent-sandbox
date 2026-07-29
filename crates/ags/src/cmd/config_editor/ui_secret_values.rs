@@ -41,6 +41,11 @@ fn set_string_array(entry: &mut toml_edit::Table, key: &str, input: &str) -> Res
         return Ok(());
     }
 
+    entry[key] = string_array_item(key, input)?;
+    Ok(())
+}
+
+fn string_array_item(key: &str, input: &str) -> Result<toml_edit::Item, String> {
     let document = format!("value = {input}")
         .parse::<toml_edit::DocumentMut>()
         .map_err(|error| format!("{key} must be a TOML string array: {error}"))?;
@@ -50,6 +55,7 @@ fn set_string_array(entry: &mut toml_edit::Table, key: &str, input: &str) -> Res
     if array.iter().any(|value| value.as_str().is_none()) {
         return Err(format!("{key} must contain only strings"));
     }
-    entry[key] = toml_edit::Item::Value(toml_edit::Value::Array(array.clone()));
-    Ok(())
+    Ok(toml_edit::Item::Value(toml_edit::Value::Array(
+        array.clone(),
+    )))
 }

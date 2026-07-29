@@ -84,11 +84,6 @@ fn flattened_scalar_item(raw: &str) -> toml_edit::Item {
     if let Ok(value) = raw.parse::<f64>() {
         return toml_edit::value(value);
     }
-    if let Ok(document) = format!("value = {raw}").parse::<toml_edit::DocumentMut>()
-        && let Some(value) = document["value"].as_value()
-    {
-        return toml_edit::Item::Value(value.clone());
-    }
     toml_edit::value(raw)
 }
 
@@ -106,7 +101,11 @@ fn set_flattened_nested_entries(
     for parsed in parse_flattened_entries(input)? {
         let mut nested_entry = toml_edit::Table::new();
         for (key, value) in parsed.scalars {
-            nested_entry[key.as_str()] = flattened_scalar_item(&value);
+            nested_entry[key.as_str()] = if key == "command" {
+                string_array_item(&key, &value)?
+            } else {
+                flattened_scalar_item(&value)
+            };
         }
         for (inline_key, pairs) in parsed.inline_tables {
             let mut inline = toml_edit::InlineTable::new();

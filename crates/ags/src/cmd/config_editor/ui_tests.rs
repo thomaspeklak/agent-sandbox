@@ -759,6 +759,24 @@ fn command_secret_form_round_trips_nested_tool_argv() {
 }
 
 #[test]
+fn nested_editor_values_keep_legacy_scalar_typing() {
+    let mut tool = toml_edit::Table::new();
+    super::set_nested_mount_entries(
+        &mut tool,
+        "host=1979-05-27, container=/data, mode=ro, kind=dir",
+    )
+    .unwrap();
+
+    let directory = tool["directory"]
+        .as_array_of_tables()
+        .unwrap()
+        .iter()
+        .next()
+        .unwrap();
+    assert_eq!(directory["host"].as_str(), Some("1979-05-27"));
+}
+
+#[test]
 fn suggestion_for_binary_field_uses_discovery_presets() {
     assert_eq!(
         super::suggestion_for_field(
