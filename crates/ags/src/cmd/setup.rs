@@ -217,7 +217,7 @@ fn store_secrets_interactive(config: &ValidatedConfig) -> Result<(), SetupError>
         }
 
         if !stored {
-            println!("No secret_store configured for {env_name} (env-only).");
+            println!("No secret_store configured for {env_name} (nothing stored).");
         }
     }
 

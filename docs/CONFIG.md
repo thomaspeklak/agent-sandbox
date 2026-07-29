@@ -42,13 +42,13 @@ Merge rules:
   - `[[secret]]`
 - other arrays are replaced by the repo-local value
 
-This lets a project add mounts/tools/secrets locally without copying your full personal config.
+This lets a project add mounts, tools, and non-command secrets locally without copying your full personal config. For host security, repo-local overlays cannot define `command` secret sources, including under `[[tool.secret]]`.
 
 ---
 
 ## Path and env expansion behavior
 
-For path-like fields, `ags` supports:
+For path-like fields, including the executable element (`command[0]`) of command secret sources, `ags` supports:
 
 - `~` expansion (home directory)
 - environment variable expansion:
@@ -283,6 +283,15 @@ from_env = "GH_TOKEN"
 
 [[secret]]
 env = "GH_TOKEN"
+command = [
+  "$HOME/.local/bin/credential-store-adapter",
+  "lookup",
+  "--service",
+  "github",
+]
+
+[[secret]]
+env = "GH_TOKEN"
 secret_store = { service = "github-cli-login-switcher", username = "general" }
 ```
 
@@ -291,8 +300,9 @@ secret_store = { service = "github-cli-login-switcher", username = "general" }
 - `env` (required): target env var name inside container
 - `from_env` (optional): source env var from host process environment
 - `secret_store` (optional): key/value attributes for `secret-tool lookup`
+- `command` (optional): non-empty argv string array for a trusted host credential helper
 
-A single entry can include one or both source types.
+A single entry can include multiple source types. For `command`, the first element is the executable and remaining elements are passed as literal argv entries. AGS expands `~`, `$VAR`, and `${VAR}` only in the executable. It invokes the executable directly without a shell, so arguments receive no shell parsing or interpolation.
 
 ### Legacy fields (still accepted)
 
@@ -305,6 +315,17 @@ A single entry can include one or both source types.
 - Secrets are processed in config order.
 - For the same target `env`, first successful source wins.
 - Empty/unresolved sources are ignored.
+- Command lookup has a five-second timeout. AGS kills and reaps a timed-out helper, then tries the next source.
+- Command success requires exit status `0` and one non-empty UTF-8 value on stdout. One trailing `\n` or `\r\n` is removed. Empty, multiline, NUL-containing, invalid UTF-8, missing, timed-out, and non-zero results are unresolved.
+- Command helpers receive only allowlisted host variables when present: `PATH`, `HOME`, `USER`, `LOGNAME`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR`. They do not receive previously resolved secrets.
+- Helper stdout and stderr are never included in normal diagnostics. `ags doctor` reports executable availability and lookup success or a structural failure without displaying the value or helper output.
+- `--lockdown` disables all configured secret resolution, including command execution.
+
+### Command source security and delivery
+
+`command` intentionally executes trusted user configuration on the host before the container starts. It is accepted only from the user/global base config (including an explicitly selected `--config` file). AGS rejects command sources from repo-local `.ags/config.toml` overlays, including nested `[[tool.secret]]` declarations.
+
+The resolved value is inserted into AGS's existing secret environment map and delivered through the existing environment-file/container-environment mechanism. A sandboxed process can inspect the resulting environment variable. Command sources expand host-side credential-store support; they do not provide process-scoped delivery or keep the resolved value outside the sandbox.
 
 ---
 

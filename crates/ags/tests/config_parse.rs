@@ -244,6 +244,87 @@ secret_store = { service = "github", username = "user" }
 }
 
 #[test]
+fn command_secret_expands_only_the_executable() {
+    let cfg = parse_minimal(
+        r#"
+[[secret]]
+env = "TOKEN"
+command = ["$HOME/.local/bin/credential-helper", "$HOME", "$(whoami)", ""]
+"#,
+    );
+    assert_eq!(cfg.secrets.len(), 1);
+    match &cfg.secrets[0].source {
+        SecretSource::Command { argv } => {
+            let home = std::env::var("HOME").unwrap();
+            assert_eq!(argv[0], format!("{home}/.local/bin/credential-helper"));
+            assert_eq!(&argv[1..], ["$HOME", "$(whoami)", ""]);
+        }
+        _ => panic!("expected Command source"),
+    }
+}
+
+#[test]
+fn command_secret_supports_tilde_and_braced_env_expansion() {
+    let cfg = parse_minimal(
+        r#"
+[[secret]]
+env = "TILDE_TOKEN"
+command = ["~/.local/bin/tilde-helper"]
+
+[[secret]]
+env = "BRACED_TOKEN"
+command = ["${HOME}/.local/bin/braced-helper"]
+"#,
+    );
+    let home = std::env::var("HOME").unwrap();
+    let executables: Vec<&str> = cfg
+        .secrets
+        .iter()
+        .map(|secret| match &secret.source {
+            SecretSource::Command { argv } => argv[0].as_str(),
+            _ => panic!("expected Command source"),
+        })
+        .collect();
+    assert_eq!(
+        executables,
+        [
+            format!("{home}/.local/bin/tilde-helper"),
+            format!("{home}/.local/bin/braced-helper"),
+        ]
+    );
+}
+
+#[test]
+fn command_secret_rejects_empty_argv() {
+    let err = parse_err(
+        r#"
+[[secret]]
+env = "TOKEN"
+command = []
+"#,
+    );
+    assert!(
+        err.contains("must include at least one argv element"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn command_secret_rejects_empty_executable() {
+    let err = parse_err(
+        r#"
+[[secret]]
+env = "TOKEN"
+command = ["", "lookup"]
+"#,
+    );
+    assert!(
+        err.contains("command[0] must be a non-empty string"),
+        "got: {err}"
+    );
+}
+
+#[test]
 fn secret_multiple_sources_same_env() {
     let cfg = parse_minimal(
         r#"
@@ -386,6 +467,31 @@ from_env = "QWK_TOKEN"
     assert_eq!(cfg.secrets.len(), 1);
     assert_eq!(cfg.secrets[0].env, "QWK_TOKEN");
     assert_eq!(cfg.secrets[0].tool.as_deref(), Some("qwk"));
+}
+
+#[test]
+fn tool_command_secret_has_identical_validated_shape() {
+    let cfg = parse_minimal(
+        r#"
+[[tool]]
+name = "qwk"
+path = "/usr/bin/qwk"
+container_path = "/usr/local/bin/qwk"
+
+[[tool.secret]]
+env = "QWK_TOKEN"
+command = ["/usr/local/bin/qwk-credential", "lookup", "--literal=$HOME"]
+"#,
+    );
+    assert_eq!(cfg.secrets.len(), 1);
+    assert_eq!(cfg.secrets[0].tool.as_deref(), Some("qwk"));
+    match &cfg.secrets[0].source {
+        SecretSource::Command { argv } => assert_eq!(
+            argv,
+            &["/usr/local/bin/qwk-credential", "lookup", "--literal=$HOME"]
+        ),
+        _ => panic!("expected Command source"),
+    }
 }
 
 #[test]
@@ -629,6 +735,77 @@ sign_key = "/tmp/sign"
         err.contains(overlay_path.to_string_lossy().as_ref()),
         "got: {err}"
     );
+}
+
+#[test]
+fn overlay_rejects_top_level_command_secret() {
+    let dir = tempdir().unwrap();
+    let base_path = dir.path().join("base.toml");
+    let overlay_path = dir.path().join("overlay.toml");
+    std::fs::write(&base_path, minimal_sandbox_toml()).unwrap();
+    std::fs::write(
+        &overlay_path,
+        r#"
+[[secret]]
+env = "TOKEN"
+command = ["/tmp/untrusted-helper"]
+"#,
+    )
+    .unwrap();
+
+    let err = parse_and_validate_with_overlay(&base_path, Some(&overlay_path))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("repo-local config"), "got: {err}");
+    assert!(err.contains("[[secret]] #0.command"), "got: {err}");
+}
+
+#[test]
+fn overlay_rejects_nested_tool_command_secret() {
+    let dir = tempdir().unwrap();
+    let base_path = dir.path().join("base.toml");
+    let overlay_path = dir.path().join("overlay.toml");
+    std::fs::write(&base_path, minimal_sandbox_toml()).unwrap();
+    std::fs::write(
+        &overlay_path,
+        r#"
+[[tool]]
+name = "helper"
+path = "/usr/bin/helper"
+container_path = "/usr/local/bin/helper"
+
+[[tool.secret]]
+env = "TOKEN"
+command = ["/tmp/untrusted-helper"]
+"#,
+    )
+    .unwrap();
+
+    let err = parse_and_validate_with_overlay(&base_path, Some(&overlay_path))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("repo-local config"), "got: {err}");
+    assert!(err.contains("[[tool]] #0.secret[0].command"), "got: {err}");
+}
+
+#[test]
+fn overlay_still_accepts_non_command_secret_sources() {
+    let dir = tempdir().unwrap();
+    let base_path = dir.path().join("base.toml");
+    let overlay_path = dir.path().join("overlay.toml");
+    std::fs::write(&base_path, minimal_sandbox_toml()).unwrap();
+    std::fs::write(
+        &overlay_path,
+        r#"
+[[secret]]
+env = "TOKEN"
+from_env = "TOKEN"
+"#,
+    )
+    .unwrap();
+
+    let config = parse_and_validate_with_overlay(&base_path, Some(&overlay_path)).unwrap();
+    assert!(matches!(config.secrets[0].source, SecretSource::Env { .. }));
 }
 
 #[test]

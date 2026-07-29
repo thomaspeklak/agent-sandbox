@@ -96,6 +96,7 @@ pub struct RawSecret {
     pub env: String,
     pub from_env: Option<String>,
     pub secret_store: Option<BTreeMap<String, String>>,
+    pub command: Option<Vec<String>>,
     // Legacy form
     pub provider: Option<String>,
     pub var: Option<String>,

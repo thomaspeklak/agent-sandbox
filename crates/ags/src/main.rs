@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use ags::cli::{self, Agent, Command, RunOptions, SubCommand};
 use ags::config::{self, ValidatedConfig};
-use ags::secrets::{self, OsSecretBackend};
+use ags::secrets::{self, OsHostCommandRunner, OsSecretBackend};
 use ags::ssh::{self, OsSshRunner, SshKey};
 use ags::trust::StdioRepoConfigPrompter;
 
@@ -182,11 +182,12 @@ fn run_agent(opts: RunOptions) -> ExitCode {
         None
     };
 
-    let resolved_secrets = if opts.lockdown {
-        std::collections::HashMap::new()
-    } else {
-        secrets::resolve_secrets(&config.secrets, &OsSecretBackend)
-    };
+    let resolved_secrets = secrets::resolve_secrets_for_run(
+        &config.secrets,
+        &OsSecretBackend,
+        &OsHostCommandRunner,
+        opts.lockdown,
+    );
 
     if !opts.lockdown {
         let sign_key_container = "/home/dev/.ssh/ags-agent-signing.pub";

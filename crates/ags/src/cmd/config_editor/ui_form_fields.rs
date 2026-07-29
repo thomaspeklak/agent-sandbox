@@ -48,6 +48,14 @@ fn kv_table_form_value(table: Option<&toml_edit::Table>, key: &str) -> String {
         .unwrap_or_default()
 }
 
+fn string_array_form_value(table: Option<&toml_edit::Table>, key: &str) -> String {
+    table
+        .and_then(|table| table.get(key))
+        .and_then(|item| item.as_array())
+        .map(ToString::to_string)
+        .unwrap_or_default()
+}
+
 fn serialize_nested_mount_entries(table: Option<&toml_edit::Table>) -> String {
     table
         .and_then(|table| table.get("directory"))
@@ -87,7 +95,7 @@ fn serialize_nested_secret_entries(table: Option<&toml_edit::Table>) -> String {
                 .map(|entry| {
                     serialize_flattened_table_entry(
                         entry,
-                        &["env", "from_env", "provider", "var"],
+                        &["env", "from_env", "command", "provider", "var"],
                         &["secret_store", "attributes"],
                     )
                 })
@@ -257,6 +265,13 @@ fn build_entry_form_fields(section_key: &str, table: Option<&toml_edit::Table>) 
                 FieldKind::Text,
                 false,
                 kv_table_form_value(table, "secret_store"),
+            ),
+            form_field(
+                "command (TOML argv array)",
+                "command",
+                FieldKind::Text,
+                false,
+                string_array_form_value(table, "command"),
             ),
             form_field(
                 "provider",

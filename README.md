@@ -409,7 +409,7 @@ Precedence order:
 1. user/global config (`~/.config/ags/config.toml`, or `--config <path>` if provided)
 2. repo-local overlay (`PROJECT_ROOT/.ags/config.toml`) when running inside a git repo/worktree
 
-Repo-local scalar/table fields override the base config. Repeatable sections (`[[mount]]`, `[[agent_mount]]`, `[[tool]]`, `[[secret]]`) are additive.
+Repo-local scalar/table fields override the base config. Repeatable sections (`[[mount]]`, `[[agent_mount]]`, `[[tool]]`, `[[secret]]`) are additive. Host `command` secret sources are the exception: they are rejected in repo-local overlays and must be placed in trusted user/global config.
 
 Use `config/config.example.toml` for full schema examples.
 
@@ -430,7 +430,7 @@ Use `config/config.example.toml` for full schema examples.
   - optional nested `[[tool.directory]]` mounts
   - optional nested `[[tool.secret]]` sources
 - `[[secret]]`
-  - Map env var names to source(s): `from_env` and/or `secret_store`
+  - Map env var names to ordered source alternatives: `from_env`, `secret_store`, and trusted host `command` argv arrays
 - `[auth_proxy]`
   - `auto_allow_domains`: list of domains to skip the allow/deny prompt for (e.g. `["mcp.linear.app"]`)
 - `[browser]`

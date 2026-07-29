@@ -361,11 +361,18 @@ Symptoms:
 - Is `[[secret]]` / `[[tool.secret]]` configured correctly?
 - Is source env var actually set and non-empty?
 - If using `secret_store`, does `secret-tool lookup ...` return a value?
+- If using `command`, is the executable present and executable on the host?
+- Does the helper finish within five seconds, exit `0`, and print exactly one non-empty UTF-8 value (optionally followed by one `\n` or `\r\n`)?
+- Is the command declared in the user/global config? Repo-local `.ags/config.toml` command sources are rejected.
+- Run `ags doctor`; it checks command availability and lookup success without printing the resolved value or helper stderr/stdout.
 
 ### Fix
 
 - Re-run `ags setup` to re-enter secrets (if using interactive keyring flow)
 - Export env vars before launching `ags`
+- Run the configured helper directly on the host to diagnose native credential-store access. Avoid sharing its output in logs or bug reports.
+
+Command helpers receive only `PATH`, `HOME`, `USER`, `LOGNAME`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR` when those variables exist. If a helper depends on other ambient host variables, wrap it in a narrowly scoped adapter that establishes only the required context. Resolved values are delivered as ordinary container environment variables and can be inspected by sandboxed processes.
 
 ---
 

@@ -45,7 +45,7 @@ ags --agent claude -d ~/code -d ~/Downloads
 
 1. Load and validate config.
 2. Ensure embedded assets exist on disk (`Containerfile`, `tmux.conf`, and any needed staged guard assets).
-3. If not running with `--lockdown`, resolve secrets from configured sources.
+3. If not running with `--lockdown`, resolve secrets from configured host environment, keyring, or trusted command sources. Command helpers run on the host before container startup.
 4. If not running with `--lockdown`, ensure sandbox git config exists.
 5. If not running with `--lockdown`, ensure dedicated SSH agent is running and keys are loaded.
 6. If not running with `--lockdown` and requested, start browser sidecar (`--browser`).

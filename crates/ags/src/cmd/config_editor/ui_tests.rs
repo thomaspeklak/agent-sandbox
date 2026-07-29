@@ -606,6 +606,11 @@ fn apply_entry_form_supports_secret_store_and_legacy_fields() {
                 "service=github, username=tom".to_string(),
             ),
             (
+                "command",
+                super::FieldKind::Text,
+                r#"["/usr/bin/helper", "literal,$HOME", ""]"#.to_string(),
+            ),
+            (
                 "provider",
                 super::FieldKind::Text,
                 "secret-tool".to_string(),
@@ -621,6 +626,13 @@ fn apply_entry_form_supports_secret_store_and_legacy_fields() {
     .unwrap();
 
     assert!(entry["secret_store"].is_value());
+    let command: Vec<&str> = entry["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    assert_eq!(command, ["/usr/bin/helper", "literal,$HOME", ""]);
     assert_eq!(entry["provider"].as_str(), Some("secret-tool"));
     assert_eq!(entry["var"].as_str(), Some("TOKEN"));
     assert!(entry["attributes"].is_value());
@@ -655,7 +667,7 @@ fn apply_entry_form_supports_nested_tool_directories_and_secrets() {
                 (
                     "secrets",
                     super::FieldKind::Text,
-                    "env=TOKEN, from_env=HOST_TOKEN; env=API_KEY, secret_store.service=github, secret_store.username=tom"
+                    r#"env=TOKEN, command=["/usr/bin/helper", "literal,a;b", ""]; env=API_KEY, secret_store.service=github, secret_store.username=tom"#
                         .to_string(),
                 ),
             ],
@@ -664,6 +676,86 @@ fn apply_entry_form_supports_nested_tool_directories_and_secrets() {
 
     assert_eq!(entry["directory"].as_array_of_tables().unwrap().len(), 1);
     assert_eq!(entry["secret"].as_array_of_tables().unwrap().len(), 2);
+    let first_secret = entry["secret"]
+        .as_array_of_tables()
+        .unwrap()
+        .iter()
+        .next()
+        .unwrap();
+    let command: Vec<&str> = first_secret["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    assert_eq!(command, ["/usr/bin/helper", "literal,a;b", ""]);
+}
+
+#[test]
+fn command_secret_form_round_trips_top_level_argv() {
+    let mut entry = toml_edit::Table::new();
+    entry["env"] = toml_edit::value("TOKEN");
+    entry["command"] =
+        toml_edit::Item::Value(toml_edit::Value::Array(toml_edit::Array::from_iter([
+            "/usr/bin/helper",
+            "literal,a;b",
+            "$HOME",
+            "",
+        ])));
+
+    let field_values: Vec<_> = super::build_entry_form_fields("secret", Some(&entry))
+        .into_iter()
+        .map(|field| (field.key, field.kind, field.input.value().to_string()))
+        .collect();
+    super::apply_entry_form("secret", &mut entry, &field_values).unwrap();
+
+    let command: Vec<&str> = entry["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    assert_eq!(command, ["/usr/bin/helper", "literal,a;b", "$HOME", ""]);
+    assert!(entry.get("from_env").is_none());
+}
+
+#[test]
+fn command_secret_form_round_trips_nested_tool_argv() {
+    let mut tool = toml_edit::Table::new();
+    tool["name"] = toml_edit::value("helper");
+    tool["path"] = toml_edit::value("/usr/bin/helper");
+    tool["container_path"] = toml_edit::value("/usr/local/bin/helper");
+    let mut secrets = toml_edit::ArrayOfTables::new();
+    let mut secret = toml_edit::Table::new();
+    secret["env"] = toml_edit::value("TOKEN");
+    secret["command"] =
+        toml_edit::Item::Value(toml_edit::Value::Array(toml_edit::Array::from_iter([
+            "/usr/bin/credential",
+            "literal,a;b",
+            "",
+        ])));
+    secrets.push(secret);
+    tool["secret"] = toml_edit::Item::ArrayOfTables(secrets);
+
+    let field_values: Vec<_> = super::build_entry_form_fields("tool", Some(&tool))
+        .into_iter()
+        .map(|field| (field.key, field.kind, field.input.value().to_string()))
+        .collect();
+    super::apply_entry_form("tool", &mut tool, &field_values).unwrap();
+
+    let secret = tool["secret"]
+        .as_array_of_tables()
+        .unwrap()
+        .iter()
+        .next()
+        .unwrap();
+    let command: Vec<&str> = secret["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    assert_eq!(command, ["/usr/bin/credential", "literal,a;b", ""]);
 }
 
 #[test]

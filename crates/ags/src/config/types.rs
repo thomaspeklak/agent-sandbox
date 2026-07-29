@@ -127,6 +127,9 @@ pub enum SecretSource {
     SecretTool {
         attributes: BTreeMap<String, String>,
     },
+    Command {
+        argv: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
