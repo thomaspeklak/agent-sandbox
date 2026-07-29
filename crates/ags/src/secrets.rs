@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::io::{Read, Seek, SeekFrom};
-use std::process::{Command, Stdio};
+use std::io::Read;
+use std::process::{Child, ChildStdout, Command, Stdio};
+use std::sync::mpsc::{self, TryRecvError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::config::{SecretSource, ValidatedSecret};
 
 pub const COMMAND_SECRET_TIMEOUT: Duration = Duration::from_secs(5);
 const COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(10);
-const MAX_COMMAND_OUTPUT_BYTES: u64 = 64 * 1024;
+const MAX_COMMAND_OUTPUT_BYTES: usize = 64 * 1024;
 const COMMAND_ENV_ALLOWLIST: &[&str] = &[
     "PATH",
     "HOME",
@@ -33,6 +35,7 @@ pub trait HostCommandRunner {
     fn lookup(&self, argv: &[String], timeout: Duration) -> Result<String, CommandSecretError>;
 }
 
+/// Structural reasons a command secret source could not resolve a value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandSecretError {
     EmptyArgv,
@@ -70,7 +73,9 @@ impl fmt::Display for CommandSecretError {
     }
 }
 
-/// Real backend that delegates to the OS environment and `secret-tool` binary.
+impl std::error::Error for CommandSecretError {}
+
+/// Real backend for host environment and `secret-tool` lookups.
 pub struct OsSecretBackend;
 
 impl SecretBackend for OsSecretBackend {
@@ -86,9 +91,7 @@ impl SecretBackend for OsSecretBackend {
         let args: Vec<&str> = std::iter::once("lookup")
             .chain(attributes.iter().flat_map(|(k, v)| [*k, *v]))
             .collect();
-
         let output = Command::new("secret-tool").args(&args).output().ok()?;
-
         if !output.status.success() {
             return None;
         }
@@ -98,40 +101,69 @@ impl SecretBackend for OsSecretBackend {
     }
 }
 
+/// Shell-free host command runner with bounded output and process-group containment.
 pub struct OsHostCommandRunner;
 
 impl HostCommandRunner for OsHostCommandRunner {
     fn lookup(&self, argv: &[String], timeout: Duration) -> Result<String, CommandSecretError> {
         let executable = argv.first().ok_or(CommandSecretError::EmptyArgv)?;
-        let mut stdout =
-            tempfile::tempfile().map_err(|error| CommandSecretError::OutputSetup(error.kind()))?;
-        let child_stdout = stdout
-            .try_clone()
-            .map_err(|error| CommandSecretError::OutputSetup(error.kind()))?;
-
+        let working_dir = dirs::home_dir()
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| std::path::PathBuf::from("/"));
         let mut command = Command::new(executable);
         command
+            .current_dir(working_dir)
             .args(&argv[1..])
             .env_clear()
             .stdin(Stdio::null())
-            .stdout(Stdio::from(child_stdout))
+            .stdout(Stdio::piped())
             .stderr(Stdio::null());
         for name in COMMAND_ENV_ALLOWLIST {
             if let Some(value) = std::env::var_os(name) {
                 command.env(name, value);
             }
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
 
         let mut child = command
             .spawn()
             .map_err(|error| CommandSecretError::Spawn(error.kind()))?;
+        let process_group = child.id();
+        let stdout = child.stdout.take().ok_or(CommandSecretError::OutputSetup(
+            std::io::ErrorKind::BrokenPipe,
+        ))?;
+        let (output_rx, output_reader) = spawn_output_reader(stdout);
+
         let deadline = Instant::now() + timeout;
+        let mut output = None;
         let status = loop {
+            match output_rx.try_recv() {
+                Ok(Err(CommandSecretError::OutputTooLarge)) => {
+                    terminate_and_reap(&mut child, process_group);
+                    let _ = output_reader.join();
+                    return Err(CommandSecretError::OutputTooLarge);
+                }
+                Ok(result) => output = Some(result),
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) if output.is_none() => {
+                    terminate_and_reap(&mut child, process_group);
+                    let _ = output_reader.join();
+                    return Err(CommandSecretError::OutputRead(
+                        std::io::ErrorKind::BrokenPipe,
+                    ));
+                }
+                Err(TryRecvError::Disconnected) => {}
+            }
+
             match child.try_wait() {
                 Ok(Some(status)) => break status,
                 Ok(None) if Instant::now() >= deadline => {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    terminate_and_reap(&mut child, process_group);
+                    let _ = output_reader.join();
                     return Err(CommandSecretError::TimedOut);
                 }
                 Ok(None) => {
@@ -139,32 +171,71 @@ impl HostCommandRunner for OsHostCommandRunner {
                     std::thread::sleep(COMMAND_POLL_INTERVAL.min(remaining));
                 }
                 Err(error) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    terminate_and_reap(&mut child, process_group);
+                    let _ = output_reader.join();
                     return Err(CommandSecretError::Wait(error.kind()));
                 }
             }
         };
 
+        kill_process_group(process_group);
+        let output = match output {
+            Some(result) => result,
+            None => output_rx
+                .recv()
+                .unwrap_or(Err(CommandSecretError::OutputRead(
+                    std::io::ErrorKind::BrokenPipe,
+                ))),
+        };
+        let _ = output_reader.join();
+
         if !status.success() {
             return Err(CommandSecretError::NonZeroExit(status.code()));
         }
-
-        stdout
-            .seek(SeekFrom::Start(0))
-            .map_err(|error| CommandSecretError::OutputRead(error.kind()))?;
-        let mut bytes = Vec::new();
-        stdout
-            .take(MAX_COMMAND_OUTPUT_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|error| CommandSecretError::OutputRead(error.kind()))?;
-        if bytes.len() as u64 > MAX_COMMAND_OUTPUT_BYTES {
-            return Err(CommandSecretError::OutputTooLarge);
-        }
-
-        validate_command_output(bytes)
+        validate_command_output(output?)
     }
 }
+
+fn spawn_output_reader(
+    stdout: ChildStdout,
+) -> (
+    mpsc::Receiver<Result<Vec<u8>, CommandSecretError>>,
+    JoinHandle<()>,
+) {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let handle = std::thread::spawn(move || {
+        let _ = sender.send(read_bounded_output(stdout));
+    });
+    (receiver, handle)
+}
+
+fn read_bounded_output(stdout: ChildStdout) -> Result<Vec<u8>, CommandSecretError> {
+    let mut bytes = Vec::new();
+    stdout
+        .take((MAX_COMMAND_OUTPUT_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| CommandSecretError::OutputRead(error.kind()))?;
+    if bytes.len() > MAX_COMMAND_OUTPUT_BYTES {
+        Err(CommandSecretError::OutputTooLarge)
+    } else {
+        Ok(bytes)
+    }
+}
+
+fn terminate_and_reap(child: &mut Child, process_group: u32) {
+    kill_process_group(process_group);
+    #[cfg(not(unix))]
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(unix)]
+fn kill_process_group(process_group: u32) {
+    let _ = unsafe { libc::kill(-(process_group as i32), libc::SIGKILL) };
+}
+
+#[cfg(not(unix))]
+fn kill_process_group(_process_group: u32) {}
 
 fn validate_command_output(mut bytes: Vec<u8>) -> Result<String, CommandSecretError> {
     if bytes.ends_with(b"\r\n") {
@@ -172,7 +243,6 @@ fn validate_command_output(mut bytes: Vec<u8>) -> Result<String, CommandSecretEr
     } else if bytes.ends_with(b"\n") {
         bytes.pop();
     }
-
     if bytes.is_empty() {
         return Err(CommandSecretError::EmptyOutput);
     }
@@ -182,7 +252,6 @@ fn validate_command_output(mut bytes: Vec<u8>) -> Result<String, CommandSecretEr
     if bytes.iter().any(|byte| matches!(byte, b'\r' | b'\n')) {
         return Err(CommandSecretError::EmbeddedNewline);
     }
-
     String::from_utf8(bytes).map_err(|_| CommandSecretError::InvalidUtf8)
 }
 
@@ -200,7 +269,18 @@ fn try_resolve_one(
                 .collect();
             backend.secret_tool_lookup(&pairs)
         }
-        SecretSource::Command { argv } => command_runner.lookup(argv, COMMAND_SECRET_TIMEOUT).ok(),
+        SecretSource::Command { argv } => {
+            match command_runner.lookup(argv, COMMAND_SECRET_TIMEOUT) {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    eprintln!(
+                        "warning: command secret lookup for {} failed ({}): {error}",
+                        secret.env, secret.origin
+                    );
+                    None
+                }
+            }
+        }
     }
 }
 
@@ -211,7 +291,6 @@ pub fn resolve_secrets_with_runner(
     command_runner: &dyn HostCommandRunner,
 ) -> HashMap<String, String> {
     let mut resolved: HashMap<String, String> = HashMap::new();
-
     for secret in secrets {
         if resolved.contains_key(&secret.env) {
             continue;
@@ -220,7 +299,6 @@ pub fn resolve_secrets_with_runner(
             resolved.insert(secret.env.clone(), value);
         }
     }
-
     resolved
 }
 
@@ -239,9 +317,6 @@ pub fn resolve_secrets_for_run(
 }
 
 /// Resolve all configured secrets using the host command runner and existing OS backends.
-///
-/// Secrets sharing the same `env` name are alternative sources tried in order.
-/// The first source that produces a non-empty value wins; remaining sources are skipped.
 pub fn resolve_secrets(
     secrets: &[ValidatedSecret],
     backend: &dyn SecretBackend,

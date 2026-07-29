@@ -68,6 +68,7 @@ mode = "rw"
 kind = "dir"
 create = true
 
+# Ordered alternatives for the same target; each source uses its own block.
 [[tool.secret]]
 env = "EXAMPLE_TOOL_TOKEN"
 command = ["$HOME/.local/bin/example-credential-adapter", "lookup", "--service", "example-service"]
@@ -80,7 +81,7 @@ from_env = "EXAMPLE_TOOL_TOKEN"
 env = "EXAMPLE_TOOL_TOKEN"
 secret_store = { service = "example-service", username = "example-user" }
 
-# Generic secret example
+# Generic secret example with ordered alternative sources.
 [[secret]]
 env = "EXAMPLE_GH_TOKEN"
 command = ["$HOME/.local/bin/example-credential-adapter", "lookup", "--service", "example-gh-service"]

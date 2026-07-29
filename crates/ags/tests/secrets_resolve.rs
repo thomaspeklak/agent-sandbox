@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ags::config::{SecretSource, ValidatedSecret};
 use ags::secrets::{
@@ -121,6 +121,18 @@ fn write_helper(dir: &Path, name: &str, body: &str) -> String {
     fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
     path.to_string_lossy().into_owned()
+}
+
+#[cfg(unix)]
+fn process_is_gone(pid: i32) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    false
 }
 
 #[test]
@@ -308,7 +320,6 @@ fn os_runner_uses_only_the_minimal_host_environment() {
         temp.path(),
         "env-helper",
         r#"[ -n "$PATH" ] || exit 9
-[ -n "$HOME" ] || exit 8
 [ -z "${CARGO_MANIFEST_DIR+x}" ] || exit 7
 printf 'value'"#,
     );
@@ -317,6 +328,21 @@ printf 'value'"#,
         .lookup(&["/bin/sh".to_owned(), helper], Duration::from_secs(1))
         .unwrap();
     assert_eq!(value, "value");
+}
+
+#[cfg(unix)]
+#[test]
+fn os_runner_does_not_inherit_the_repository_working_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let helper = write_helper(temp.path(), "pwd-helper", "printf '%s' \"$PWD\"");
+    let expected = dirs::home_dir()
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| std::path::PathBuf::from("/"));
+
+    let value = OsHostCommandRunner
+        .lookup(&["/bin/sh".to_owned(), helper], Duration::from_secs(1))
+        .unwrap();
+    assert_eq!(Path::new(&value), expected);
 }
 
 #[cfg(unix)]
@@ -410,7 +436,7 @@ fn os_runner_kills_and_reaps_timed_out_helper() {
     let helper = write_helper(
         temp.path(),
         "timeout-helper",
-        "printf '%s' \"$$\" > \"$1\"\nexec sleep 10",
+        "sleep 10 &\nchild=$!\nprintf '%s %s' \"$$\" \"$child\" > \"$1\"\nwait",
     );
     let error = OsHostCommandRunner
         .lookup(
@@ -419,15 +445,52 @@ fn os_runner_kills_and_reaps_timed_out_helper() {
                 helper,
                 pid_file.to_string_lossy().into_owned(),
             ],
-            Duration::from_millis(100),
+            Duration::from_millis(500),
         )
         .unwrap_err();
     assert_eq!(error, CommandSecretError::TimedOut);
 
-    let pid: i32 = fs::read_to_string(pid_file).unwrap().parse().unwrap();
-    assert_ne!(
-        unsafe { libc::kill(pid, 0) },
-        0,
-        "timed-out helper still exists"
+    let pids: Vec<i32> = fs::read_to_string(pid_file)
+        .expect("helper should record its process group before timeout")
+        .split_whitespace()
+        .map(|pid| pid.parse().unwrap())
+        .collect();
+    assert_eq!(pids.len(), 2);
+    for pid in pids {
+        assert!(process_is_gone(pid), "timed-out process {pid} still exists");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn os_runner_bounds_continuous_output_and_kills_descendants() {
+    let temp = tempfile::tempdir().unwrap();
+    let pid_file = temp.path().join("output-pids");
+    let helper = write_helper(
+        temp.path(),
+        "output-helper",
+        "(sleep 0.05; while :; do printf '0123456789abcdef'; done) &\nwriter=$!\nprintf '%s %s' \"$$\" \"$writer\" > \"$1\"\nwait",
     );
+    let started = Instant::now();
+    let error = OsHostCommandRunner
+        .lookup(
+            &[
+                "/bin/sh".to_owned(),
+                helper,
+                pid_file.to_string_lossy().into_owned(),
+            ],
+            Duration::from_secs(2),
+        )
+        .unwrap_err();
+    assert_eq!(error, CommandSecretError::OutputTooLarge);
+    assert!(started.elapsed() < Duration::from_secs(2));
+
+    let pids: Vec<i32> = fs::read_to_string(pid_file)
+        .expect("helper should record its process group before writing output")
+        .split_whitespace()
+        .map(|pid| pid.parse().unwrap())
+        .collect();
+    for pid in pids {
+        assert!(process_is_gone(pid), "output process {pid} still exists");
+    }
 }

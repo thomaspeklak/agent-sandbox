@@ -325,6 +325,23 @@ command = ["", "lookup"]
 }
 
 #[test]
+fn command_secret_rejects_bare_or_relative_executables() {
+    for executable in ["credential-helper", "./credential-helper"] {
+        let err = parse_err(&format!(
+            r#"
+[[secret]]
+env = "TOKEN"
+command = ["{executable}", "lookup"]
+"#
+        ));
+        assert!(
+            err.contains("must resolve to an absolute executable path"),
+            "got: {err}"
+        );
+    }
+}
+
+#[test]
 fn secret_multiple_sources_same_env() {
     let cfg = parse_minimal(
         r#"

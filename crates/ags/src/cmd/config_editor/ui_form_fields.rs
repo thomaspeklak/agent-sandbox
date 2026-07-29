@@ -163,10 +163,7 @@ fn serialize_inline_table_parts(prefix: &str, inline: &toml_edit::InlineTable) -
 }
 
 fn serialize_flattened_value(value: &toml_edit::Value) -> String {
-    value
-        .as_str()
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| value.to_string())
+    value.to_string()
 }
 
 /// Shared fields for `[[mount]]` and `[[agent_mount]]`: host, container, kind.

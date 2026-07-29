@@ -1,15 +1,16 @@
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use crate::config::{ClipboardMode, MountWhen, SecretSource, ValidatedConfig};
-use crate::secrets::{COMMAND_SECRET_TIMEOUT, HostCommandRunner, OsHostCommandRunner};
+use crate::config::{ClipboardMode, MountWhen, ValidatedConfig};
 
 use super::doctor_util::{
     Checker, check_optional_cmd, check_required_cmd, file_non_empty, git_config_get, is_pid_alive,
-    is_port_open, list_agent_keys, pub_key_path, read_agent_env, secret_tool_has_value,
-    socket_exists,
+    is_port_open, list_agent_keys, pub_key_path, read_agent_env, socket_exists,
 };
+
+#[path = "doctor_secrets.rs"]
+mod doctor_secrets;
+use doctor_secrets::check_secrets;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DoctorSummary {
@@ -286,8 +287,6 @@ fn check_key_loaded(ck: &mut Checker, loaded: &str, key_path: &Path, label: &str
         ck.warn(&format!("{label} key not loaded in dedicated ssh-agent"));
     }
 }
-
-include!("doctor_secrets.rs");
 
 fn check_sessions(ck: &mut Checker, config: &ValidatedConfig) {
     ck.section("Sessions / resume");

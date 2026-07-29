@@ -75,6 +75,12 @@ fn parse_flattened_entries(input: &str) -> Result<Vec<FlattenedEntryParts>, Stri
 }
 
 fn flattened_scalar_item(raw: &str) -> toml_edit::Item {
+    if matches!(raw.as_bytes().first(), Some(b'"' | b'\''))
+        && let Ok(document) = format!("value = {raw}").parse::<toml_edit::DocumentMut>()
+        && let Some(value) = document["value"].as_str()
+    {
+        return toml_edit::value(value);
+    }
     if let Ok(value) = raw.parse::<bool>() {
         return toml_edit::value(value);
     }

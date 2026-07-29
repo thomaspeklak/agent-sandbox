@@ -402,7 +402,6 @@ fn validate_tool(
     Ok((tool, mounts, secrets))
 }
 
-/// Resolve a binary name: expand paths containing '/' or '~', otherwise keep bare name.
 fn resolve_binary_name(raw: &str, ctx: &str) -> Result<String, ConfigError> {
     let name = require_non_empty(raw, ctx)?;
     if name.contains('/') || name.starts_with('~') {
@@ -415,11 +414,13 @@ fn resolve_binary_name(raw: &str, ctx: &str) -> Result<String, ConfigError> {
 fn resolve_command_executable(raw: &str, ctx: &str) -> Result<String, ConfigError> {
     let executable = require_non_empty(raw, ctx)?;
     let expanded = expand_env_vars(&expand_tilde(executable)?);
-    if expanded.contains('/') || expanded.starts_with('~') {
-        Ok(expand_path(&expanded, ctx)?.to_string_lossy().into_owned())
-    } else {
-        Ok(expanded)
+    let path = Path::new(&expanded);
+    if !path.is_absolute() {
+        return Err(ConfigError::Validation(format!(
+            "{ctx} must resolve to an absolute executable path"
+        )));
     }
+    Ok(path.to_string_lossy().into_owned())
 }
 
 fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {

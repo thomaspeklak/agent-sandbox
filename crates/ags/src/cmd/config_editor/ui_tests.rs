@@ -731,7 +731,7 @@ fn command_secret_form_round_trips_nested_tool_argv() {
     secret["command"] =
         toml_edit::Item::Value(toml_edit::Value::Array(toml_edit::Array::from_iter([
             "/usr/bin/credential",
-            "literal,a;b",
+            "literal'o[1],;",
             "",
         ])));
     secrets.push(secret);
@@ -755,7 +755,7 @@ fn command_secret_form_round_trips_nested_tool_argv() {
         .iter()
         .map(|value| value.as_str().unwrap())
         .collect();
-    assert_eq!(command, ["/usr/bin/credential", "literal,a;b", ""]);
+    assert_eq!(command, ["/usr/bin/credential", "literal'o[1],;", ""]);
 }
 
 #[test]
@@ -774,6 +774,35 @@ fn nested_editor_values_keep_legacy_scalar_typing() {
         .next()
         .unwrap();
     assert_eq!(directory["host"].as_str(), Some("1979-05-27"));
+}
+
+#[test]
+fn nested_editor_round_trips_apostrophes_and_brackets_in_strings() {
+    let mut tool = toml_edit::Table::new();
+    tool["name"] = toml_edit::value("helper");
+    tool["path"] = toml_edit::value("/home/o'connor/bin/helper[1]");
+    tool["container_path"] = toml_edit::value("/usr/local/bin/helper");
+    let mut directories = toml_edit::ArrayOfTables::new();
+    let mut directory = toml_edit::Table::new();
+    directory["host"] = toml_edit::value("/home/o'connor/data[1]");
+    directory["container"] = toml_edit::value("/data");
+    directory["mode"] = toml_edit::value("ro");
+    directories.push(directory);
+    tool["directory"] = toml_edit::Item::ArrayOfTables(directories);
+
+    let field_values: Vec<_> = super::build_entry_form_fields("tool", Some(&tool))
+        .into_iter()
+        .map(|field| (field.key, field.kind, field.input.value().to_string()))
+        .collect();
+    super::apply_entry_form("tool", &mut tool, &field_values).unwrap();
+
+    let directory = tool["directory"]
+        .as_array_of_tables()
+        .unwrap()
+        .iter()
+        .next()
+        .unwrap();
+    assert_eq!(directory["host"].as_str(), Some("/home/o'connor/data[1]"));
 }
 
 #[test]
