@@ -334,6 +334,44 @@ fn parses_create_aliases_flags() {
 }
 
 #[test]
+fn parses_op_secret_sets_in_cli_order() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "--agent",
+        "pi",
+        "--op-secret-set",
+        "Employee/first item",
+        "-1",
+        "Employee/second/item",
+        "--op-secret-set=IDs/vault-item",
+        "--",
+        "-1",
+    ]))
+    .unwrap();
+
+    match cmd {
+        Command::Run(opts) => assert_eq!(
+            opts.op_secret_sets,
+            vec![
+                "Employee/first item",
+                "Employee/second/item",
+                "IDs/vault-item"
+            ]
+        ),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn op_secret_set_requires_value() {
+    for flag in ["--op-secret-set", "-1", "--op-secret-set="] {
+        let err = parse_args(args(&["ags", "--agent", "pi", flag]))
+            .expect_err("expected missing secret-set value");
+        assert_eq!(err, CliError::MissingOpSecretSetValue);
+    }
+}
+
+#[test]
 fn parses_agent_equals_form() {
     let cmd = parse_args(args(&["ags", "--agent=claude"])).unwrap();
     match cmd {

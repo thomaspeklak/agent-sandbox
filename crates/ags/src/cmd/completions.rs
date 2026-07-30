@@ -60,7 +60,7 @@ const BASH: &str = r#"_ags_completion() {
   done
 
   if (( COMP_CWORD == 1 )); then
-    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --op-secret-set -1 -h --help" -- "$cur") )
     return 0
   fi
 
@@ -135,6 +135,9 @@ const BASH: &str = r#"_ags_completion() {
       COMPREPLY=( $(compgen -d -- "$cur") )
       return 0
       ;;
+    --op-secret-set|-1)
+      return 0
+      ;;
   esac
 
   if [[ "$cur" == --agent=* ]]; then
@@ -158,7 +161,7 @@ const BASH: &str = r#"_ags_completion() {
     return 0
   fi
 
-  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
+  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --op-secret-set -1 -h --help" -- "$cur") )
 }
 
 complete -F _ags_completion ags
@@ -175,7 +178,7 @@ modes=(wrappers aliases both)
 if (( CURRENT == 2 )); then
   _alternative \
     'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions)' \
-    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d -h --help)'
+    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --op-secret-set -1 -h --help)'
   return
 fi
 
@@ -230,6 +233,8 @@ _arguments -S \
   '--config[Override config file path]:config file:_files' \
   '(-d)--add-dir[Add an extra same-path directory mount for this run]:host directory:_files -/' \
   '(--add-dir)-d[Add an extra same-path directory mount for this run]:host directory:_files -/' \
+  '(-1)--op-secret-set[Inject fields from a 1Password Secure Note]:vault/item:' \
+  '(--op-secret-set)-1[Inject fields from a 1Password Secure Note]:vault/item:' \
   '(-h --help)'{-h,--help}'[Show help]'
 "#;
 
@@ -263,6 +268,7 @@ complete -c ags -n "__fish_use_subcommand" -l stop-when-done -d "Exit container 
 complete -c ags -n "__fish_use_subcommand" -l defaults -s D -d "Apply AGS-managed defaults for the selected agent harness"
 complete -c ags -n "__fish_use_subcommand" -l config -r -d "Override config file path"
 complete -c ags -n "__fish_use_subcommand" -l add-dir -s d -r -d "Add an extra same-path directory mount for this run"
+complete -c ags -n "__fish_use_subcommand" -l op-secret-set -s 1 -r -d "Inject fields from a 1Password Secure Note"
 complete -c ags -n "__fish_use_subcommand" -s h -l help -d "Show help"
 
 # update-image
@@ -313,6 +319,8 @@ mod tests {
         assert!(script.contains("--keep-existing"));
         assert!(script.contains("--add-dir"));
         assert!(script.contains("-d"));
+        assert!(script.contains("--op-secret-set"));
+        assert!(script.contains("-1"));
     }
 
     #[test]
@@ -324,6 +332,8 @@ mod tests {
             script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
         );
         assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
+        assert!(script.contains("--op-secret-set[Inject fields from a 1Password Secure Note]"));
+        assert!(script.contains("-1[Inject fields from a 1Password Secure Note]"));
         assert!(
             script.contains(
                 "--psp-keep[Keep PSP-managed containers on exit (debug; requires --psp)]"
@@ -343,5 +353,6 @@ mod tests {
         assert!(script.contains(
             "-l psp-keep -d \"Keep PSP-managed containers on exit (debug; requires --psp)\""
         ));
+        assert!(script.contains("-l op-secret-set -s 1 -r"));
     }
 }

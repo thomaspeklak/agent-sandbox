@@ -50,6 +50,10 @@ Run flags:
   --config <path>      Use an alternate AGS config file
 \
   --add-dir, -d <path> Add an extra host directory mount (repeatable)
+\
+  --op-secret-set, -1 <vault/item>
+\
+                       Inject fields from a 1Password Secure Note (repeatable; CLI-only)
 
 \
 Update-image flags:

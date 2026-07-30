@@ -104,6 +104,7 @@ fn run_opts(agent: Agent) -> RunOptions {
         stop_when_done: false,
         config_path: None,
         add_dirs: Vec::new(),
+        op_secret_sets: Vec::new(),
         passthrough_args: Vec::new(),
     }
 }
@@ -133,6 +134,8 @@ fn lockdown_options<'a>(
         stop_when_done: false,
         root_mode: false,
         wayland_passthrough: false,
+        payload_fd_count: 0,
+        bootstrap_path: None,
     }
 }
 
@@ -141,6 +144,11 @@ fn validate_rejects_incompatible_lockdown_flags() {
     let temp = tempfile::tempdir().unwrap();
     setup_base_dirs(temp.path());
     for mut opts in [
+        {
+            let mut opts = run_opts(Agent::Pi);
+            opts.op_secret_sets.push("Employee/item".to_owned());
+            opts
+        },
         {
             let mut opts = run_opts(Agent::Pi);
             opts.browser = true;

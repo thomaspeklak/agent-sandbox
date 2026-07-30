@@ -32,6 +32,8 @@ fn minimal_plan() -> LaunchPlan {
         network_mode: "slirp4netns:allow_host_loopback=false".to_owned(),
         boot_dirs: vec!["/home/dev/.ssh".to_owned()],
         entrypoint: "exec pi \"$@\"".to_owned(),
+        payload_fd_count: 0,
+        bootstrap_path: None,
     }
 }
 
@@ -113,6 +115,24 @@ fn args_include_network_mode() {
     let args = build_run_args(&plan, Path::new("/tmp/env"));
     let net_idx = args.iter().position(|a| a == "--network").unwrap();
     assert_eq!(args[net_idx + 1], "slirp4netns:allow_host_loopback=false");
+}
+
+#[test]
+fn payload_descriptors_only_add_the_preserve_count() {
+    let mut plan = minimal_plan();
+    plan.payload_fd_count = 2;
+    plan.bootstrap_path = Some("/run/ags/onepassword-bootstrap".to_owned());
+    let args = build_run_args(&plan, Path::new("/tmp/env"));
+
+    assert!(args.contains(&"--preserve-fds=2".to_owned()));
+    assert!(!args.iter().any(|arg| arg.contains("payload-value")));
+    assert!(!args.iter().any(|arg| arg.contains("SECURE_NOTE")));
+}
+
+#[test]
+fn no_payload_does_not_render_preserve_fds() {
+    let args = build_run_args(&minimal_plan(), Path::new("/tmp/env"));
+    assert!(!args.iter().any(|arg| arg.starts_with("--preserve-fds=")));
 }
 
 #[test]

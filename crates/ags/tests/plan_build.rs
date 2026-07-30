@@ -67,6 +67,8 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         stop_when_done: false,
         root_mode: false,
         wayland_passthrough: false,
+        payload_fd_count: 0,
+        bootstrap_path: None,
     }
 }
 

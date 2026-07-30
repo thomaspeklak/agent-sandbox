@@ -78,6 +78,7 @@ fn validate_options_rejects_psp_keep_without_psp() {
         stop_when_done: false,
         config_path: None,
         add_dirs: Vec::new(),
+        op_secret_sets: Vec::new(),
         passthrough_args: Vec::new(),
     };
 

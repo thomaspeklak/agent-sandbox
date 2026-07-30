@@ -194,6 +194,8 @@ struct EntryPointContext<'a> {
     webview_relay_enabled: bool,
     show_host_services_hint: bool,
     stop_when_done: bool,
+    payload_fd_count: usize,
+    bootstrap_path: Option<&'a str>,
 }
 
 fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
@@ -206,6 +208,8 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         webview_relay_enabled,
         show_host_services_hint,
         stop_when_done,
+        payload_fd_count,
+        bootstrap_path,
     } = ctx;
     let mut script = String::new();
 
@@ -224,21 +228,43 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         script.push_str("; ");
     }
 
+    let close_payload_fds = payload_fd_count
+        .checked_add(2)
+        .map(|last_fd| format!("for fd in $(seq 3 {last_fd}); do eval \"exec $fd>&-\"; done; "));
+
     if browser_mode && browser.enabled {
-        script.push_str(&format!(
-            "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-             TCP:{host}:{port} >/tmp/ags-socat.log 2>&1 & ",
-            host = BROWSER_HOST_LOOPBACK,
-            port = browser.debug_port
-        ));
+        if let Some(close_fds) = close_payload_fds.as_ref().filter(|_| payload_fd_count > 0) {
+            script.push('(');
+            script.push_str(close_fds);
+            script.push_str(&format!(
+                "exec socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
+                 TCP:{host}:{port} >/tmp/ags-socat.log 2>&1) & ",
+                host = BROWSER_HOST_LOOPBACK,
+                port = browser.debug_port
+            ));
+        } else {
+            script.push_str(&format!(
+                "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
+                 TCP:{host}:{port} >/tmp/ags-socat.log 2>&1 & ",
+                host = BROWSER_HOST_LOOPBACK,
+                port = browser.debug_port
+            ));
+        }
     }
 
     if webview_relay_enabled {
+        script.push_str("if [ -n \"${AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET:-}\" ]; then ");
+        script.push_str("if command -v python3 >/dev/null 2>&1; then ");
+        if let Some(close_fds) = close_payload_fds.as_ref().filter(|_| payload_fd_count > 0) {
+            script.push('(');
+            script.push_str(close_fds);
+            script.push_str("exec python3 /run/ags-webview-relay/webview-relay-shim ");
+            script.push_str(">/tmp/ags-webview-relay.log 2>&1) & ");
+        } else {
+            script.push_str("python3 /run/ags-webview-relay/webview-relay-shim ");
+            script.push_str(">/tmp/ags-webview-relay.log 2>&1 & ");
+        }
         script.push_str(concat!(
-            "if [ -n \"${AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET:-}\" ]; then ",
-            "if command -v python3 >/dev/null 2>&1; then ",
-            "python3 /run/ags-webview-relay/webview-relay-shim ",
-            ">/tmp/ags-webview-relay.log 2>&1 & ",
             "else ",
             "echo '[ags] warning: python3 is missing; ",
             "sandbox webview relay will not work in this sandbox.' >&2; ",
@@ -254,6 +280,14 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
     }
 
     let agent_exec = build_agent_exec(profile, browser, browser_mode);
+    let final_exec = |command: String| {
+        bootstrap_path.map_or(command.clone(), |bootstrap| {
+            format!(
+                "exec {} --fd-count {} -- {}",
+                shell_quote(bootstrap), payload_fd_count, command.strip_prefix("exec ").unwrap_or(&command)
+            )
+        })
+    };
 
     if tmux_mode {
         script.push_str(
@@ -273,9 +307,11 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         }
         script.push_str("\nEOF\n");
         script.push_str("chmod +x /tmp/ags-run-in-tmux.sh; ");
-        script.push_str("exec tmux new-session -A -s ags /tmp/ags-run-in-tmux.sh \"$@\"");
+        script.push_str(&final_exec(
+            "exec tmux new-session -A -s ags /tmp/ags-run-in-tmux.sh \"$@\"".to_owned(),
+        ));
     } else {
-        script.push_str(&agent_exec);
+        script.push_str(&final_exec(agent_exec));
     }
 
     script

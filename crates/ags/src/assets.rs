@@ -13,6 +13,8 @@ pub const AUTH_PROXY_SHIM: &str = include_str!("../../../agent/auth-proxy-shim")
 pub const CLIPBOARD_SHIM: &str = include_str!("../../../agent/clipboard-shim");
 pub const WEBVIEW_RELAY_SHIM: &str = include_str!("../../../agent/webview-relay-shim");
 pub const WEBVIEW_URL_HELPER: &str = include_str!("../../../agent/webview-url-helper");
+pub const ONEPASSWORD_BOOTSTRAP: &str = include_str!("../../../agent/onepassword-bootstrap");
+pub const ONEPASSWORD_BOOTSTRAP_NAME: &str = "onepassword-bootstrap";
 pub const GLIMPSE_SHIM_CARGO_TOML: &str = include_str!("../../../crates/glimpse-shim/Cargo.toml");
 pub const GLIMPSE_SHIM_MAIN: &str = include_str!("../../../crates/glimpse-shim/src/main.rs");
 pub const GLIMPSE_SHIM_SOCKET: &str = include_str!("../../../crates/glimpse-shim/src/socket.rs");
@@ -121,6 +123,17 @@ pub fn ensure_clipboard_shim(dir: &Path) -> io::Result<()> {
 pub fn ensure_webview_relay_assets(dir: &Path) -> io::Result<()> {
     write_asset(dir, "webview-relay-shim", WEBVIEW_RELAY_SHIM, Some(0o755))?;
     write_asset(dir, "ags-webview-url", WEBVIEW_URL_HELPER, Some(0o755))
+}
+
+/// Write the final-process 1Password bootstrap into a private runtime directory.
+/// Callers mount this exact file read-only rather than relying on the image cache.
+pub fn ensure_onepassword_bootstrap(dir: &Path) -> io::Result<()> {
+    write_asset(
+        dir,
+        ONEPASSWORD_BOOTSTRAP_NAME,
+        ONEPASSWORD_BOOTSTRAP,
+        Some(0o755),
+    )
 }
 
 /// Write the glimpse-shim crate source into `<dir>/glimpse-shim/`.

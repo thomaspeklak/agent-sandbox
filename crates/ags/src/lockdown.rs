@@ -97,6 +97,7 @@ pub fn validate(opts: &RunOptions) -> Result<(), LockdownError> {
         return Ok(());
     }
     for (enabled, flag) in [
+        (!opts.op_secret_sets.is_empty(), "--op-secret-set / -1"),
         (opts.browser, "--browser"),
         (opts.psp, "--psp"),
         (opts.psp_keep, "--psp-keep"),

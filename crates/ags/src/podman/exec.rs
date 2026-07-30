@@ -1,8 +1,12 @@
+use std::ffi::CString;
 use std::fmt;
 use std::fs;
 use std::io;
+use std::os::fd::OwnedFd;
 use std::path::Path;
 use std::process::Command;
+
+use super::fd_exec::spawn_with_payload_fds;
 
 use crate::plan::LaunchPlan;
 use crate::podman::args::build_run_args;
@@ -16,6 +20,10 @@ pub enum PodmanError {
     ImageBuild(String),
     EnvFileCreate(io::Error),
     SpawnFailed(io::Error),
+    PayloadCountMismatch { expected: usize, received: usize },
+    PayloadBootstrapMissing,
+    InvalidPodmanArgument,
+    PayloadPrepare(crate::onepassword::OnePasswordError),
 }
 
 impl fmt::Display for PodmanError {
@@ -24,6 +32,17 @@ impl fmt::Display for PodmanError {
             Self::ImageBuild(msg) => write!(f, "image build failed: {msg}"),
             Self::EnvFileCreate(e) => write!(f, "failed to create env file: {e}"),
             Self::SpawnFailed(e) => write!(f, "failed to start podman: {e}"),
+            Self::PayloadCountMismatch { expected, received } => write!(
+                f,
+                "payload descriptor count mismatch (expected {expected}, received {received})"
+            ),
+            Self::PayloadBootstrapMissing => {
+                f.write_str("payload descriptors require a final-process bootstrap")
+            }
+            Self::InvalidPodmanArgument => f.write_str("invalid Podman argument"),
+            Self::PayloadPrepare(error) => {
+                write!(f, "1Password payload preparation failed: {error}")
+            }
         }
     }
 }
@@ -131,22 +150,71 @@ fn validate_env_file_entry(key: &str, value: &str) -> io::Result<()> {
 /// builds the podman args, runs the container, and returns the exit code.
 /// Cleans up the env file on return.
 pub fn execute(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, PodmanError> {
+    if plan.payload_fd_count > 0 {
+        return Err(PodmanError::PayloadCountMismatch {
+            expected: plan.payload_fd_count,
+            received: 0,
+        });
+    }
+    execute_inner(plan, passthrough_args, None)
+}
+
+/// Execute a plan while handing sealed payload descriptors directly to Podman.
+/// The descriptors are consumed and closed in the parent as soon as Podman is
+/// forked; they never enter a plan, environment, argument, or temporary file.
+/// Resolve source metadata only at the final Podman handoff. A network retry
+/// obtains fresh one-shot descriptors rather than retaining the first set.
+pub fn execute_with_payload_sources(
+    plan: &LaunchPlan,
+    passthrough_args: &[String],
+    sources: &[crate::onepassword::SourceRef],
+) -> Result<u8, PodmanError> {
+    if plan.bootstrap_path.is_none() || plan.payload_fd_count != sources.len() || sources.is_empty()
+    {
+        return Err(PodmanError::PayloadCountMismatch {
+            expected: plan.payload_fd_count,
+            received: sources.len(),
+        });
+    }
     let mut plan = plan.clone();
     adapt_network_mode_for_installed_podman(&mut plan);
-
-    // Ensure image
     ensure_image(&plan.image, &plan.containerfile)?;
-
-    // Write env file
     let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
-
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
-
-    let result = run_container(&plan, &env_file, passthrough_args);
-
-    // Cleanup env file
+    let result = run_payload_sources(&plan, &env_file, passthrough_args, sources);
     let _ = fs::remove_file(&env_file);
+    result
+}
 
+pub fn execute_with_payload_fds(
+    plan: &LaunchPlan,
+    passthrough_args: &[String],
+    payloads: Vec<OwnedFd>,
+) -> Result<u8, PodmanError> {
+    if plan.bootstrap_path.is_none() {
+        return Err(PodmanError::PayloadBootstrapMissing);
+    }
+    if plan.payload_fd_count != payloads.len() || payloads.is_empty() {
+        return Err(PodmanError::PayloadCountMismatch {
+            expected: plan.payload_fd_count,
+            received: payloads.len(),
+        });
+    }
+    execute_inner(plan, passthrough_args, Some(payloads))
+}
+
+fn execute_inner(
+    plan: &LaunchPlan,
+    passthrough_args: &[String],
+    payloads: Option<Vec<OwnedFd>>,
+) -> Result<u8, PodmanError> {
+    let mut plan = plan.clone();
+    adapt_network_mode_for_installed_podman(&mut plan);
+    ensure_image(&plan.image, &plan.containerfile)?;
+    let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
+    let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
+    let result = run_container(&plan, &env_file, passthrough_args, payloads);
+    let _ = fs::remove_file(&env_file);
     result
 }
 
@@ -154,17 +222,24 @@ fn run_container(
     plan: &LaunchPlan,
     env_file: &Path,
     passthrough_args: &[String],
+    payloads: Option<Vec<OwnedFd>>,
 ) -> Result<u8, PodmanError> {
     let mut args = build_run_args(plan, env_file);
     args.extend(passthrough_args.iter().cloned());
+    let has_payloads = payloads.is_some();
 
-    let status = Command::new("podman")
-        .args(&args)
-        .status()
-        .map_err(PodmanError::SpawnFailed)?;
+    let status = if let Some(payloads) = payloads {
+        run_podman_with_payload_fds(&args, payloads)?
+    } else {
+        Command::new("podman")
+            .args(&args)
+            .status()
+            .map_err(PodmanError::SpawnFailed)?
+    };
 
     let exit_code = status.code().unwrap_or(1) as u8;
-    if should_probe_network_mode_after_run_failure(&plan.network_mode, exit_code)
+    if !has_payloads
+        && should_probe_network_mode_after_run_failure(&plan.network_mode, exit_code)
         && let Some(network_mode) = fallback_network_mode_after_run_failure(
             &plan.network_mode,
             exit_code,
@@ -189,6 +264,67 @@ fn run_container(
     }
 
     Ok(exit_code)
+}
+
+fn run_payload_sources(
+    plan: &LaunchPlan,
+    env_file: &Path,
+    passthrough_args: &[String],
+    sources: &[crate::onepassword::SourceRef],
+) -> Result<u8, PodmanError> {
+    let mut args = build_run_args(plan, env_file);
+    args.extend(passthrough_args.iter().cloned());
+    let status = run_podman_with_payload_fds(&args, prepare_payloads(sources)?)?;
+    let exit_code = status.code().unwrap_or(1) as u8;
+    if should_probe_network_mode_after_run_failure(&plan.network_mode, exit_code)
+        && let Some(network_mode) = fallback_network_mode_after_run_failure(
+            &plan.network_mode,
+            exit_code,
+            &probe_network_mode_failure(plan)?,
+        )
+    {
+        eprintln!(
+            "[ags] Podman rejected --network={}; retrying with --network={network_mode}",
+            plan.network_mode
+        );
+        let mut retry_plan = plan.clone();
+        retry_plan.network_mode = network_mode;
+        let mut retry_args = build_run_args(&retry_plan, env_file);
+        retry_args.extend(passthrough_args.iter().cloned());
+        let status = run_podman_with_payload_fds(&retry_args, prepare_payloads(sources)?)?;
+        return Ok(status.code().unwrap_or(1) as u8);
+    }
+    Ok(exit_code)
+}
+
+fn prepare_payloads(
+    sources: &[crate::onepassword::SourceRef],
+) -> Result<Vec<OwnedFd>, PodmanError> {
+    crate::onepassword::prepare(sources)
+        .map_err(PodmanError::PayloadPrepare)
+        .map(|items| {
+            items
+                .into_iter()
+                .map(crate::onepassword::PreparedItem::into_fd)
+                .collect()
+        })
+}
+
+fn run_podman_with_payload_fds(
+    args: &[String],
+    payloads: Vec<OwnedFd>,
+) -> Result<std::process::ExitStatus, PodmanError> {
+    let command = CString::new("podman").expect("static command has no NUL");
+    let mut child_args = Vec::with_capacity(args.len() + 1);
+    child_args.push(command.clone());
+    for arg in args {
+        child_args
+            .push(CString::new(arg.as_bytes()).map_err(|_| PodmanError::InvalidPodmanArgument)?);
+    }
+    spawn_with_payload_fds(command.as_c_str(), &child_args, payloads)
+        .map_err(PodmanError::SpawnFailed)?
+        .wait()
+        .map_err(PodmanError::SpawnFailed)
 }
 
 fn probe_network_mode_failure(plan: &LaunchPlan) -> Result<String, PodmanError> {

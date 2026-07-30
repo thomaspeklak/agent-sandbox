@@ -71,6 +71,7 @@ pub struct RunOptions {
     pub stop_when_done: bool,
     pub config_path: Option<PathBuf>,
     pub add_dirs: Vec<PathBuf>,
+    pub op_secret_sets: Vec<String>,
     pub passthrough_args: Vec<String>,
 }
 
@@ -154,6 +155,7 @@ pub enum CliError {
     MissingAgent,
     MissingAgentValue,
     MissingConfigValue,
+    MissingOpSecretSetValue,
     MissingShellValue,
     MissingAliasModeValue,
     MissingMountPathValue,
@@ -173,6 +175,7 @@ impl fmt::Display for CliError {
             ),
             Self::MissingAgentValue => f.write_str("missing value for --agent"),
             Self::MissingConfigValue => f.write_str("missing value for --config"),
+            Self::MissingOpSecretSetValue => f.write_str("missing value for --op-secret-set / -1"),
             Self::MissingShellValue => f.write_str("missing value for --shell"),
             Self::MissingAliasModeValue => f.write_str("missing value for --mode"),
             Self::MissingMountPathValue => f.write_str("missing value for --add-dir / -d"),
@@ -270,6 +273,7 @@ where
         stop_when_done: state.stop_when_done,
         config_path: state.config_path,
         add_dirs: state.add_dirs,
+        op_secret_sets: state.op_secret_sets,
         passthrough_args,
     }))
 }
@@ -289,6 +293,7 @@ struct RunParseState {
     use_defaults: bool,
     config_path: Option<PathBuf>,
     add_dirs: Vec<PathBuf>,
+    op_secret_sets: Vec<String>,
 }
 
 fn parse_run_arg<I: Iterator<Item = String>>(
@@ -381,6 +386,20 @@ fn parse_run_arg<I: Iterator<Item = String>>(
     if arg == "--add-dir" || arg == "-d" {
         let raw = iter.next().ok_or(CliError::MissingMountPathValue)?;
         state.add_dirs.push(PathBuf::from(raw));
+        return Ok(());
+    }
+
+    if arg == "--op-secret-set" || arg == "-1" {
+        let raw = iter.next().ok_or(CliError::MissingOpSecretSetValue)?;
+        state.op_secret_sets.push(raw);
+        return Ok(());
+    }
+
+    if let Some(raw) = arg.strip_prefix("--op-secret-set=") {
+        if raw.is_empty() {
+            return Err(CliError::MissingOpSecretSetValue);
+        }
+        state.op_secret_sets.push(raw.to_owned());
         return Ok(());
     }
 

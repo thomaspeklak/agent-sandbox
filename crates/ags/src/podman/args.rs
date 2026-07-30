@@ -33,6 +33,11 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
     args.push("--network".into());
     args.push(plan.network_mode.clone());
 
+    // Anonymous descriptors are inherited directly, never serialized into args.
+    if plan.payload_fd_count > 0 {
+        args.push(format!("--preserve-fds={}", plan.payload_fd_count));
+    }
+
     // Container name
     args.push("--name".into());
     args.push(plan.container_name.clone());
