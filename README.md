@@ -331,7 +331,7 @@ Tip: add `PGPASSWORD`, `PGUSER`, `PGDATABASE`, and `PGPORT` to `[sandbox].passth
 For a one-off database or service credential set, pass a host 1Password Secure Note explicitly:
 
 ```console
-ags --agent pi -1 'Employee/EXO PG readonly env vars'
+ags --agent pi -1 'ExampleVault/readonly-database'
 ```
 
 `-1` is short for the repeatable `--op-secret-set VAULT/ITEM` flag. The item must have category `SECURE_NOTE`; every field with a present string value is injected using its custom-field label unchanged, so labels must already be safe environment-variable names. For example: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`. Empty values are valid, and later fields/items override earlier labels.
@@ -343,7 +343,7 @@ Values stay out of AGS argv, Podman configuration, regular files, and AGS's long
 `--lockdown` cannot be combined with `-1`/`--op-secret-set`. This transport requires **local** Podman support for `--preserve-fds`; remote Podman is unsupported. To smoke-test a readonly item without printing a password or dumping the environment, check only required names and connectivity, for example:
 
 ```console
-ags --agent shell -1 'Employee/EXO PG readonly env vars' -- \
+ags --agent shell -1 'ExampleVault/readonly-database' -- \
   -lc 'test -n "${PGHOST-}" && test -n "${PGUSER-}" && psql -c "select 1" >/dev/null'
 ```
 

@@ -3,7 +3,7 @@
 AGS can inject environment variables from a 1Password item for one explicit run:
 
 ```console
-ags --agent pi -1 'Employee/EXO PG readonly env vars'
+ags --agent pi -1 'ExampleVault/readonly-database'
 ```
 
 `-1` is short for repeatable `--op-secret-set VAULT/ITEM`:
@@ -11,7 +11,7 @@ ags --agent pi -1 'Employee/EXO PG readonly env vars'
 ```console
 ags --agent pi \
   -1 'Employee/common env vars' \
-  -1 'Employee/EXO PG readonly env vars'
+  -1 'ExampleVault/readonly-database'
 ```
 
 ## Supported item type
@@ -53,6 +53,6 @@ Use a dedicated least-privilege/readonly database role. Rotate or revoke it inde
 Check required names and database connectivity without printing a password or dumping the environment:
 
 ```console
-ags --agent shell -1 'Employee/EXO PG readonly env vars' -- \
+ags --agent shell -1 'ExampleVault/readonly-database' -- \
   -lc 'test -n "${PGHOST-}" && test -n "${PGUSER-}" && psql -c "select 1" >/dev/null'
 ```
