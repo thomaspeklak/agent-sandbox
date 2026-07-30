@@ -50,6 +50,16 @@ const documents = [
     keywords: ["config", "toml", "mount", "secret", "browser", "clipboard"],
   },
   {
+    slug: "onepassword",
+    source: "docs/ONEPASSWORD.md",
+    title: "1Password Secure Note sets",
+    navTitle: "1Password Secure Notes",
+    group: "operate",
+    description:
+      "Inject a CLI-selected 1Password Secure Note into only the final agent process tree.",
+    keywords: ["1password", "op", "secure note", "secret", "environment", "postgres"],
+  },
+  {
     slug: "troubleshooting",
     source: "docs/TROUBLESHOOTING.md",
     title: "Troubleshooting",
