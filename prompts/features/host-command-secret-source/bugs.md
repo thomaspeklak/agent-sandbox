@@ -1,0 +1,1 @@
+- [x] OpenCode MCP commands using `uvx` cannot create `/home/dev/.local/share/uv/tools` because the data-directory parent is root-owned.

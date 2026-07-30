@@ -66,7 +66,7 @@ RUN dnf -y install \
     dnf clean all
 
 RUN useradd -m -u 1000 -s /bin/bash dev && \
-    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/ags && \
+    mkdir -p /workspace /home/dev/.local/bin /home/dev/.local/share /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/ags && \
     printf 'ignore-scripts=true\n' > /etc/npmrc && \
     printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
     printf 'ignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' > /home/dev/.config/pnpm/rc && \
