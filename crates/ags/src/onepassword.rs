@@ -175,17 +175,19 @@ fn prepare_one(source: SourceRef, op_path: &Path) -> Result<PreparedItem, OnePas
         .try_clone()
         .map_err(|error| OnePasswordError::Memfd(error.kind()))?
         .into();
-    let status = Command::new(op_path)
-        .args(["item", "get", source.item(), "--vault", source.vault()])
+    let mut op = Command::new(op_path);
+    op.args(["item", "get", source.item(), "--vault", source.vault()])
         .args(["--format=json", "--reveal"])
         .stdin(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .stdout(Stdio::from(stdout))
-        .status()
-        .map_err(|error| OnePasswordError::Spawn {
-            source: source.clone(),
-            kind: error.kind(),
-        })?;
+        .stdout(Stdio::from(stdout));
+    let status = op.status().map_err(|error| OnePasswordError::Spawn {
+        source: source.clone(),
+        kind: error.kind(),
+    })?;
+    // `Command` owns the duplicated stdout descriptor. Drop it before adding
+    // F_SEAL_WRITE: an extra writable reference would make sealing fail EBUSY.
+    drop(op);
     if !status.success() {
         return Err(OnePasswordError::LookupFailed {
             source,

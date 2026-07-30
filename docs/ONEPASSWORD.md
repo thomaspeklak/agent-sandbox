@@ -46,6 +46,7 @@ Use a dedicated least-privilege/readonly database role. Rotate or revoke it inde
 
 - Local Podman with `--preserve-fds` support is required.
 - Remote Podman connections are rejected for `-1` runs because anonymous descriptors cannot safely cross the client/server boundary.
+- If Podman retries a failed legacy-network launch, AGS must retrieve fresh one-shot descriptors and therefore runs `op` again; normal 1Password authentication may prompt again.
 - `--lockdown` is incompatible with `-1` / `--op-secret-set`.
 
 ## Safe smoke test

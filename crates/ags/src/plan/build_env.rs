@@ -290,7 +290,7 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
 
     let agent_exec = build_agent_exec(profile, browser, browser_mode);
     let final_exec = |command: String| {
-        bootstrap_path.map_or(command.clone(), |bootstrap| {
+        bootstrap_path.map_or_else(|| command.clone(), |bootstrap| {
             format!(
                 "exec {} --fd-count {} -- {}",
                 shell_quote(bootstrap), payload_fd_count, command.strip_prefix("exec ").unwrap_or(&command)
@@ -329,8 +329,9 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
     script
 }
 
-/// Run setup in a subshell without payload FDs. The parent shell retains them
-/// solely for the final bootstrap, so no pre-agent process can inspect JSON.
+/// Run setup in a subshell without inherited payload FDs. The parent shell
+/// retains them solely for the final bootstrap; this prevents setup children
+/// from receiving descriptors through normal inheritance.
 fn append_prebootstrap_command(script: &mut String, command: &str, close_fds: Option<&str>) {
     if let Some(close_fds) = close_fds {
         script.push('(');

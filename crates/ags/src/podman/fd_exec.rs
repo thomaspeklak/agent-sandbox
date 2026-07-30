@@ -68,13 +68,14 @@ pub(super) fn spawn_with_payload_fds(
 
     let mut argv: Vec<*mut libc::c_char> = args.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
     argv.push(std::ptr::null_mut());
+    let mut attributes = SpawnAttributes::with_default_sigpipe()?;
     let mut pid = 0;
     let result = unsafe {
         libc::posix_spawnp(
             &mut pid,
             program.as_ptr(),
             actions.as_ptr(),
-            std::ptr::null(),
+            attributes.as_ptr(),
             argv.as_ptr(),
             environ,
         )
@@ -139,6 +140,41 @@ impl Drop for SpawnFileActions {
     }
 }
 
+/// Match Rust's `Command` behavior: a Rust process ignores SIGPIPE, but its
+/// spawned program must receive the platform default disposition instead.
+struct SpawnAttributes {
+    inner: libc::posix_spawnattr_t,
+}
+
+impl SpawnAttributes {
+    fn with_default_sigpipe() -> io::Result<Self> {
+        let mut inner = unsafe { std::mem::zeroed() };
+        result_to_io(unsafe { libc::posix_spawnattr_init(&mut inner) })?;
+        let mut signals = unsafe { std::mem::zeroed::<libc::sigset_t>() };
+        let result = unsafe {
+            libc::sigemptyset(&mut signals);
+            libc::sigaddset(&mut signals, libc::SIGPIPE);
+            libc::posix_spawnattr_setsigdefault(&mut inner, &signals);
+            libc::posix_spawnattr_setflags(&mut inner, libc::POSIX_SPAWN_SETSIGDEF as i16)
+        };
+        if result != 0 {
+            unsafe { libc::posix_spawnattr_destroy(&mut inner) };
+            return Err(io::Error::from_raw_os_error(result));
+        }
+        Ok(Self { inner })
+    }
+
+    fn as_ptr(&mut self) -> *mut libc::posix_spawnattr_t {
+        &mut self.inner
+    }
+}
+
+impl Drop for SpawnAttributes {
+    fn drop(&mut self) {
+        unsafe { libc::posix_spawnattr_destroy(&mut self.inner) };
+    }
+}
+
 fn result_to_io(result: libc::c_int) -> io::Result<()> {
     if result == 0 {
         Ok(())
@@ -148,38 +184,5 @@ fn result_to_io(result: libc::c_int) -> io::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::os::fd::AsRawFd;
-
-    fn identity(fd: RawFd) -> Option<(libc::dev_t, libc::ino_t)> {
-        let mut stat = unsafe { std::mem::zeroed::<libc::stat>() };
-        (unsafe { libc::fstat(fd, &mut stat) } == 0).then_some((stat.st_dev, stat.st_ino))
-    }
-
-    #[test]
-    fn remaps_payload_and_closes_the_parent_handoff_copy() {
-        let payload = tempfile::tempfile().unwrap();
-        let handoff = payload.try_clone().unwrap();
-        let handoff_number = handoff.as_raw_fd();
-        let payload_identity = identity(handoff_number).unwrap();
-        let program = CString::new("sh").unwrap();
-        let args = [
-            CString::new("sh").unwrap(),
-            CString::new("-c").unwrap(),
-            CString::new("test -r /proc/self/fd/3").unwrap(),
-        ];
-
-        let status = spawn_with_payload_fds(program.as_c_str(), &args, vec![handoff.into()])
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        assert!(status.success());
-        assert_ne!(
-            identity(handoff_number),
-            Some(payload_identity),
-            "parent must close its handoff descriptor after spawn"
-        );
-    }
-}
+#[path = "fd_exec_tests.rs"]
+mod tests;

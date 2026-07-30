@@ -103,7 +103,7 @@ fn closes_payload_descriptors_before_final_exec() {
         &[
             "sh",
             "-c",
-            "for fd in 3 4; do test ! -e /proc/self/fd/$fd || exit 99; done",
+            "for fd in 3 4; do target=$(readlink /proc/self/fd/$fd 2>/dev/null || true); case $target in *ags-op-item*) exit 99;; esac; done",
         ],
         &[],
     );

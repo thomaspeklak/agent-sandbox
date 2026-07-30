@@ -21,7 +21,6 @@ pub enum PodmanError {
     EnvFileCreate(io::Error),
     SpawnFailed(io::Error),
     PayloadCountMismatch { expected: usize, received: usize },
-    PayloadBootstrapMissing,
     RemotePodmanUnsupported,
     LocalPodmanProbe(io::Error),
     InvalidPodmanArgument,
@@ -38,9 +37,6 @@ impl fmt::Display for PodmanError {
                 f,
                 "payload descriptor count mismatch (expected {expected}, received {received})"
             ),
-            Self::PayloadBootstrapMissing => {
-                f.write_str("payload descriptors require a final-process bootstrap")
-            }
             Self::RemotePodmanUnsupported => f.write_str(
                 "--op-secret-set requires local Podman; remote Podman connections cannot preserve anonymous descriptors",
             ),
@@ -165,7 +161,7 @@ pub fn execute(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, Pod
             received: 0,
         });
     }
-    execute_inner(plan, passthrough_args, None)
+    execute_inner(plan, passthrough_args)
 }
 
 /// Execute a plan while handing sealed payload descriptors directly to Podman.
@@ -225,17 +221,13 @@ fn ensure_local_podman() -> Result<(), PodmanError> {
     Ok(())
 }
 
-fn execute_inner(
-    plan: &LaunchPlan,
-    passthrough_args: &[String],
-    payloads: Option<Vec<OwnedFd>>,
-) -> Result<u8, PodmanError> {
+fn execute_inner(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, PodmanError> {
     let mut plan = plan.clone();
     adapt_network_mode_for_installed_podman(&mut plan);
     ensure_image(&plan.image, &plan.containerfile)?;
     let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
-    let result = run_container(&plan, &env_file, passthrough_args, payloads);
+    let result = run_container(&plan, &env_file, passthrough_args);
     let _ = fs::remove_file(&env_file);
     result
 }
@@ -244,24 +236,16 @@ fn run_container(
     plan: &LaunchPlan,
     env_file: &Path,
     passthrough_args: &[String],
-    payloads: Option<Vec<OwnedFd>>,
 ) -> Result<u8, PodmanError> {
     let mut args = build_run_args(plan, env_file);
     args.extend(passthrough_args.iter().cloned());
-    let has_payloads = payloads.is_some();
-
-    let status = if let Some(payloads) = payloads {
-        run_podman_with_payload_fds(&args, payloads)?
-    } else {
-        Command::new("podman")
-            .args(&args)
-            .status()
-            .map_err(PodmanError::SpawnFailed)?
-    };
+    let status = Command::new("podman")
+        .args(&args)
+        .status()
+        .map_err(PodmanError::SpawnFailed)?;
 
     let exit_code = status.code().unwrap_or(1) as u8;
-    if !has_payloads
-        && should_probe_network_mode_after_run_failure(&plan.network_mode, exit_code)
+    if should_probe_network_mode_after_run_failure(&plan.network_mode, exit_code)
         && let Some(network_mode) = fallback_network_mode_after_run_failure(
             &plan.network_mode,
             exit_code,
