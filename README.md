@@ -11,6 +11,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - `README.md` (this file): quick start + daily usage
 - `docs/COMMANDS.md`: detailed command behavior and side effects
 - `docs/CONFIG.md`: full config schema and semantics
+- `docs/ONEPASSWORD.md`: CLI-only Secure Note environment-set workflow
 - `docs/GLIMPSE.md`: user-facing Glimpse/host UI setup and usage
 - `docs/TROUBLESHOOTING.md`: common problems and fixes
 - `docs/ARCHITECTURE.md`: internal architecture overview
@@ -335,7 +336,7 @@ ags --agent pi -1 'Employee/EXO PG readonly env vars'
 
 `-1` is short for the repeatable `--op-secret-set VAULT/ITEM` flag. The item must have category `SECURE_NOTE`; every field with a present string value is injected using its custom-field label unchanged, so labels must already be safe environment-variable names. For example: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`. Empty values are valid, and later fields/items override earlier labels.
 
-This is CLI-only: there is no `config.toml` key, field mapping, preset, or automatic activation. AGS runs `op` on the host with normal interactive 1Password authentication; it is not mounted into the sandbox. The final agent process tree—including `psql`, MCP servers, subagents, tmux panes, and post-agent tmux shells—receives the variables.
+This is CLI-only: there is no `config.toml` key, field mapping, preset, or automatic activation. **Only 1Password `SECURE_NOTE` items are supported**—not Login, Password, API Credential, or other item categories. AGS runs `op` on the host with normal interactive 1Password authentication; it is not mounted into the sandbox. The final agent process tree—including `psql`, MCP servers, subagents, tmux panes, and post-agent tmux shells—receives the variables. See [`docs/ONEPASSWORD.md`](docs/ONEPASSWORD.md) for the complete workflow.
 
 Values stay out of AGS argv, Podman configuration, regular files, and AGS's long-lived userspace memory. The host `op` process and the final container bootstrap necessarily see them briefly; the final environment remains inspectable by authorized same-user/root processes through `/proc/<pid>/environ`. Vault/item names are metadata and are visible in the host `op` command line. Use a dedicated least-privilege/readonly DB role and rotate or revoke it independently.
 
