@@ -7,11 +7,66 @@
 use std::fmt;
 use std::fs::File;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 
 /// Largest accepted serialized Secure Note item (1 MiB).
 const MAX_ITEM_BYTES: i64 = 1024 * 1024;
+
+/// Owns the non-secret, private bootstrap asset for precisely one payload run.
+/// A scrubbed helper removes it if the host is terminated before Rust can drop
+/// the `TempDir`. It starts before payload descriptors exist and cannot inherit
+/// them; normal returns synchronously stop it before removing the directory.
+pub(crate) struct BootstrapAssetGuard {
+    dir: tempfile::TempDir,
+    reaper: Child,
+}
+
+impl BootstrapAssetGuard {
+    pub(crate) fn prepare(runtime_base: &Path) -> std::io::Result<Self> {
+        let dir = tempfile::Builder::new()
+            .prefix("ags-onepassword-")
+            .tempdir_in(runtime_base)?;
+        crate::assets::ensure_onepassword_bootstrap(dir.path())?;
+        let reaper = spawn_bootstrap_reaper(dir.path())?;
+        Ok(Self { dir, reaper })
+    }
+
+    pub(crate) fn path(&self) -> PathBuf {
+        self.dir
+            .path()
+            .join(crate::assets::ONEPASSWORD_BOOTSTRAP_NAME)
+    }
+}
+
+impl Drop for BootstrapAssetGuard {
+    fn drop(&mut self) {
+        let _ = self.reaper.kill();
+        let _ = self.reaper.wait();
+    }
+}
+
+fn spawn_bootstrap_reaper(path: &Path) -> std::io::Result<Child> {
+    // The expected parent PID is captured before spawn. If AGS exits before
+    // Python starts, the mismatch makes the helper clean up immediately.
+    const REAPER: &str = r#"import os, shutil, signal, sys, time
+for interrupt in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(interrupt, signal.SIG_IGN)
+expected_parent = int(sys.argv[2])
+while os.getppid() == expected_parent:
+    time.sleep(0.1)
+shutil.rmtree(sys.argv[1], ignore_errors=True)
+"#;
+    Command::new("python3")
+        .args(["-c", REAPER])
+        .arg(path)
+        .arg(std::process::id().to_string())
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SourceRef {

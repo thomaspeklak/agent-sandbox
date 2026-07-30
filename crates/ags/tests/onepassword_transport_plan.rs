@@ -5,7 +5,8 @@ use std::path::Path;
 use ags::cli::Agent;
 use ags::config::{ClipboardMode, MountMode, parse_toml_str};
 use ags::plan::{
-    BuildLaunchPlanOptions, ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH, PlanError, build_launch_plan,
+    BuildLaunchPlanOptions, ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH, PlanError, PlanMount,
+    build_launch_plan,
 };
 
 fn config_toml(base: &Path) -> String {
@@ -132,6 +133,40 @@ fn payload_plan_rejects_unowned_bootstrap_path() {
     .unwrap_err();
 
     assert!(matches!(error, PlanError::PayloadBootstrapInvalid));
+}
+
+#[test]
+fn trusted_bootstrap_mount_is_rendered_after_every_other_mount() {
+    let root = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&config_toml(root.path()), Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let bootstrap = bootstrap_asset(root.path());
+    let extra_mounts =
+        ["/run", "/var/run", ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH].map(|destination| PlanMount {
+            host: root.path().to_owned(),
+            container: destination.to_owned(),
+            mode: MountMode::Ro,
+        });
+
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            extra_mounts: &extra_mounts,
+            payload_fd_count: 1,
+            bootstrap_path: Some(ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH),
+            bootstrap_host_path: Some(&bootstrap),
+            ..options(&secrets)
+        },
+    )
+    .unwrap();
+
+    let trusted = plan.mounts.last().unwrap();
+    assert_eq!(trusted.host, bootstrap);
+    assert_eq!(trusted.container, ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH);
+    assert_eq!(trusted.mode, MountMode::Ro);
 }
 
 #[test]

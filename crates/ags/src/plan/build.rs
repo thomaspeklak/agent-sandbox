@@ -175,17 +175,6 @@ pub fn build_launch_plan(
         mode: MountMode::Rw,
     });
 
-    // Payload-enabled plans mount the private, per-run bootstrap asset prepared
-    // by the lifecycle. It contains no payload and its directory is cleaned by
-    // the lifecycle guard once Podman exits.
-    if let Some(host) = bootstrap_host_path {
-        mounts.push(PlanMount {
-            host: host.to_owned(),
-            container: ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH.to_owned(),
-            mode: MountMode::Ro,
-        });
-    }
-
     if !lockdown {
         add_infrastructure_mounts(&mut mounts, config, cache_dir);
     }
@@ -309,6 +298,17 @@ pub fn build_launch_plan(
 
         add_pub_key_mount(&mut mounts, &config.sandbox.auth_key, "ags-agent-auth");
         add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
+    }
+
+    // Render the trusted bootstrap after every user- or runtime-controlled
+    // mount. The final, exact bind wins even when an earlier destination reaches
+    // `/run` through an image symlink such as `/var/run`.
+    if let Some(host) = bootstrap_host_path {
+        mounts.push(PlanMount {
+            host: host.to_owned(),
+            container: ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH.to_owned(),
+            mode: MountMode::Ro,
+        });
     }
 
     // Environment

@@ -160,13 +160,13 @@ fn build_env(
             .iter()
             // 1Password authentication remains host-only even when a user has
             // an unrelated configured secret with an OP_* name.
-            .filter(|(name, _)| !name.starts_with("OP_"))
+            .filter(|(name, _)| !is_onepassword_host_env(name))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     };
     if !lockdown {
         for env_name in &config.sandbox.passthrough_env {
-            if env_name.starts_with("OP_") || resolved_secrets.contains_key(env_name) {
+            if is_onepassword_host_env(env_name) || resolved_secrets.contains_key(env_name) {
                 continue;
             }
             if let Ok(val) = std::env::var(env_name)
@@ -184,6 +184,10 @@ fn build_env(
         read_roots_json: json_string_array(read_roots),
         write_roots_json: json_string_array(write_roots),
     }
+}
+
+fn is_onepassword_host_env(name: &str) -> bool {
+    name.starts_with("OP_")
 }
 
 // --- entrypoint ---
@@ -218,6 +222,7 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
 
     let close_payload_fds = payload_fd_count
         .checked_add(2)
+        .filter(|_| payload_fd_count > 0)
         .map(|last_fd| format!("for fd in $(seq 3 {last_fd}); do eval \"exec $fd>&-\"; done; "));
     let all_dirs: Vec<String> = boot_dirs
         .iter()
@@ -229,7 +234,7 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         append_prebootstrap_command(
             &mut script,
             &format!("mkdir -p {}", all_dirs.join(" ")),
-            close_payload_fds.as_deref().filter(|_| payload_fd_count > 0),
+            close_payload_fds.as_deref(),
         );
     }
 
@@ -237,42 +242,31 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         append_prebootstrap_command(
             &mut script,
             &profile.entrypoint_setup,
-            close_payload_fds.as_deref().filter(|_| payload_fd_count > 0),
+            close_payload_fds.as_deref(),
         );
     }
 
     if browser_mode && browser.enabled {
-        if let Some(close_fds) = close_payload_fds.as_ref().filter(|_| payload_fd_count > 0) {
-            script.push('(');
-            script.push_str(close_fds);
-            script.push_str(&format!(
-                "exec socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-                 TCP:{host}:{port} >/tmp/ags-socat.log 2>&1) & ",
-                host = BROWSER_HOST_LOOPBACK,
-                port = browser.debug_port
-            ));
-        } else {
-            script.push_str(&format!(
+        append_prebootstrap_background_command(
+            &mut script,
+            &format!(
                 "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-                 TCP:{host}:{port} >/tmp/ags-socat.log 2>&1 & ",
+                 TCP:{host}:{port} >/tmp/ags-socat.log 2>&1",
                 host = BROWSER_HOST_LOOPBACK,
                 port = browser.debug_port
-            ));
-        }
+            ),
+            close_payload_fds.as_deref(),
+        );
     }
 
     if webview_relay_enabled {
         script.push_str("if [ -n \"${AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET:-}\" ]; then ");
         script.push_str("if command -v python3 >/dev/null 2>&1; then ");
-        if let Some(close_fds) = close_payload_fds.as_ref().filter(|_| payload_fd_count > 0) {
-            script.push('(');
-            script.push_str(close_fds);
-            script.push_str("exec python3 /run/ags-webview-relay/webview-relay-shim ");
-            script.push_str(">/tmp/ags-webview-relay.log 2>&1) & ");
-        } else {
-            script.push_str("python3 /run/ags-webview-relay/webview-relay-shim ");
-            script.push_str(">/tmp/ags-webview-relay.log 2>&1 & ");
-        }
+        append_prebootstrap_background_command(
+            &mut script,
+            "python3 /run/ags-webview-relay/webview-relay-shim >/tmp/ags-webview-relay.log 2>&1",
+            close_payload_fds.as_deref(),
+        );
         script.push_str(concat!(
             "else ",
             "echo '[ags] warning: python3 is missing; ",
@@ -317,7 +311,7 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         append_prebootstrap_command(
             &mut script,
             &tmux_setup,
-            close_payload_fds.as_deref().filter(|_| payload_fd_count > 0),
+            close_payload_fds.as_deref(),
         );
         script.push_str(&final_exec(
             "exec tmux new-session -A -s ags /tmp/ags-run-in-tmux.sh \"$@\"".to_owned(),
@@ -341,6 +335,25 @@ fn append_prebootstrap_command(script: &mut String, command: &str, close_fds: Op
     } else {
         script.push_str(command);
         script.push_str("; ");
+    }
+}
+
+/// Start a background helper without inherited payload FDs. The helper is
+/// `exec`'d only inside the FD-closing subshell, preserving the no-payload form.
+fn append_prebootstrap_background_command(
+    script: &mut String,
+    command: &str,
+    close_fds: Option<&str>,
+) {
+    if let Some(close_fds) = close_fds {
+        script.push('(');
+        script.push_str(close_fds);
+        script.push_str("exec ");
+        script.push_str(command);
+        script.push_str(") & ");
+    } else {
+        script.push_str(command);
+        script.push_str(" & ");
     }
 }
 

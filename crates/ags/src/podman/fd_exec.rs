@@ -150,18 +150,25 @@ impl SpawnAttributes {
     fn with_default_sigpipe() -> io::Result<Self> {
         let mut inner = unsafe { std::mem::zeroed() };
         result_to_io(unsafe { libc::posix_spawnattr_init(&mut inner) })?;
+        let mut attributes = Self { inner };
         let mut signals = unsafe { std::mem::zeroed::<libc::sigset_t>() };
-        let result = unsafe {
-            libc::sigemptyset(&mut signals);
-            libc::sigaddset(&mut signals, libc::SIGPIPE);
-            libc::posix_spawnattr_setsigdefault(&mut inner, &signals);
-            libc::posix_spawnattr_setflags(&mut inner, libc::POSIX_SPAWN_SETSIGDEF as i16)
-        };
-        if result != 0 {
-            unsafe { libc::posix_spawnattr_destroy(&mut inner) };
-            return Err(io::Error::from_raw_os_error(result));
+
+        if unsafe { libc::sigemptyset(&mut signals) } != 0 {
+            return Err(io::Error::last_os_error());
         }
-        Ok(Self { inner })
+        if unsafe { libc::sigaddset(&mut signals, libc::SIGPIPE) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        result_to_io(unsafe {
+            libc::posix_spawnattr_setsigdefault(&mut attributes.inner, &signals)
+        })?;
+        result_to_io(unsafe {
+            libc::posix_spawnattr_setflags(
+                &mut attributes.inner,
+                libc::POSIX_SPAWN_SETSIGDEF as i16,
+            )
+        })?;
+        Ok(attributes)
     }
 
     fn as_ptr(&mut self) -> *mut libc::posix_spawnattr_t {
