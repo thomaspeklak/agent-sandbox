@@ -1,7 +1,9 @@
 //! Top-level agent launch lifecycle.
 
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Child, Command, ExitCode, Stdio};
+
+use tempfile::TempDir;
 
 use crate::cli::{Agent, RunOptions};
 use crate::config::{self, ValidatedConfig};
@@ -10,14 +12,70 @@ use crate::secrets::{self, OsHostCommandRunner, OsSecretBackend};
 use crate::ssh::{self, OsSshRunner, SshKey};
 use crate::trust::StdioRepoConfigPrompter;
 
-struct BootstrapAssetGuard(Option<PathBuf>);
+/// Owns the non-secret, private bootstrap asset for precisely one payload run.
+/// A scrubbed helper removes it if the host is terminated before Rust can drop
+/// the `TempDir`. It starts before payload descriptors exist and cannot inherit
+/// them; normal returns synchronously stop it before removing the directory.
+struct BootstrapAssetGuard {
+    dir: Option<TempDir>,
+    reaper: Option<Child>,
+}
+
+impl BootstrapAssetGuard {
+    fn prepare(runtime_base: &Path, enabled: bool) -> Result<Self, std::io::Error> {
+        if !enabled {
+            return Ok(Self {
+                dir: None,
+                reaper: None,
+            });
+        }
+        let dir = tempfile::Builder::new()
+            .prefix("ags-onepassword-")
+            .tempdir_in(runtime_base)?;
+        crate::assets::ensure_onepassword_bootstrap(dir.path())?;
+        let reaper = spawn_bootstrap_reaper(dir.path())?;
+        Ok(Self {
+            dir: Some(dir),
+            reaper: Some(reaper),
+        })
+    }
+
+    fn path(&self) -> Option<PathBuf> {
+        self.dir
+            .as_ref()
+            .map(|dir| dir.path().join(crate::assets::ONEPASSWORD_BOOTSTRAP_NAME))
+    }
+}
 
 impl Drop for BootstrapAssetGuard {
     fn drop(&mut self) {
-        if let Some(path) = &self.0 {
-            let _ = std::fs::remove_file(path);
+        if let Some(mut reaper) = self.reaper.take() {
+            let _ = reaper.kill();
+            let _ = reaper.wait();
         }
+        drop(self.dir.take());
     }
+}
+
+fn spawn_bootstrap_reaper(path: &Path) -> Result<Child, std::io::Error> {
+    // The helper immediately execs a clean Python process. Its only inputs are
+    // non-secret metadata and it is started before `op` creates any payload FD.
+    const REAPER: &str = r#"import os, shutil, signal, sys, time
+for interrupt in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(interrupt, signal.SIG_IGN)
+parent = os.getppid()
+while os.getppid() == parent:
+    time.sleep(0.1)
+shutil.rmtree(sys.argv[1], ignore_errors=True)
+"#;
+    Command::new("python3")
+        .args(["-c", REAPER])
+        .arg(path)
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
 }
 
 pub fn run_agent(opts: RunOptions) -> ExitCode {
@@ -277,9 +335,14 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         }
     };
 
-    let _bootstrap_asset = BootstrapAssetGuard(
-        (!sources.is_empty()).then(|| runtime_base.join(crate::assets::ONEPASSWORD_BOOTSTRAP_NAME)),
-    );
+    let bootstrap_asset = match BootstrapAssetGuard::prepare(&runtime_base, !sources.is_empty()) {
+        Ok(asset) => asset,
+        Err(e) => {
+            eprintln!("error: failed to prepare 1Password bootstrap asset: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let bootstrap_host_path = bootstrap_asset.path();
 
     // 8. Build launch plan
     let plan = match crate::plan::build_launch_plan(
@@ -315,6 +378,7 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
             payload_fd_count: sources.len(),
             bootstrap_path: (!sources.is_empty())
                 .then_some(crate::plan::ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH),
+            bootstrap_host_path: bootstrap_host_path.as_deref(),
         },
     ) {
         Ok(p) => p,

@@ -61,6 +61,12 @@ container = "/home/dev/.gemini"
     )
 }
 
+fn bootstrap_asset(root: &Path) -> std::path::PathBuf {
+    let asset = root.join("onepassword-bootstrap");
+    fs::write(&asset, ags::assets::ONEPASSWORD_BOOTSTRAP).unwrap();
+    asset
+}
+
 fn options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<'_> {
     BuildLaunchPlanOptions {
         browser_mode: false,
@@ -84,6 +90,7 @@ fn options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<'_> {
         wayland_passthrough: false,
         payload_fd_count: 0,
         bootstrap_path: None,
+        bootstrap_host_path: None,
     }
 }
 
@@ -133,6 +140,7 @@ fn bootstrap_wraps_direct_agent_and_closes_fds_for_browser_helper() {
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&config_toml(root.path()), Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
+    let bootstrap = bootstrap_asset(root.path());
     let plan = build_launch_plan(
         &config,
         workdir.path(),
@@ -141,6 +149,7 @@ fn bootstrap_wraps_direct_agent_and_closes_fds_for_browser_helper() {
             browser_mode: true,
             payload_fd_count: 2,
             bootstrap_path: Some(ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH),
+            bootstrap_host_path: Some(&bootstrap),
             ..options(&secrets)
         },
     )
@@ -176,6 +185,7 @@ fn webview_relay_child_closes_payload_descriptors_before_exec() {
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&config_toml(root.path()), Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
+    let bootstrap = bootstrap_asset(root.path());
     let plan = build_launch_plan(
         &config,
         workdir.path(),
@@ -183,6 +193,7 @@ fn webview_relay_child_closes_payload_descriptors_before_exec() {
         BuildLaunchPlanOptions {
             payload_fd_count: 2,
             bootstrap_path: Some(ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH),
+            bootstrap_host_path: Some(&bootstrap),
             webview_relay_runtime_dir: Some(root.path()),
             ..options(&secrets)
         },
@@ -195,11 +206,40 @@ fn webview_relay_child_closes_payload_descriptors_before_exec() {
 }
 
 #[test]
+fn prebootstrap_commands_close_payload_descriptors() {
+    let root = tempfile::tempdir().unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&config_toml(root.path()), Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let bootstrap = bootstrap_asset(root.path());
+    for agent in [Agent::Claude, Agent::Shell] {
+        let plan = build_launch_plan(
+            &config,
+            workdir.path(),
+            agent,
+            BuildLaunchPlanOptions {
+                payload_fd_count: 1,
+                bootstrap_path: Some(ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH),
+                bootstrap_host_path: Some(&bootstrap),
+                ..options(&secrets)
+            },
+        )
+        .unwrap();
+        assert!(
+            plan.entrypoint
+                .contains("(for fd in $(seq 3 3); do eval \"exec $fd>&-\"; done;"),
+            "{agent} setup must run in an FD-closing subshell"
+        );
+    }
+}
+
+#[test]
 fn bootstrap_wraps_tmux_process_tree_in_root_stop_when_done_mode() {
     let root = tempfile::tempdir().unwrap();
     let workdir = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&config_toml(root.path()), Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
+    let bootstrap = bootstrap_asset(root.path());
     let plan = build_launch_plan(
         &config,
         workdir.path(),
@@ -210,6 +250,7 @@ fn bootstrap_wraps_tmux_process_tree_in_root_stop_when_done_mode() {
             root_mode: true,
             payload_fd_count: 1,
             bootstrap_path: Some(ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH),
+            bootstrap_host_path: Some(&bootstrap),
             ..options(&secrets)
         },
     )

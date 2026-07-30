@@ -69,6 +69,7 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         wayland_passthrough: false,
         payload_fd_count: 0,
         bootstrap_path: None,
+        bootstrap_host_path: None,
     }
 }
 
@@ -784,6 +785,32 @@ fn secrets_in_env_file() {
         .iter()
         .any(|(k, v)| k == "GH_TOKEN" && v == "ghp_test123");
     assert!(found, "resolved secrets should be in env_file_entries");
+}
+
+#[test]
+fn op_authentication_variables_are_never_forwarded() {
+    let toml = minimal_config_toml().replace(
+        "passthrough_env = [\"ANTHROPIC_API_KEY\"]",
+        "passthrough_env = [\"OP_SERVICE_ACCOUNT_TOKEN\"]",
+    );
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let mut secrets = HashMap::new();
+    secrets.insert("OP_CONNECT_TOKEN".to_owned(), "not-forwarded".to_owned());
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        default_options(&secrets),
+    )
+    .unwrap();
+
+    assert!(
+        plan.env
+            .env_file_entries
+            .iter()
+            .all(|(name, _)| !name.starts_with("OP_"))
+    );
 }
 
 #[test]

@@ -11,7 +11,7 @@ pub mod host_dialog;
 pub mod host_ui;
 pub mod lifecycle;
 pub mod lockdown;
-pub mod onepassword;
+pub(crate) mod onepassword;
 pub mod paths;
 pub mod plan;
 pub mod podman;

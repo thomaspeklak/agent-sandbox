@@ -63,6 +63,9 @@ fn check_tooling(ck: &mut Checker) {
         check_required_cmd(ck, cmd);
     }
     check_optional_cmd(ck, "secret-tool");
+    // `op` is only needed for explicit --op-secret-set runs. Do not invoke it:
+    // checking availability must not authenticate or retrieve an item.
+    check_optional_cmd(ck, "op");
     check_optional_cmd(ck, "curl");
 }
 

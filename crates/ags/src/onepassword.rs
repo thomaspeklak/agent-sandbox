@@ -14,13 +14,13 @@ use std::process::{Command, Stdio};
 const MAX_ITEM_BYTES: i64 = 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourceRef {
+pub(crate) struct SourceRef {
     vault: String,
     item: String,
 }
 
 impl SourceRef {
-    pub fn parse(raw: &str) -> Result<Self, OnePasswordError> {
+    pub(crate) fn parse(raw: &str) -> Result<Self, OnePasswordError> {
         let Some((vault, item)) = raw.split_once('/') else {
             return Err(OnePasswordError::InvalidSource);
         };
@@ -33,11 +33,11 @@ impl SourceRef {
         })
     }
 
-    pub fn vault(&self) -> &str {
+    pub(crate) fn vault(&self) -> &str {
         &self.vault
     }
 
-    pub fn item(&self) -> &str {
+    pub(crate) fn item(&self) -> &str {
         &self.item
     }
 }
@@ -49,14 +49,10 @@ impl fmt::Display for SourceRef {
 }
 
 #[derive(Debug)]
-pub enum OnePasswordError {
+pub(crate) enum OnePasswordError {
     InvalidSource,
     Memfd(std::io::ErrorKind),
     Spawn {
-        source: SourceRef,
-        kind: std::io::ErrorKind,
-    },
-    Wait {
         source: SourceRef,
         kind: std::io::ErrorKind,
     },
@@ -89,8 +85,14 @@ impl fmt::Display for OnePasswordError {
         match self {
             Self::InvalidSource => f.write_str("invalid 1Password source (expected VAULT/ITEM)"),
             Self::Memfd(kind) => write!(f, "could not create 1Password payload descriptor: {kind}"),
+            Self::Spawn {
+                source,
+                kind: std::io::ErrorKind::NotFound,
+            } => write!(
+                f,
+                "op is not installed or not on PATH; required by --op-secret-set for {source}"
+            ),
             Self::Spawn { source, kind } => write!(f, "could not start op for {source}: {kind}"),
-            Self::Wait { source, kind } => write!(f, "could not wait for op for {source}: {kind}"),
             Self::LookupFailed { source, status } => {
                 write!(
                     f,
@@ -121,21 +123,23 @@ impl fmt::Display for OnePasswordError {
 impl std::error::Error for OnePasswordError {}
 
 /// A sealed, rewound anonymous item payload. Its bytes are never exposed here.
-pub struct PreparedItem {
+pub(crate) struct PreparedItem {
     source: SourceRef,
     fd: OwnedFd,
 }
 
 impl PreparedItem {
-    pub fn source(&self) -> &SourceRef {
+    #[cfg(test)]
+    fn source(&self) -> &SourceRef {
         &self.source
     }
 
-    pub fn fd(&self) -> std::os::fd::RawFd {
+    #[cfg(test)]
+    fn fd(&self) -> std::os::fd::RawFd {
         self.fd.as_raw_fd()
     }
 
-    pub fn into_fd(self) -> OwnedFd {
+    pub(crate) fn into_fd(self) -> OwnedFd {
         self.fd
     }
 }
@@ -150,7 +154,7 @@ impl fmt::Debug for PreparedItem {
 }
 
 /// Retrieve every requested item into a sealed anonymous descriptor in order.
-pub fn prepare(sources: &[SourceRef]) -> Result<Vec<PreparedItem>, OnePasswordError> {
+pub(crate) fn prepare(sources: &[SourceRef]) -> Result<Vec<PreparedItem>, OnePasswordError> {
     prepare_with_op(sources, Path::new("op"))
 }
 

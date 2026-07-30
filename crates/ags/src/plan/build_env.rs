@@ -158,12 +158,15 @@ fn build_env(
     } else {
         resolved_secrets
             .iter()
+            // 1Password authentication remains host-only even when a user has
+            // an unrelated configured secret with an OP_* name.
+            .filter(|(name, _)| !name.starts_with("OP_"))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     };
     if !lockdown {
         for env_name in &config.sandbox.passthrough_env {
-            if resolved_secrets.contains_key(env_name) {
+            if env_name.starts_with("OP_") || resolved_secrets.contains_key(env_name) {
                 continue;
             }
             if let Ok(val) = std::env::var(env_name)
@@ -213,6 +216,9 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
     } = ctx;
     let mut script = String::new();
 
+    let close_payload_fds = payload_fd_count
+        .checked_add(2)
+        .map(|last_fd| format!("for fd in $(seq 3 {last_fd}); do eval \"exec $fd>&-\"; done; "));
     let all_dirs: Vec<String> = boot_dirs
         .iter()
         .chain(profile.extra_boot_dirs.iter())
@@ -220,17 +226,20 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         .collect();
 
     if !all_dirs.is_empty() {
-        script.push_str(&format!("mkdir -p {}; ", all_dirs.join(" ")));
+        append_prebootstrap_command(
+            &mut script,
+            &format!("mkdir -p {}", all_dirs.join(" ")),
+            close_payload_fds.as_deref().filter(|_| payload_fd_count > 0),
+        );
     }
 
     if !profile.entrypoint_setup.is_empty() {
-        script.push_str(&profile.entrypoint_setup);
-        script.push_str("; ");
+        append_prebootstrap_command(
+            &mut script,
+            &profile.entrypoint_setup,
+            close_payload_fds.as_deref().filter(|_| payload_fd_count > 0),
+        );
     }
-
-    let close_payload_fds = payload_fd_count
-        .checked_add(2)
-        .map(|last_fd| format!("for fd in $(seq 3 {last_fd}); do eval \"exec $fd>&-\"; done; "));
 
     if browser_mode && browser.enabled {
         if let Some(close_fds) = close_payload_fds.as_ref().filter(|_| payload_fd_count > 0) {
@@ -290,23 +299,26 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
     };
 
     if tmux_mode {
-        script.push_str(
-            "if ! command -v tmux >/dev/null 2>&1; then echo '[ags] tmux is not available in the sandbox image. Run `ags update-image` to rebuild the image with tmux support.' >&2; exit 127; fi; ",
+        let mut tmux_setup = String::from(
+            "if ! command -v tmux >/dev/null 2>&1; then echo '[ags] tmux is not available in the sandbox image. Run `ags update-image` to rebuild the image with tmux support.' >&2; exit 127; fi; cat > /tmp/ags-run-in-tmux.sh <<'EOF'\n#!/usr/bin/env bash\n",
         );
-        script.push_str("cat > /tmp/ags-run-in-tmux.sh <<'EOF'\n#!/usr/bin/env bash\n");
         if stop_when_done {
-            script.push_str(&agent_exec);
+            tmux_setup.push_str(&agent_exec);
         } else {
             // Strip leading "exec " so the agent runs as a child process and the
             // script continues after it exits.
             let child_cmd = agent_exec.strip_prefix("exec ").unwrap_or(&agent_exec);
-            script.push_str(child_cmd);
-            script.push_str("\nAGS_EXIT=$?");
-            script.push_str("\necho \"[ags] Agent exited (code $AGS_EXIT). Shell is ready — type 'exit' to stop the container.\"");
-            script.push_str("\nexec bash");
+            tmux_setup.push_str(child_cmd);
+            tmux_setup.push_str("\nAGS_EXIT=$?");
+            tmux_setup.push_str("\necho \"[ags] Agent exited (code $AGS_EXIT). Shell is ready — type 'exit' to stop the container.\"");
+            tmux_setup.push_str("\nexec bash");
         }
-        script.push_str("\nEOF\n");
-        script.push_str("chmod +x /tmp/ags-run-in-tmux.sh; ");
+        tmux_setup.push_str("\nEOF\nchmod +x /tmp/ags-run-in-tmux.sh");
+        append_prebootstrap_command(
+            &mut script,
+            &tmux_setup,
+            close_payload_fds.as_deref().filter(|_| payload_fd_count > 0),
+        );
         script.push_str(&final_exec(
             "exec tmux new-session -A -s ags /tmp/ags-run-in-tmux.sh \"$@\"".to_owned(),
         ));
@@ -315,6 +327,20 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
     }
 
     script
+}
+
+/// Run setup in a subshell without payload FDs. The parent shell retains them
+/// solely for the final bootstrap, so no pre-agent process can inspect JSON.
+fn append_prebootstrap_command(script: &mut String, command: &str, close_fds: Option<&str>) {
+    if let Some(close_fds) = close_fds {
+        script.push('(');
+        script.push_str(close_fds);
+        script.push_str(command);
+        script.push_str(") || exit $?; ");
+    } else {
+        script.push_str(command);
+        script.push_str("; ");
+    }
 }
 
 fn build_agent_exec(profile: &AgentProfile, browser: &BrowserConfig, browser_mode: bool) -> String {

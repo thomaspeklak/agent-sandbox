@@ -25,8 +25,8 @@ pub enum PlanError {
     PayloadBootstrapUnexpected,
     /// The bootstrap path must be the AGS-owned runtime mount target.
     PayloadBootstrapInvalid,
-    /// The embedded bootstrap could not be materialized for its read-only mount.
-    PayloadBootstrapWrite(std::io::Error),
+    /// The private bootstrap asset for the read-only mount is absent.
+    PayloadBootstrapHostMissing(PathBuf),
 }
 
 impl fmt::Display for PlanError {
@@ -62,8 +62,8 @@ impl fmt::Display for PlanError {
             Self::PayloadBootstrapInvalid => {
                 f.write_str("payload bootstrap path must use the AGS runtime mount")
             }
-            Self::PayloadBootstrapWrite(error) => {
-                write!(f, "failed to materialize payload bootstrap: {error}")
+            Self::PayloadBootstrapHostMissing(path) => {
+                write!(f, "payload bootstrap asset is missing: {}", path.display())
             }
         }
     }

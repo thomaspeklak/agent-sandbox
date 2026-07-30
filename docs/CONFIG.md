@@ -330,6 +330,16 @@ The resolved value is inserted into AGS's existing secret environment map and de
 
 ---
 
+## 1Password Secure Note sets are run-only
+
+1Password injection has **no `config.toml` key**. Do not add an entry, mapping, preset, or allowlist to this file. It is activated only for a single run with repeatable `--op-secret-set VAULT/ITEM` (or `-1 VAULT/ITEM`), for example:
+
+```console
+ags --agent pi -1 'Employee/EXO PG readonly env vars'
+```
+
+The referenced host item must be a `SECURE_NOTE`; its present string-valued fields are injected by their exact labels into only the final agent process tree. See the README's “1Password Secure Note environment sets” section for ordering, security limits, local-Podman requirement, and a no-value-output smoke test.
+
 ## `[browser]`
 
 Controls optional browser sidecar used with `--browser`.

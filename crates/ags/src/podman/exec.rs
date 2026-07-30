@@ -22,8 +22,10 @@ pub enum PodmanError {
     SpawnFailed(io::Error),
     PayloadCountMismatch { expected: usize, received: usize },
     PayloadBootstrapMissing,
+    RemotePodmanUnsupported,
+    LocalPodmanProbe(io::Error),
     InvalidPodmanArgument,
-    PayloadPrepare(crate::onepassword::OnePasswordError),
+    PayloadPrepare(String),
 }
 
 impl fmt::Display for PodmanError {
@@ -39,6 +41,13 @@ impl fmt::Display for PodmanError {
             Self::PayloadBootstrapMissing => {
                 f.write_str("payload descriptors require a final-process bootstrap")
             }
+            Self::RemotePodmanUnsupported => f.write_str(
+                "--op-secret-set requires local Podman; remote Podman connections cannot preserve anonymous descriptors",
+            ),
+            Self::LocalPodmanProbe(error) => write!(
+                f,
+                "could not verify a local Podman connection required by --op-secret-set: {error}"
+            ),
             Self::InvalidPodmanArgument => f.write_str("invalid Podman argument"),
             Self::PayloadPrepare(error) => {
                 write!(f, "1Password payload preparation failed: {error}")
@@ -164,7 +173,7 @@ pub fn execute(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, Pod
 /// forked; they never enter a plan, environment, argument, or temporary file.
 /// Resolve source metadata only at the final Podman handoff. A network retry
 /// obtains fresh one-shot descriptors rather than retaining the first set.
-pub fn execute_with_payload_sources(
+pub(crate) fn execute_with_payload_sources(
     plan: &LaunchPlan,
     passthrough_args: &[String],
     sources: &[crate::onepassword::SourceRef],
@@ -176,6 +185,7 @@ pub fn execute_with_payload_sources(
             received: sources.len(),
         });
     }
+    ensure_local_podman()?;
     let mut plan = plan.clone();
     adapt_network_mode_for_installed_podman(&mut plan);
     ensure_image(&plan.image, &plan.containerfile)?;
@@ -186,21 +196,33 @@ pub fn execute_with_payload_sources(
     result
 }
 
-pub fn execute_with_payload_fds(
-    plan: &LaunchPlan,
-    passthrough_args: &[String],
-    payloads: Vec<OwnedFd>,
-) -> Result<u8, PodmanError> {
-    if plan.bootstrap_path.is_none() {
-        return Err(PodmanError::PayloadBootstrapMissing);
+/// Reject remote Podman before `op` can materialize any plaintext descriptor.
+/// `CONTAINER_HOST` and `CONTAINER_CONNECTION` select Podman's remote client;
+/// a default configured connection does too. A local API socket is not enough:
+/// descriptors cannot cross the remote client/server protocol safely.
+fn ensure_local_podman() -> Result<(), PodmanError> {
+    if ["CONTAINER_HOST", "CONTAINER_CONNECTION"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
+    {
+        return Err(PodmanError::RemotePodmanUnsupported);
     }
-    if plan.payload_fd_count != payloads.len() || payloads.is_empty() {
-        return Err(PodmanError::PayloadCountMismatch {
-            expected: plan.payload_fd_count,
-            received: payloads.len(),
-        });
+    let output = Command::new("podman")
+        .args(["system", "connection", "list", "--format", "{{.Default}}"])
+        .output()
+        .map_err(PodmanError::LocalPodmanProbe)?;
+    if !output.status.success() {
+        return Err(PodmanError::LocalPodmanProbe(io::Error::other(
+            "podman connection-list probe failed",
+        )));
     }
-    execute_inner(plan, passthrough_args, Some(payloads))
+    if String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("true"))
+    {
+        return Err(PodmanError::RemotePodmanUnsupported);
+    }
+    Ok(())
 }
 
 fn execute_inner(
@@ -301,7 +323,8 @@ fn prepare_payloads(
     sources: &[crate::onepassword::SourceRef],
 ) -> Result<Vec<OwnedFd>, PodmanError> {
     crate::onepassword::prepare(sources)
-        .map_err(PodmanError::PayloadPrepare)
+        // OnePassword errors contain source metadata only, never payload bytes.
+        .map_err(|error| PodmanError::PayloadPrepare(error.to_string()))
         .map(|items| {
             items
                 .into_iter()

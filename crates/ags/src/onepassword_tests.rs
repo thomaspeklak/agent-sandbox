@@ -121,6 +121,18 @@ fn rejects_nonzero_empty_and_oversized_payloads_without_values_in_errors() {
 }
 
 #[test]
+fn missing_op_error_is_targeted_and_metadata_only() {
+    let error = OnePasswordError::Spawn {
+        source: source("vault/item"),
+        kind: std::io::ErrorKind::NotFound,
+    };
+    assert_eq!(
+        error.to_string(),
+        "op is not installed or not on PATH; required by --op-secret-set for vault/item"
+    );
+}
+
+#[test]
 fn production_loader_source_never_captures_or_reads_op_stdout() {
     let source = include_str!("onepassword.rs");
     assert!(source.contains(".stdout(Stdio::from(stdout))"));

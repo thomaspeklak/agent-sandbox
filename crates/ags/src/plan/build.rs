@@ -55,6 +55,8 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub payload_fd_count: usize,
     /// Container path of the mounted bootstrap. Must be present with payload FDs.
     pub bootstrap_path: Option<&'a str>,
+    /// Exact host path of the private, per-run bootstrap asset.
+    pub bootstrap_host_path: Option<&'a Path>,
 }
 
 /// Intermediate env-assembly context. Sidecar fields mirror
@@ -120,15 +122,21 @@ pub fn build_launch_plan(
         wayland_passthrough,
         payload_fd_count,
         bootstrap_path,
+        bootstrap_host_path,
     } = options;
-    if payload_fd_count > 0 && bootstrap_path.is_none() {
-        return Err(PlanError::PayloadBootstrapMissing);
-    }
     if payload_fd_count > 0 && bootstrap_path != Some(ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH) {
         return Err(PlanError::PayloadBootstrapInvalid);
     }
-    if payload_fd_count == 0 && bootstrap_path.is_some() {
+    if payload_fd_count > 0 && bootstrap_host_path.is_none() {
+        return Err(PlanError::PayloadBootstrapMissing);
+    }
+    if payload_fd_count == 0 && (bootstrap_path.is_some() || bootstrap_host_path.is_some()) {
         return Err(PlanError::PayloadBootstrapUnexpected);
+    }
+    if let Some(path) = bootstrap_host_path
+        && !path.is_file()
+    {
+        return Err(PlanError::PayloadBootstrapHostMissing(path.to_owned()));
     }
     let effective_browser_mode = browser_mode && !lockdown;
     let auth_proxy_runtime_dir = auth_proxy_runtime_dir.filter(|_| !lockdown);
@@ -167,13 +175,12 @@ pub fn build_launch_plan(
         mode: MountMode::Rw,
     });
 
-    // Payload-enabled plans mount a freshly materialized, AGS-owned bootstrap.
-    if payload_fd_count > 0 {
-        let runtime_dir = crate::util::runtime_dir().map_err(PlanError::PayloadBootstrapWrite)?;
-        crate::assets::ensure_onepassword_bootstrap(&runtime_dir)
-            .map_err(PlanError::PayloadBootstrapWrite)?;
+    // Payload-enabled plans mount the private, per-run bootstrap asset prepared
+    // by the lifecycle. It contains no payload and its directory is cleaned by
+    // the lifecycle guard once Podman exits.
+    if let Some(host) = bootstrap_host_path {
         mounts.push(PlanMount {
-            host: runtime_dir.join(crate::assets::ONEPASSWORD_BOOTSTRAP_NAME),
+            host: host.to_owned(),
             container: ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH.to_owned(),
             mode: MountMode::Ro,
         });

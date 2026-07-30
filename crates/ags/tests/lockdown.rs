@@ -136,6 +136,7 @@ fn lockdown_options<'a>(
         wayland_passthrough: false,
         payload_fd_count: 0,
         bootstrap_path: None,
+        bootstrap_host_path: None,
     }
 }
 
