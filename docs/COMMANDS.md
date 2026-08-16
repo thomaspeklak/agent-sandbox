@@ -179,7 +179,7 @@ ags update-agents
 ### What it updates
 
 - Pi package (`pi_spec`), removing the legacy Pi package first to avoid stale `pi` binaries
-- Codex (`@openai/codex`)
+- Codex standalone release (using the official `chatgpt.com/codex/install.sh` installer)
 - Gemini (`@google/gemini-cli`)
 - Opencode (`opencode-ai`)
 - Claude install/update in dedicated volume
@@ -189,6 +189,7 @@ Settings come from `[update]` in config.
 Security hardening and runtime hygiene:
 
 - pnpm installs run with `ignore-scripts=true`.
+- Codex releases are stored in a dedicated persistent `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
 - pnpm uses a stable store under `/usr/local/pnpm/.store`.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.
 - `update-agents` removes old npm-global agent shims so they cannot shadow the pnpm-managed AGS agents.

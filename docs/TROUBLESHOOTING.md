@@ -319,7 +319,7 @@ ags update-image
 ags update-agents
 ```
 
-AGS keeps agent CLIs in `/usr/local/pnpm`, but runtime `pnpm` should come from the sandbox image (`/usr/local/bin/pnpm`) so stale persistent shims do not shadow it. `update-agents` also removes old npm-global `pi`/`codex`/`gemini`/`opencode` shims from the sandbox cache.
+AGS keeps agent CLI launchers in `/usr/local/pnpm`, but runtime `pnpm` should come from the sandbox image (`/usr/local/bin/pnpm`) so stale persistent shims do not shadow it. Codex itself uses its official standalone installer and a dedicated persistent `codex-install` directory. `update-agents` also removes old pnpm/npm-global Codex installs and old npm-global agent shims from the sandbox cache.
 
 ---
 

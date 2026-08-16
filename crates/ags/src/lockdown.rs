@@ -37,6 +37,7 @@ const CLAUDE_HOME_FILES: &[&str] = &[
 ];
 const CLAUDE_HOME_DIRS: &[&str] = &["agents", "mcp", "shared", "teams", "tools"];
 const PNPM_RUNTIME_CONTAINER: &str = "/usr/local/pnpm";
+const CODEX_RUNTIME_CONTAINER: &str = "/opt/codex-home";
 const CLAUDE_RUNTIME_CONTAINER: &str = "/opt/claude-home";
 const CLAUDE_GUARD_CONTAINER: &str = "/run/ags-claude-hooks";
 
@@ -146,9 +147,20 @@ fn stage_agent_runtime(
     extra_mounts: &mut Vec<PlanMount>,
 ) -> Result<(), LockdownError> {
     match agent {
-        Agent::Pi | Agent::Codex | Agent::Gemini | Agent::Opencode => {
+        Agent::Pi | Agent::Gemini | Agent::Opencode => {
             let src = config.sandbox.cache_dir.join("pnpm-home");
             stage_runtime_mount(&src, PNPM_RUNTIME_CONTAINER, stage_root, extra_mounts)?;
+        }
+        Agent::Codex => {
+            let pnpm_src = config.sandbox.cache_dir.join("pnpm-home");
+            stage_runtime_mount(&pnpm_src, PNPM_RUNTIME_CONTAINER, stage_root, extra_mounts)?;
+            let codex_src = config.sandbox.cache_dir.join("codex-install");
+            stage_runtime_mount(
+                &codex_src,
+                CODEX_RUNTIME_CONTAINER,
+                stage_root,
+                extra_mounts,
+            )?;
         }
         Agent::Claude => {
             let src = config.sandbox.cache_dir.join("claude-install");

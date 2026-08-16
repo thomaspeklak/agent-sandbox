@@ -85,6 +85,7 @@ struct BuildEnvContext<'a> {
 /// An empty env_var means no environment variable is emitted for that mount.
 const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
     ("pnpm-home", "/usr/local/pnpm", "PNPM_HOME"),
+    ("codex-install", "/opt/codex-home", ""),
     ("claude-install", "/opt/claude-home", ""),
     ("cargo-home", "/home/dev/.cargo", "CARGO_HOME"),
     ("go-path", "/home/dev/go", "GOPATH"),

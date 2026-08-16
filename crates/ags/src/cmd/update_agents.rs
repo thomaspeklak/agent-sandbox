@@ -35,11 +35,12 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     let image = &config.sandbox.image;
 
     let pnpm_home = cache_dir.join("pnpm-home");
+    let codex_install = cache_dir.join("codex-install");
     let claude_install = cache_dir.join("claude-install");
     let npm_global = cache_dir.join("npm-global");
 
     // 1. Ensure host dirs exist
-    for dir in [&pnpm_home, &claude_install, &npm_global] {
+    for dir in [&pnpm_home, &codex_install, &claude_install, &npm_global] {
         fs::create_dir_all(dir)
             .map_err(|e| UpdateAgentsError::HostDirCreate(format!("{}: {e}", dir.display())))?;
     }
@@ -66,6 +67,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         .args(build_podman_run_args(
             image,
             &pnpm_home,
+            &codex_install,
             &claude_install,
             &npm_global,
             &script,
@@ -87,6 +89,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
 fn build_podman_run_args(
     image: &str,
     pnpm_home: &std::path::Path,
+    codex_install: &std::path::Path,
     claude_install: &std::path::Path,
     npm_global: &std::path::Path,
     script: &str,
@@ -99,6 +102,8 @@ fn build_podman_run_args(
         "--security-opt=label=disable".to_owned(),
         "-v".to_owned(),
         format!("{}:/usr/local/pnpm:rw", pnpm_home.display()),
+        "-v".to_owned(),
+        format!("{}:/opt/codex-home:rw", codex_install.display()),
         "-v".to_owned(),
         format!("{}:/opt/claude-home:rw", claude_install.display()),
         "-v".to_owned(),
@@ -154,7 +159,11 @@ remove_pnpm_agent() {{ \
   "$PNPM_BIN" remove -g "$package" >/dev/null 2>&1 || true; \
 }} && \
 {legacy_pi_cleanup}install_pnpm_agent pi {pi_spec} && \
-install_pnpm_agent codex @openai/codex && \
+remove_pnpm_agent @openai/codex && \
+echo '[ags] updating codex...' >&2 && \
+curl -fsSL https://chatgpt.com/codex/install.sh -o /tmp/codex-install.sh && \
+CODEX_HOME=/opt/codex-home CODEX_INSTALL_DIR=/usr/local/pnpm CODEX_NON_INTERACTIVE=true sh /tmp/codex-install.sh && \
+[ -x /usr/local/pnpm/codex ] && \
 install_pnpm_agent gemini @google/gemini-cli && \
 install_pnpm_agent opencode opencode-ai && \
 CLAUDE_HOME=/opt/claude-home && \
@@ -191,6 +200,7 @@ mod tests {
         let args = build_podman_run_args(
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/pnpm-home"),
+            Path::new("/tmp/codex-home"),
             Path::new("/tmp/claude-home"),
             Path::new("/tmp/npm-global"),
             "echo ok",
@@ -200,6 +210,10 @@ mod tests {
         assert!(
             args.windows(2)
                 .any(|w| w[0] == "-v" && w[1] == "/tmp/pnpm-home:/usr/local/pnpm:rw")
+        );
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-v" && w[1] == "/tmp/codex-home:/opt/codex-home:rw")
         );
         assert!(
             args.windows(2)
@@ -226,7 +240,11 @@ mod tests {
             .find("install_pnpm_agent pi '@earendil-works/pi-coding-agent'")
             .expect("current Pi package should be installed");
         assert!(cleanup_pos < install_pos);
-        assert!(script.contains("install_pnpm_agent codex @openai/codex"));
+        assert!(script.contains("remove_pnpm_agent @openai/codex"));
+        assert!(script.contains("https://chatgpt.com/codex/install.sh"));
+        assert!(script.contains("CODEX_HOME=/opt/codex-home"));
+        assert!(script.contains("CODEX_INSTALL_DIR=/usr/local/pnpm"));
+        assert!(script.contains("CODEX_NON_INTERACTIVE=true"));
         assert!(script.contains("install_pnpm_agent gemini @google/gemini-cli"));
         assert!(script.contains("install_pnpm_agent opencode opencode-ai"));
         assert!(script.contains("\"$PNPM_BIN\" add -g \"$@\" || return"));
