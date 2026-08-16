@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.18.1] — 2026-08-16
+
+### Bug Fixes
+
+- fix: retry transient op execution failures (ded0330)
+- fix: install Codex from standalone releases (2efe42c)
+
 ## [v0.18.0] — 2026-08-12
 
 ### Features
