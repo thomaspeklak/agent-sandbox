@@ -228,23 +228,32 @@ fn prepare_with_op(
 
 fn prepare_one(source: SourceRef, op_path: &Path) -> Result<PreparedItem, OnePasswordError> {
     let fd = create_memfd().map_err(|error| OnePasswordError::Memfd(error.kind()))?;
-    let stdout: File = fd
-        .try_clone()
-        .map_err(|error| OnePasswordError::Memfd(error.kind()))?
-        .into();
-    let mut op = Command::new(op_path);
-    op.args(["item", "get", source.item(), "--vault", source.vault()])
-        .args(["--format=json", "--reveal"])
-        .stdin(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .stdout(Stdio::from(stdout));
-    let status = op.status().map_err(|error| OnePasswordError::Spawn {
-        source: source.clone(),
-        kind: error.kind(),
-    })?;
-    // `Command` owns the duplicated stdout descriptor. Drop it before adding
-    // F_SEAL_WRITE: an extra writable reference would make sealing fail EBUSY.
-    drop(op);
+    let mut attempts = 0;
+    let status = loop {
+        let stdout: File = fd
+            .try_clone()
+            .map_err(|error| OnePasswordError::Memfd(error.kind()))?
+            .into();
+        let mut op = Command::new(op_path);
+        op.args(["item", "get", source.item(), "--vault", source.vault()])
+            .args(["--format=json", "--reveal"])
+            .stdin(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::from(stdout));
+        match op.status() {
+            Ok(status) => break status,
+            Err(error) if error.raw_os_error() == Some(libc::ETXTBSY) && attempts < 3 => {
+                attempts += 1;
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            Err(error) => {
+                return Err(OnePasswordError::Spawn {
+                    source: source.clone(),
+                    kind: error.kind(),
+                });
+            }
+        }
+    };
     if !status.success() {
         return Err(OnePasswordError::LookupFailed {
             source,
