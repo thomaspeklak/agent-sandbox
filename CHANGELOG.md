@@ -2,6 +2,114 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.19.0] — 2026-08-20
+
+### Features
+
+- feat: inject sandbox context into OpenCode (33d2c71)
+
+## [v0.18.1] — 2026-08-16
+
+### Bug Fixes
+
+- fix: retry transient op execution failures (ded0330)
+- fix: install Codex from standalone releases (2efe42c)
+
+## [v0.18.0] — 2026-08-12
+
+### Features
+
+- feat: add per-run container environment flags (67c5815)
+
+## [v0.17.1] — 2026-07-30
+
+### Bug Fixes
+
+- fix: compile 1Password payload support on macOS (f5a3ccb)
+
+## [v0.17.0] — 2026-07-30
+
+### Features
+
+- feat: inject 1Password Secure Note environment sets (#15) (45e4c35)
+
+### Chores / Other
+
+- plan 1Password secret set injection (8f778f1)
+
+## [v0.16.0] — 2026-07-29
+
+### Chores / Other
+
+- build(container): refresh Fedora 44 toolchain (e698300)
+- build(container): upgrade Fedora to 44 (96314b3)
+
+## [v0.15.0] — 2026-07-29
+
+### Features
+
+- Add host command secret source (#12) (5134000)
+- feat: add searchable documentation site (dbdc964)
+- Build agent sandbox Pages showcase (4541a72)
+
+## [v0.14.2] — 2026-07-28
+
+### Bug Fixes
+
+- Make sandbox image updates failsafe (#11) (e1e2857)
+
+## [v0.14.1] — 2026-07-08
+
+### Bug Fixes
+
+- Fix Podman pasta networking compatibility (#10) (dd7b139)
+
+## [v0.14.0] — 2026-06-23
+
+### Features
+
+- feat: add clipboard approval dialogs (58bd652)
+
+### Chores / Other
+
+- Remove bv from sandbox image (1ed1bc9)
+
+## [v0.13.0] — 2026-05-16
+
+### Features
+
+- feat: add clipboard bridge (78ad203)
+
+### Bug Fixes
+
+- fix: route pi image paste through clipboard shim (802d1ea)
+
+## [v0.12.0] — 2026-05-11
+
+### Features
+
+- feat: clean old image after update-image (4aef1db)
+
+### Bug Fixes
+
+- fix sandbox agent pnpm resolution (b016056)
+
+### Chores / Other
+
+- Reduce sandbox image build artifacts (0da56c6)
+
+## [v0.11.4] — 2026-05-11
+
+### Chores / Other
+
+- chore(security): update vulnerable Rust deps (dbbea57)
+
+## [v0.11.3] — 2026-05-11
+
+### Chores / Other
+
+- Update Pi package scope (d17c49e)
+
 ## [v0.11.2] — 2026-05-01
 
 ### Bug Fixes

@@ -1,6 +1,6 @@
 [package]
 name = "ags"
-version = "0.11.2"
+version = "0.19.0"
 edition = "2024"
 
 [dependencies]
@@ -14,5 +14,5 @@ serde_json = "1"
 tempfile = "3"
 toml = "0.8"
 toml_edit = "0.22"
-tui-input = "0.11"
+tui-input = "0.15"
 url = "2"

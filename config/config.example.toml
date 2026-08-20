@@ -68,6 +68,11 @@ mode = "rw"
 kind = "dir"
 create = true
 
+# Ordered alternatives for the same target; each source uses its own block.
+[[tool.secret]]
+env = "EXAMPLE_TOOL_TOKEN"
+command = ["$HOME/.local/bin/example-credential-adapter", "lookup", "--service", "example-service"]
+
 [[tool.secret]]
 env = "EXAMPLE_TOOL_TOKEN"
 from_env = "EXAMPLE_TOOL_TOKEN"
@@ -76,7 +81,11 @@ from_env = "EXAMPLE_TOOL_TOKEN"
 env = "EXAMPLE_TOOL_TOKEN"
 secret_store = { service = "example-service", username = "example-user" }
 
-# Generic secret example
+# Generic secret example with ordered alternative sources.
+[[secret]]
+env = "EXAMPLE_GH_TOKEN"
+command = ["$HOME/.local/bin/example-credential-adapter", "lookup", "--service", "example-gh-service"]
+
 [[secret]]
 env = "EXAMPLE_GH_TOKEN"
 from_env = "EXAMPLE_GH_TOKEN"
@@ -84,6 +93,9 @@ from_env = "EXAMPLE_GH_TOKEN"
 [[secret]]
 env = "EXAMPLE_GH_TOKEN"
 secret_store = { service = "example-gh-service", account = "example-account" }
+
+# Command secret sources execute trusted host code and are allowed only in the
+# user/global config. Repo-local .ags/config.toml overlays cannot define them.
 
 # Optional dcg user config/state mounts.
 # Project-local .dcg.toml is picked up automatically from the workspace mount.
@@ -123,7 +135,7 @@ debug_port = 9222
 pi_skill_path = "/home/dev/example-browser-skill"
 command_args = []
 
-# Optional host-owned Glimpse windows for sandboxed code.
+# Optional host-owned Glimpse windows for sandboxed code and branded AGS dialogs.
 # Typical real setup uses renderer = "process" plus a renderer_bin path.
 [host_ui]
 enabled = false
@@ -133,6 +145,23 @@ renderer_bin = "/path/to/glimpse"
 idle_timeout_ms = 0
 log_level = "info"
 
+# Narrow clipboard bridge. This replaces the old implicit Wayland compositor
+# mount for Pi Ctrl-V image paste and clipboard copy operations.
+[clipboard]
+enabled = true
+mode = "readwrite"  # off | read | readwrite
+max_bytes = 33554432
+# Prompt before host clipboard contents are read. Set approval_required = false
+# to restore session-wide clipboard access while [clipboard] is enabled.
+approval_required = true
+approval_seconds = 300
+approve_writes = false
+
+# Broad desktop passthrough. Keep disabled unless you intentionally want
+# sandbox processes to connect directly to the real Wayland compositor.
+[desktop_passthrough]
+wayland = false
+
 [update]
-pi_spec = "@mariozechner/pi-coding-agent"
+pi_spec = "@earendil-works/pi-coding-agent"
 minimum_release_age = 1440

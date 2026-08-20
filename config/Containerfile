@@ -1,8 +1,28 @@
-FROM registry.fedoraproject.org/fedora:43
+FROM registry.fedoraproject.org/fedora:44 AS glimpse-builder
+
+RUN dnf -y install \
+      ca-certificates \
+      curl \
+      gcc \
+      pkgconf-pkg-config && \
+    dnf clean all
+
+ARG RUST_TOOLCHAIN=stable
+RUN mkdir -p /tmp/rustup /tmp/cargo && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+      env CARGO_HOME=/tmp/cargo RUSTUP_HOME=/tmp/rustup \
+      sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --no-modify-path
+
+COPY glimpse-shim/ /src/glimpse-shim/
+RUN cd /src/glimpse-shim && \
+    CARGO_HOME=/tmp/cargo RUSTUP_HOME=/tmp/rustup \
+    /tmp/cargo/bin/cargo build --release && \
+    install -D -m 0755 target/release/glimpse-shim /out/glimpse-shim
+
+FROM registry.fedoraproject.org/fedora:44
 
 # Stable base layer: core tools used in nearly every sandbox run.
-RUN dnf -y update && \
-    dnf -y install \
+RUN dnf -y install \
       bash \
       ca-certificates \
       coreutils \
@@ -21,9 +41,8 @@ RUN dnf -y update && \
       kitty-terminfo \
       less \
       make \
-      nodejs \
-      npm \
-      pnpm \
+      nodejs24-bin \
+      nodejs24-npm-bin \
       openssh-clients \
       patch \
       pkgconf-pkg-config \
@@ -47,9 +66,12 @@ RUN dnf -y update && \
     dnf clean all
 
 RUN useradd -m -u 1000 -s /bin/bash dev && \
-    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /usr/local/pnpm /opt/claude-home /opt/ags && \
+    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/ags && \
     printf 'ignore-scripts=true\n' > /etc/npmrc && \
     printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
+    printf 'ignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' > /home/dev/.config/pnpm/rc && \
+    npm install --global --prefix /usr/local --ignore-scripts pnpm@latest && \
+    /usr/local/bin/pnpm --version && \
     chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home
 
 COPY --chown=dev:dev tmux.conf /home/dev/.tmux.conf
@@ -64,91 +86,114 @@ RUN mkdir -p /usr/local/rustup /usr/local/cargo && \
     chmod -R a+rX /usr/local/rustup /usr/local/cargo
 
 ARG BR_VERSION=latest
-ARG BV_VERSION=latest
 ARG DCG_VERSION=latest
 RUN set -eu && \
     arch="$(uname -m)" && \
     case "$arch" in \
       x86_64) arch="amd64" ;; \
       aarch64|arm64) arch="arm64" ;; \
-      *) echo "unsupported architecture for beads binaries: $arch" >&2; exit 1 ;; \
+      *) echo "unsupported architecture for beads binary: $arch" >&2; exit 1 ;; \
     esac && \
     br_tag="$BR_VERSION" && \
     if [ "$br_tag" = "latest" ]; then \
-      curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
-        https://api.github.com/repos/Dicklesworthstone/beads_rust/releases/latest \
-        -o /tmp/br-release.json && \
-      br_tag="$(jq -r '.tag_name' /tmp/br-release.json)"; \
+      br_tag=""; \
+      page=1; \
+      while [ -z "$br_tag" ]; do \
+        curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1 \
+          -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
+          "https://api.github.com/repos/Dicklesworthstone/beads_rust/releases?per_page=100&page=${page}" \
+          -o /tmp/br-releases.json; \
+        release_count="$(jq 'length' /tmp/br-releases.json)"; \
+        if [ "$release_count" -eq 0 ]; then break; fi; \
+        br_tag="$(jq -r --arg arch "$arch" ' \
+          first( \
+            .[] \
+            | select(.draft == false and .prerelease == false) \
+            | .tag_name as $tag \
+            | ($tag | sub("^v"; "")) as $version \
+            | ("br-" + $version + "-linux_" + $arch + ".tar.gz") as $asset \
+            | select( \
+                any(.assets[]; .name == $asset and .state == "uploaded" and .size > 0) and \
+                any(.assets[]; .name == ($asset + ".sha256") and .state == "uploaded" and .size > 0) \
+              ) \
+            | $tag \
+          ) // empty \
+        ' /tmp/br-releases.json)"; \
+        if [ -n "$br_tag" ] || [ "$release_count" -lt 100 ]; then break; fi; \
+        page=$((page + 1)); \
+      done; \
     fi && \
-    [ -n "$br_tag" ] && [ "$br_tag" != "null" ] && \
-    br_asset="br-${br_tag}-linux_${arch}.tar.gz" && \
+    if [ -z "$br_tag" ] || [ "$br_tag" = "null" ]; then \
+      echo "no compatible beads_rust release found for linux/$arch" >&2; exit 1; \
+    fi && \
+    br_version="${br_tag#v}" && \
+    br_asset="br-${br_version}-linux_${arch}.tar.gz" && \
     br_base_url="https://github.com/Dicklesworthstone/beads_rust/releases/download/${br_tag}" && \
-    curl -fsSL "${br_base_url}/${br_asset}" -o "/tmp/${br_asset}" && \
-    curl -fsSL "${br_base_url}/${br_asset}.sha256" -o "/tmp/${br_asset}.sha256" && \
+    curl -fsSL --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 1 \
+      "${br_base_url}/${br_asset}" -o "/tmp/${br_asset}" && \
+    curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1 \
+      "${br_base_url}/${br_asset}.sha256" -o "/tmp/${br_asset}.sha256" && \
     (cd /tmp && sha256sum -c "${br_asset}.sha256") && \
     tar -xzf "/tmp/${br_asset}" -C /tmp br && \
     install -m 0755 /tmp/br /usr/local/bin/br && \
-    bv_tag="$BV_VERSION" && \
-    if [ "$bv_tag" = "latest" ]; then \
-      curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
-        https://api.github.com/repos/Dicklesworthstone/beads_viewer/releases/latest \
-        -o /tmp/bv-release.json && \
-      bv_tag="$(jq -r '.tag_name' /tmp/bv-release.json)"; \
-    fi && \
-    [ -n "$bv_tag" ] && [ "$bv_tag" != "null" ] && \
-    bv_version="${bv_tag#v}" && \
-    bv_asset="bv_${bv_version}_linux_${arch}.tar.gz" && \
-    bv_base_url="https://github.com/Dicklesworthstone/beads_viewer/releases/download/${bv_tag}" && \
-    curl -fsSL "${bv_base_url}/${bv_asset}" -o "/tmp/${bv_asset}" && \
-    curl -fsSL "${bv_base_url}/checksums.txt" -o /tmp/bv-checksums.txt && \
-    awk -v asset="$bv_asset" '$2 == asset { print $1 "  " $2 }' /tmp/bv-checksums.txt > /tmp/bv.sha256 && \
-    [ -s /tmp/bv.sha256 ] && \
-    (cd /tmp && sha256sum -c bv.sha256) && \
-    bv_member="$(tar -tzf "/tmp/${bv_asset}" | awk -F/ '$NF == "bv" { print; exit }')" && \
-    [ -n "$bv_member" ] && \
-    tar -xzf "/tmp/${bv_asset}" -C /tmp "$bv_member" && \
-    install -m 0755 "/tmp/${bv_member}" /usr/local/bin/bv && \
-    rm -rf /tmp/br /tmp/bv /tmp/bv_*_linux_* /tmp/br-release.json /tmp/bv-release.json /tmp/bv-checksums.txt /tmp/bv.sha256 \
-          /tmp/br-*.tar.gz /tmp/br-*.tar.gz.sha256 /tmp/bv_*.tar.gz && \
-    br --version && bv --version
+    rm -rf /tmp/br /tmp/br-releases.json /tmp/br-*.tar.gz /tmp/br-*.tar.gz.sha256 && \
+    br --version
 
 RUN set -eu && \
     arch="$(uname -m)" && \
     case "$arch" in \
-      x86_64) dcg_target="x86_64-unknown-linux-gnu" ;; \
+      x86_64) dcg_target="x86_64-unknown-linux-musl" ;; \
       aarch64|arm64) dcg_target="aarch64-unknown-linux-gnu" ;; \
       *) echo "unsupported architecture for dcg binary: $arch" >&2; exit 1 ;; \
     esac && \
+    dcg_asset="dcg-${dcg_target}.tar.xz" && \
     dcg_tag="$DCG_VERSION" && \
     if [ "$dcg_tag" = "latest" ]; then \
-      curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
-        https://api.github.com/repos/Dicklesworthstone/destructive_command_guard/releases/latest \
-        -o /tmp/dcg-release.json && \
-      dcg_tag="$(jq -r '.tag_name' /tmp/dcg-release.json)"; \
+      dcg_tag=""; \
+      page=1; \
+      while [ -z "$dcg_tag" ]; do \
+        curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1 \
+          -H 'Accept: application/vnd.github+json' -H 'User-Agent: ags' \
+          "https://api.github.com/repos/Dicklesworthstone/destructive_command_guard/releases?per_page=100&page=${page}" \
+          -o /tmp/dcg-releases.json; \
+        release_count="$(jq 'length' /tmp/dcg-releases.json)"; \
+        if [ "$release_count" -eq 0 ]; then break; fi; \
+        dcg_tag="$(jq -r --arg asset "$dcg_asset" ' \
+          first( \
+            .[] \
+            | select(.draft == false and .prerelease == false) \
+            | select( \
+                any(.assets[]; .name == $asset and .state == "uploaded" and .size > 0) and \
+                any(.assets[]; .name == ($asset + ".sha256") and .state == "uploaded" and .size > 0) \
+              ) \
+            | .tag_name \
+          ) // empty \
+        ' /tmp/dcg-releases.json)"; \
+        if [ -n "$dcg_tag" ] || [ "$release_count" -lt 100 ]; then break; fi; \
+        page=$((page + 1)); \
+      done; \
     fi && \
-    [ -n "$dcg_tag" ] && [ "$dcg_tag" != "null" ] && \
-    dcg_asset="dcg-${dcg_target}.tar.xz" && \
+    if [ -z "$dcg_tag" ] || [ "$dcg_tag" = "null" ]; then \
+      echo "no compatible destructive_command_guard release found for $dcg_target" >&2; exit 1; \
+    fi && \
     dcg_base_url="https://github.com/Dicklesworthstone/destructive_command_guard/releases/download/${dcg_tag}" && \
-    curl -fsSL "${dcg_base_url}/${dcg_asset}" -o "/tmp/${dcg_asset}" && \
-    curl -fsSL "${dcg_base_url}/${dcg_asset}.sha256" -o "/tmp/${dcg_asset}.sha256" && \
+    curl -fsSL --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 1 \
+      "${dcg_base_url}/${dcg_asset}" -o "/tmp/${dcg_asset}" && \
+    curl -fsSL --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 1 \
+      "${dcg_base_url}/${dcg_asset}.sha256" -o "/tmp/${dcg_asset}.sha256" && \
     (cd /tmp && sha256sum -c "${dcg_asset}.sha256") && \
     tar -xJf "/tmp/${dcg_asset}" -C /tmp dcg && \
     install -m 0755 /tmp/dcg /usr/local/bin/dcg && \
-    rm -f /tmp/dcg /tmp/dcg-release.json /tmp/dcg-*.tar.xz /tmp/dcg-*.tar.xz.sha256 && \
+    rm -f /tmp/dcg /tmp/dcg-releases.json /tmp/dcg-*.tar.xz /tmp/dcg-*.tar.xz.sha256 && \
     dcg --version
 
-# Glimpse sandbox shim
-COPY glimpse-shim/ /tmp/glimpse-shim/
-RUN cd /tmp/glimpse-shim && \
-    CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup \
-    /usr/local/cargo/bin/cargo build --release && \
-    install -m 0755 target/release/glimpse-shim /opt/ags/glimpse-shim && \
-    rm -rf /tmp/glimpse-shim
+# Glimpse sandbox shim: build artifacts stay in the builder stage; the final image keeps only the binary.
+COPY --from=glimpse-builder /out/glimpse-shim /opt/ags/glimpse-shim
 
 # Extended tooling layer: project-specific and heavier dev dependencies.
 # Keep this near the end so package list tweaks rebuild quickly.
 # Override with: --build-arg EXTRA_DNF_PACKAGES="..."
-ARG EXTRA_DNF_PACKAGES="golang ImageMagick java-21-openjdk-devel postgresql python3-pip ruby sqlite-devel zig"
+ARG EXTRA_DNF_PACKAGES="golang ImageMagick java-devel postgresql python3-pip ruby sqlite-devel zig"
 RUN if [ -n "$EXTRA_DNF_PACKAGES" ]; then \
       dnf -y install $EXTRA_DNF_PACKAGES; \
     fi && \
@@ -163,4 +208,4 @@ ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/home/dev/.cargo
 ENV RUSTC_WRAPPER=sccache
 ENV NPM_CONFIG_PREFIX=/home/dev/.npm-global
-ENV PATH=/home/dev/.npm-global/bin:/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/pnpm:/usr/local/bin:/usr/bin:/bin
+ENV PATH=/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin

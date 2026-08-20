@@ -53,7 +53,7 @@ passthrough_env = []
 fn pi_profile_command() {
     let config = minimal_config();
     let profile = profile_for(Agent::Pi, &config);
-    assert_eq!(profile.command, "pi");
+    assert_eq!(profile.command, "/usr/local/pnpm/pi");
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn pi_profile_no_extra_boot_dirs() {
 fn pi_profile_omits_guard_extension_when_guards_disabled() {
     let config = minimal_config();
     let profile = profile_for_with_guards(Agent::Pi, &config, false, false, false);
-    assert_eq!(profile.command, "pi");
+    assert_eq!(profile.command, "/usr/local/pnpm/pi");
     assert_eq!(
         profile.command_args,
         vec![
@@ -271,7 +271,7 @@ fn claude_profile_root_mode_appends_system_prompt() {
 fn codex_profile_basics() {
     let config = minimal_config();
     let profile = profile_for(Agent::Codex, &config);
-    assert_eq!(profile.command, "codex");
+    assert_eq!(profile.command, "/usr/local/pnpm/codex");
     assert_eq!(profile.command_args.len(), 2);
     assert_eq!(profile.command_args[0], "-c");
     assert!(
@@ -287,20 +287,45 @@ fn codex_profile_basics() {
 fn gemini_profile_basics() {
     let config = minimal_config();
     let profile = profile_for(Agent::Gemini, &config);
-    assert_eq!(profile.command, "gemini");
+    assert_eq!(profile.command, "/usr/local/pnpm/gemini");
     assert!(profile.extra_boot_dirs.is_empty());
 }
 
 #[test]
-fn opencode_profile_boot_dirs() {
+fn opencode_profile_injects_sandbox_instructions() {
     let config = minimal_config();
     let profile = profile_for(Agent::Opencode, &config);
-    assert_eq!(profile.command, "opencode");
+    assert_eq!(profile.command, "/usr/local/pnpm/opencode");
     assert_eq!(
         profile.extra_boot_dirs,
         vec![
             "/home/dev/.local/share/opencode",
-            "/home/dev/.cache/opencode"
+            "/home/dev/.cache/opencode",
+            "/tmp/ags-opencode"
         ]
+    );
+    assert!(profile.command_args.is_empty());
+    assert!(
+        profile
+            .entrypoint_setup
+            .contains("Sandbox: use host.containers.internal (localhost is container-local).")
+    );
+    assert!(
+        profile
+            .entrypoint_setup
+            .contains("/tmp/ags-opencode/sandbox-instructions.md")
+    );
+
+    let config_content = profile
+        .extra_env
+        .iter()
+        .find(|(key, _)| key == "OPENCODE_CONFIG_CONTENT")
+        .map(|(_, value)| value)
+        .expect("OpenCode inline config should be present");
+    let parsed: serde_json::Value =
+        serde_json::from_str(config_content).expect("OpenCode inline config should be valid JSON");
+    assert_eq!(
+        parsed["instructions"],
+        serde_json::json!(["/tmp/ags-opencode/sandbox-instructions.md"])
     );
 }

@@ -164,7 +164,12 @@ impl AuthProxyHost for OsAuthProxyHost {
         if is_auto_allowed(url, &self.auto_allow_domains) {
             return OpenDecision::OpenOriginal;
         }
-        prompt_with_dialog(url, has_callback, can_proxy)
+        prompt_with_dialog(
+            url,
+            has_callback,
+            can_proxy,
+            self.host_ui_socket_path.as_deref(),
+        )
     }
 
     fn can_proxy(&self, url: &str) -> bool {

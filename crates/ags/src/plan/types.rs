@@ -19,6 +19,14 @@ pub enum PlanError {
     MountNotDir { host: PathBuf, context: String },
     /// An environment variable has an invalid value.
     InvalidEnv { var: String, value: String },
+    /// Item descriptors require a final-process bootstrap.
+    PayloadBootstrapMissing,
+    /// A bootstrap is meaningless without item descriptors.
+    PayloadBootstrapUnexpected,
+    /// The bootstrap path must be the AGS-owned runtime mount target.
+    PayloadBootstrapInvalid,
+    /// The private bootstrap asset for the read-only mount is absent.
+    PayloadBootstrapHostMissing(PathBuf),
 }
 
 impl fmt::Display for PlanError {
@@ -45,6 +53,18 @@ impl fmt::Display for PlanError {
             Self::InvalidEnv { var, value } => {
                 write!(f, "invalid {var} value: {value}")
             }
+            Self::PayloadBootstrapMissing => {
+                f.write_str("payload descriptors require a bootstrap path")
+            }
+            Self::PayloadBootstrapUnexpected => {
+                f.write_str("bootstrap path requires payload descriptors")
+            }
+            Self::PayloadBootstrapInvalid => {
+                f.write_str("payload bootstrap path must use the AGS runtime mount")
+            }
+            Self::PayloadBootstrapHostMissing(path) => {
+                write!(f, "payload bootstrap asset is missing: {}", path.display())
+            }
         }
     }
 }
@@ -64,6 +84,11 @@ pub struct LaunchPlan {
     pub network_mode: String,
     pub boot_dirs: Vec<String>,
     pub entrypoint: String,
+    /// Number of anonymous 1Password item descriptors passed to Podman.
+    /// Payload bytes never enter the plan.
+    pub payload_fd_count: usize,
+    /// Container path of the mounted final-process bootstrap, if payload FDs exist.
+    pub bootstrap_path: Option<String>,
 }
 
 /// Host-to-container working directory mapping.

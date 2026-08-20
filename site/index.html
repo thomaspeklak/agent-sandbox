@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Agent Sandbox runs your coding agents in a rootless Podman workspace—with explicit mounts, scoped secrets, guarded commands, and opt-in host bridges."
+    />
+    <meta name="theme-color" content="#0b0f10" />
+    <meta property="og:title" content="Agent Sandbox — room to build, boundaries that hold" />
+    <meta
+      property="og:description"
+      content="A rootless Podman workspace for Pi, Claude, Codex, Gemini, OpenCode, and shell."
+    />
+    <meta
+      property="og:image"
+      content="https://thomaspeklak.github.io/agent-sandbox/assets/agent-sandbox-logo.webp"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://thomaspeklak.github.io/agent-sandbox/" />
+    <title>Agent Sandbox — room to build, boundaries that hold</title>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="./assets/sandbox-environment.webp" as="image" type="image/webp" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <a class="brand" href="#top" aria-label="Agent Sandbox home">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <span>agent<span class="brand-slash">/</span>sandbox</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#capabilities">Capabilities</a>
+        <a href="#modes">Modes</a>
+        <a href="#architecture">How it works</a>
+        <a href="./docs/">Docs</a>
+      </nav>
+      <a
+        class="nav-source"
+        href="https://github.com/thomaspeklak/agent-sandbox"
+        target="_blank"
+        rel="noreferrer"
+      >
+        <span>View source</span>
+        <svg aria-hidden="true" viewBox="0 0 16 16">
+          <path d="M5 3h8v8M13 3 3 13" />
+        </svg>
+      </a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero-backdrop" aria-hidden="true">
+          <img
+            src="./assets/sandbox-environment.webp"
+            alt=""
+            width="1780"
+            height="883"
+            fetchpriority="high"
+          />
+          <span class="hero-grid"></span>
+          <span class="hero-glow"></span>
+        </div>
+
+        <div class="hero-copy">
+          <div class="eyebrow hero-eyebrow">
+            <span class="live-dot" aria-hidden="true"></span>
+            Rootless Podman workspace
+          </div>
+          <h1 id="hero-title">
+            Give agents room
+            <span class="hero-serif">to build.</span>
+            <span class="hero-muted">Keep your machine out of reach.</span>
+          </h1>
+          <p class="hero-lede">
+            One Rust CLI for running capable coding agents inside a controlled environment—with
+            deliberate access to your repo, tools, secrets, browser, and host UI.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#start">
+              Enter the sandbox
+              <svg aria-hidden="true" viewBox="0 0 18 18">
+                <path d="M3 9h11M10 5l4 4-4 4" />
+              </svg>
+            </a>
+            <a
+              class="button button-ghost"
+              href="./docs/"
+            >
+              Browse documentation
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-console" data-tilt aria-label="Example Agent Sandbox launch">
+          <div class="console-top">
+            <div class="console-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <span class="console-title">~/code/your-project</span>
+            <span class="console-badge">AGS</span>
+          </div>
+          <div class="console-body" aria-live="polite">
+            <div class="console-line command-line">
+              <span class="prompt">❯</span>
+              <code data-terminal-command>ags --agent codex --lockdown</code>
+            </div>
+            <div class="console-output" data-terminal-output>
+              <span><i>✓</i> staged ephemeral agent home</span>
+              <span><i>✓</i> mounted exact workspace</span>
+              <span><i>✓</i> dropped capabilities · no new privileges</span>
+              <span class="console-enter"><b>→</b> entering sandbox</span>
+            </div>
+          </div>
+          <div class="console-foot">
+            <span><i></i> sandbox boundary active</span>
+            <span>host exposure: minimal</span>
+          </div>
+        </div>
+
+        <div class="hero-scroll" aria-hidden="true">
+          <span>Explore</span>
+          <i></i>
+        </div>
+      </section>
+
+      <section class="agent-strip" aria-label="Supported agent harnesses">
+        <p>Bring the agent you already use</p>
+        <div class="agent-list">
+          <span><i class="agent-spark spark-pi">π</i>Pi</span>
+          <span><i class="agent-spark spark-claude">✣</i>Claude</span>
+          <span><i class="agent-spark spark-codex">⌘</i>Codex</span>
+          <span><i class="agent-spark spark-gemini">✦</i>Gemini</span>
+          <span><i class="agent-spark spark-open">◈</i>OpenCode</span>
+          <span><i class="agent-spark spark-shell">_</i>Shell</span>
+        </div>
+      </section>
+
+      <section class="manifesto paper-section" aria-labelledby="manifesto-title">
+        <div class="section-kicker reveal">The premise</div>
+        <div class="manifesto-grid">
+          <h2 id="manifesto-title" class="display-title reveal">
+            Powerful doesn’t have to mean
+            <em>wide open.</em>
+          </h2>
+          <div class="manifesto-copy reveal">
+            <p>
+              Coding agents need compilers, package managers, Git, databases, browsers, and the
+              freedom to change a project. They do not need your entire home directory.
+            </p>
+            <p>
+              AGS creates a useful middle ground: a full development environment whose connections
+              to the host are visible, configurable, and—in hardened mode—easy to cut.
+            </p>
+          </div>
+        </div>
+
+        <div class="boundary-visual reveal" aria-label="Illustration of scoped sandbox access">
+          <div class="boundary-label boundary-label-host">
+            <span>YOUR MACHINE</span>
+            <small>everything else stays outside</small>
+          </div>
+          <div class="boundary-orbit orbit-one" aria-hidden="true"></div>
+          <div class="boundary-orbit orbit-two" aria-hidden="true"></div>
+          <div class="sandbox-core">
+            <div class="sandbox-core-label">
+              <span>AGS WORKSPACE</span>
+              <strong>full dev environment</strong>
+            </div>
+            <div class="core-tool tool-git">git</div>
+            <div class="core-tool tool-rust">rs</div>
+            <div class="core-tool tool-node">js</div>
+            <div class="core-tool tool-shell">_</div>
+            <span class="core-pulse" aria-hidden="true"></span>
+          </div>
+          <div class="boundary-port port-repo">
+            <i aria-hidden="true"></i>
+            <span>repo <small>rw</small></span>
+          </div>
+          <div class="boundary-port port-secrets">
+            <i aria-hidden="true"></i>
+            <span>secrets <small>scoped</small></span>
+          </div>
+          <div class="boundary-port port-ui">
+            <i aria-hidden="true"></i>
+            <span>host UI <small>opt-in</small></span>
+          </div>
+          <div class="boundary-port port-network">
+            <i aria-hidden="true"></i>
+            <span>network <small>on</small></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="capabilities ink-section" id="capabilities" aria-labelledby="capabilities-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker section-kicker-light reveal">What you can do</div>
+            <h2 id="capabilities-title" class="display-title display-title-light reveal">
+              The tools stay sharp.<br />
+              <em>The edges stay clear.</em>
+            </h2>
+          </div>
+          <p class="section-intro reveal">
+            Every capability below maps to a concrete AGS runtime path—not a future roadmap.
+          </p>
+        </div>
+
+        <div class="capability-grid">
+          <article class="capability-card card-feature reveal">
+            <div class="card-index">01</div>
+            <div class="capability-icon icon-container" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <h3>Run real workloads, rootlessly</h3>
+            <p>
+              Work inside a Fedora toolchain image with Git, Rust, Node, Python, Go, Java,
+              PostgreSQL tooling, tmux, and more—under Podman’s rootless user namespace.
+            </p>
+            <div class="card-facts">
+              <span>keep-id</span><span>cap-drop=all</span><span>no-new-privileges</span>
+            </div>
+            <a
+              class="text-link"
+              href="https://github.com/thomaspeklak/agent-sandbox/blob/main/crates/ags/src/podman/args.rs"
+              target="_blank"
+              rel="noreferrer"
+              >See the run arguments <b>↗</b></a
+            >
+          </article>
+
+          <article class="capability-card reveal">
+            <div class="card-index">02</div>
+            <div class="capability-icon icon-switch" aria-hidden="true">
+              <i></i><i></i><i></i>
+            </div>
+            <h3>Switch agents, not environments</h3>
+            <p>
+              Launch Pi, Claude, Codex, Gemini, OpenCode, or an interactive shell from the same
+              project. Agent profiles keep commands, state mounts, and integration details tidy.
+            </p>
+            <div class="mini-command"><code>ags --agent <b>codex</b></code></div>
+            <a
+              class="text-link"
+              href="https://github.com/thomaspeklak/agent-sandbox/blob/main/crates/ags/src/agent.rs"
+              target="_blank"
+              rel="noreferrer"
+              >Inspect agent profiles <b>↗</b></a
+            >
+          </article>
+
+          <article class="capability-card reveal">
+            <div class="card-index">03</div>
+            <div class="capability-icon icon-mount" aria-hidden="true">
+              <span class="mount-host">host</span>
+              <i></i>
+              <span class="mount-box">box</span>
+            </div>
+            <h3>Mount exactly what the work needs</h3>
+            <p>
+              Declare files and directories as read-only or read-write. Add temporary same-path
+              directories per run. Repo-local overlays can extend a trusted global config.
+            </p>
+            <div class="card-facts">
+              <span>explicit</span><span>validated</span><span>per-project</span>
+            </div>
+            <a
+              class="text-link"
+              href="./docs/configuration.html#mount"
+              >Read mount semantics <b>→</b></a
+            >
+          </article>
+
+          <article class="capability-card reveal">
+            <div class="card-index">04</div>
+            <div class="capability-icon icon-secret" aria-hidden="true">
+              <span>••••••</span><i></i>
+            </div>
+            <h3>Pass secrets without baking them in</h3>
+            <p>
+              Resolve values from host environment variables or the system secret store, then
+              inject only the configured names at runtime. Lockdown mode disables them entirely.
+            </p>
+            <div class="mini-command secret-command"><code>API_TOKEN=<b>••••••••</b></code></div>
+            <a
+              class="text-link"
+              href="https://github.com/thomaspeklak/agent-sandbox/blob/main/crates/ags/src/secrets.rs"
+              target="_blank"
+              rel="noreferrer"
+              >Follow secret resolution <b>↗</b></a
+            >
+          </article>
+
+          <article class="capability-card card-bridge reveal">
+            <div class="card-index">05</div>
+            <div class="capability-icon icon-bridge" aria-hidden="true">
+              <span></span><i></i><b></b>
+            </div>
+            <h3>Reach the host through narrow bridges</h3>
+            <p>
+              Open OAuth flows with approval, paste clipboard images through a permissioned
+              socket, and show host-owned Glimpse windows without handing over the compositor.
+            </p>
+            <div class="bridge-list">
+              <span><i></i>Auth proxy</span>
+              <span><i></i>Clipboard</span>
+              <span><i></i>Glimpse UI</span>
+              <span><i></i>Webview relay</span>
+            </div>
+            <a
+              class="text-link"
+              href="./docs/glimpse.html"
+              >See the host UI bridge <b>→</b></a
+            >
+          </article>
+
+          <article class="capability-card reveal">
+            <div class="card-index">06</div>
+            <div class="capability-icon icon-pod" aria-hidden="true">
+              <span></span><span></span><i></i>
+            </div>
+            <h3>Run Testcontainers, with policy</h3>
+            <p>
+              Opt into PSP mode when tests need containers. Docker-compatible clients reach a
+              per-session proxy socket with image allowlists and bind-mount restrictions—not the
+              raw Podman API.
+            </p>
+            <div class="mini-command"><code>ags --agent pi <b>--psp</b></code></div>
+            <a
+              class="text-link"
+              href="./docs/psp-mode.html"
+              >Understand PSP mode <b>→</b></a
+            >
+          </article>
+        </div>
+      </section>
+
+      <section class="modes paper-section" id="modes" aria-labelledby="modes-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker reveal">Pick your posture</div>
+            <h2 id="modes-title" class="display-title reveal">
+              One sandbox.<br />
+              <em>Different missions.</em>
+            </h2>
+          </div>
+          <p class="section-intro section-intro-dark reveal">
+            Start with the agent and add only the runtime powers this task needs.
+          </p>
+        </div>
+
+        <div class="mode-workbench reveal">
+          <div class="mode-tabs" role="tablist" aria-label="Agent Sandbox launch modes">
+            <button
+              class="mode-tab is-active"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="mode-panel"
+              data-mode="daily"
+            >
+              <span>01</span>
+              Daily driver
+              <small>persistent &amp; comfortable</small>
+            </button>
+            <button
+              class="mode-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="mode-panel"
+              data-mode="lockdown"
+            >
+              <span>02</span>
+              Foreign repo
+              <small>hardened &amp; ephemeral</small>
+            </button>
+            <button
+              class="mode-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="mode-panel"
+              data-mode="browser"
+            >
+              <span>03</span>
+              Browser work
+              <small>sidecar connected</small>
+            </button>
+            <button
+              class="mode-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="mode-panel"
+              data-mode="containers"
+            >
+              <span>04</span>
+              Integration tests
+              <small>policy-gated containers</small>
+            </button>
+          </div>
+
+          <div class="mode-panel" id="mode-panel" role="tabpanel">
+            <div class="mode-panel-head">
+              <span class="mode-label" data-mode-label>DAILY DRIVER</span>
+              <span class="mode-signal"><i></i><span data-mode-signal>host bridges available</span></span>
+            </div>
+            <div class="mode-command-wrap">
+              <span class="mode-prompt">❯</span>
+              <code data-mode-command>ags --agent codex --tmux</code>
+              <button class="copy-button" type="button" data-copy-mode aria-label="Copy command">
+                <svg aria-hidden="true" viewBox="0 0 20 20">
+                  <rect x="7" y="7" width="9" height="9" rx="2" />
+                  <path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <p class="mode-description" data-mode-description>
+              Keep your agent state, dedicated SSH identity, selected secrets, and configured
+              bridges. Tmux leaves a shell behind when the agent finishes, ready for inspection.
+            </p>
+            <div class="mode-permissions" data-mode-permissions>
+              <span class="is-on"><i>✓</i> Repo write</span>
+              <span class="is-on"><i>✓</i> Network</span>
+              <span class="is-on"><i>✓</i> Scoped secrets</span>
+              <span class="is-on"><i>✓</i> SSH agent</span>
+              <span class="is-off"><i>—</i> Raw host socket</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="architecture sand-section" id="architecture" aria-labelledby="architecture-title">
+        <div class="architecture-sticky">
+          <div class="architecture-copy">
+            <div class="section-kicker reveal">Under the command</div>
+            <h2 id="architecture-title" class="display-title reveal">
+              A launch plan you can
+              <em>reason about.</em>
+            </h2>
+            <p class="reveal">
+              AGS does not improvise access. It validates configuration, prepares scoped host
+              services, builds a typed launch plan, renders Podman arguments, and cleans up the
+              session when the container exits.
+            </p>
+            <a
+              class="text-link text-link-dark reveal"
+              href="https://github.com/thomaspeklak/agent-sandbox/blob/main/crates/ags/src/plan/types.rs"
+              target="_blank"
+              rel="noreferrer"
+              >Explore the LaunchPlan type <b>↗</b></a
+            >
+          </div>
+
+          <div class="launch-stack reveal" aria-label="Agent Sandbox launch sequence">
+            <div class="launch-path" aria-hidden="true"><span></span></div>
+            <article class="launch-step" data-launch-step>
+              <span class="step-num">01</span>
+              <div class="step-icon">{ }</div>
+              <div>
+                <h3>Load + validate</h3>
+                <p>Global config, trusted repo overlay, CLI flags</p>
+              </div>
+              <code>ValidatedConfig</code>
+            </article>
+            <article class="launch-step" data-launch-step>
+              <span class="step-num">02</span>
+              <div class="step-icon">◇</div>
+              <div>
+                <h3>Prepare boundaries</h3>
+                <p>Mounts, secrets, SSH, runtime sockets</p>
+              </div>
+              <code>RuntimeState</code>
+            </article>
+            <article class="launch-step" data-launch-step>
+              <span class="step-num">03</span>
+              <div class="step-icon">≋</div>
+              <div>
+                <h3>Build one plan</h3>
+                <p>Workdir, security, env, entrypoint</p>
+              </div>
+              <code>LaunchPlan</code>
+            </article>
+            <article class="launch-step" data-launch-step>
+              <span class="step-num">04</span>
+              <div class="step-icon">▣</div>
+              <div>
+                <h3>Enter the sandbox</h3>
+                <p>Render arguments and execute Podman</p>
+              </div>
+              <code>podman run</code>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="lockdown ink-section" aria-labelledby="lockdown-title">
+        <div class="lockdown-grid">
+          <div class="lockdown-copy">
+            <div class="section-kicker section-kicker-light reveal">The hard boundary</div>
+            <h2 id="lockdown-title" class="display-title display-title-light reveal">
+              Unknown repo?<br />
+              <em>Cut the cords.</em>
+            </h2>
+            <p class="reveal">
+              <code>--lockdown</code> keeps the exact workspace and network access, then removes
+              secret injection, SSH forwarding, generic mounts, host bridges, and real agent home
+              state. A sanitized per-run home disappears with the session.
+            </p>
+            <div class="lockdown-command reveal">
+              <span>❯</span>
+              <code>ags --agent claude --lockdown</code>
+              <button
+                class="copy-button copy-button-dark"
+                type="button"
+                data-copy="ags --agent claude --lockdown"
+                aria-label="Copy lockdown command"
+              >
+                <svg aria-hidden="true" viewBox="0 0 20 20">
+                  <rect x="7" y="7" width="9" height="9" rx="2" />
+                  <path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="lockdown-visual reveal" aria-label="Normal and lockdown access comparison">
+            <div class="lockdown-switch">
+              <span>Normal</span>
+              <strong>Lockdown</strong>
+              <i aria-hidden="true"></i>
+            </div>
+            <div class="cords">
+              <div class="cord cord-live"><span>workspace</span><i></i><b>connected</b></div>
+              <div class="cord cord-live"><span>network</span><i></i><b>connected</b></div>
+              <div class="cord cord-cut"><span>secrets</span><i></i><b>disabled</b></div>
+              <div class="cord cord-cut"><span>SSH agent</span><i></i><b>disabled</b></div>
+              <div class="cord cord-cut"><span>host bridges</span><i></i><b>disabled</b></div>
+              <div class="cord cord-cut"><span>agent history</span><i></i><b>ephemeral</b></div>
+            </div>
+            <div class="ephemeral-stamp">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M12 3a9 9 0 1 1-6.4 2.7M3 4v5h5" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+              staged for this run only
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="proof paper-section" aria-labelledby="proof-title">
+        <div class="proof-photo reveal">
+          <div class="photo-frame">
+            <img
+              src="./assets/agent-sandbox-logo.webp"
+              width="640"
+              height="395"
+              loading="lazy"
+              alt="A miniature sandbox filled with agent and developer-tool characters"
+            />
+            <span class="photo-tape" aria-hidden="true"></span>
+            <span class="photo-note">agents at play / host at peace</span>
+          </div>
+        </div>
+        <div class="proof-copy">
+          <div class="section-kicker reveal">Built for the whole loop</div>
+          <h2 id="proof-title" class="display-title reveal">
+            Not just a shell.<br />
+            <em>A working habitat.</em>
+          </h2>
+          <p class="reveal">
+            Keep long-running work in tmux. Paste an image without exposing Wayland. Open OAuth on
+            the host and relay localhost callbacks back in. Let a sandbox-local app appear in a
+            host-owned Glimpse window. Connect to a host database through
+            <code>host.containers.internal</code>.
+          </p>
+          <div class="proof-notes reveal">
+            <span><i>01</i> Durable agent state in normal runs</span>
+            <span><i>02</i> Dedicated SSH auth + signing keys</span>
+            <span><i>03</i> Health checks with <code>ags doctor</code></span>
+            <span><i>04</i> Bash, Zsh, and Fish completions</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="start sand-section" id="start" aria-labelledby="start-title">
+        <div class="start-shell">
+          <div class="start-heading">
+            <div class="section-kicker reveal">Start building</div>
+            <h2 id="start-title" class="display-title reveal">
+              From source to sandbox<br />
+              <em>in three deliberate steps.</em>
+            </h2>
+          </div>
+
+          <div class="install-steps">
+            <article class="install-step reveal">
+              <span>01</span>
+              <div>
+                <h3>Build the Rust CLI</h3>
+                <p>Clone the project, then compile the optimized binary.</p>
+                <div class="install-command">
+                  <code>cargo build -p ags --release</code>
+                  <button
+                    class="copy-button"
+                    type="button"
+                    data-copy="cargo build -p ags --release"
+                    aria-label="Copy build command"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 20 20">
+                      <rect x="7" y="7" width="9" height="9" rx="2" />
+                      <path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+                    </svg>
+                    <span>Copy</span>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="install-step reveal">
+              <span>02</span>
+              <div>
+                <h3>Install + configure</h3>
+                <p>Materialize the bundled assets and link the CLI into your local bin.</p>
+                <div class="install-command">
+                  <code>./target/release/ags install --link-self</code>
+                  <button
+                    class="copy-button"
+                    type="button"
+                    data-copy="./target/release/ags install --link-self"
+                    aria-label="Copy install command"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 20 20">
+                      <rect x="7" y="7" width="9" height="9" rx="2" />
+                      <path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+                    </svg>
+                    <span>Copy</span>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="install-step reveal">
+              <span>03</span>
+              <div>
+                <h3>Set up, update, verify</h3>
+                <p>Create agent keys, build the image, then check the whole environment.</p>
+                <div class="install-command">
+                  <code>ags setup && ags update-image && ags doctor</code>
+                  <button
+                    class="copy-button"
+                    type="button"
+                    data-copy="ags setup &amp;&amp; ags update-image &amp;&amp; ags doctor"
+                    aria-label="Copy setup command"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 20 20">
+                      <rect x="7" y="7" width="9" height="9" rx="2" />
+                      <path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+                    </svg>
+                    <span>Copy</span>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="start-cta reveal">
+            <div>
+              <span>Ready when you are.</span>
+              <p>Read the prerequisites and follow the complete setup guide.</p>
+            </div>
+            <a
+              class="button button-ink"
+              href="./docs/overview.html#requirements"
+            >
+              Open the documentation
+              <svg aria-hidden="true" viewBox="0 0 18 18">
+                <path d="M3 9h11M10 5l4 4-4 4" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-top">
+        <a class="brand footer-brand" href="#top">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span>agent<span class="brand-slash">/</span>sandbox</span>
+        </a>
+        <p>Give your agents a playground.<br />Keep the boundaries yours.</p>
+        <div class="footer-links">
+          <div>
+            <span>Explore</span>
+            <a href="https://github.com/thomaspeklak/agent-sandbox">GitHub</a>
+            <a href="./docs/overview.html">Quick start</a>
+            <a href="./docs/commands.html">Commands</a>
+          </div>
+          <div>
+            <span>Go deeper</span>
+            <a href="./docs/configuration.html">Configuration</a>
+            <a href="./docs/architecture.html">Architecture</a>
+            <a href="./docs/troubleshooting.html">Troubleshooting</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>Open source · MIT licensed</span>
+        <span>Designed for useful isolation</span>
+        <span>© <span data-year></span></span>
+      </div>
+    </footer>
+  </body>
+</html>

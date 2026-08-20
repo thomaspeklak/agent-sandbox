@@ -3,8 +3,9 @@ use std::path::Path;
 
 use ags::cmd::doctor;
 use ags::config::{
-    AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,
-    UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox,
+    AuthProxyConfig, BrowserConfig, ClipboardConfig, DesktopPassthroughConfig, HostUiConfig,
+    MountKind, MountMode, MountWhen, PspConfig, SecretSource, UpdateConfig, ValidatedConfig,
+    ValidatedMount, ValidatedSandbox, ValidatedSecret,
 };
 
 fn minimal_config(tmp: &Path) -> ValidatedConfig {
@@ -52,6 +53,8 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
         update: UpdateConfig::default(),
         auth_proxy: AuthProxyConfig::default(),
         host_ui: HostUiConfig::default(),
+        clipboard: ClipboardConfig::default(),
+        desktop_passthrough: DesktopPassthroughConfig::default(),
         psp: PspConfig::default(),
     }
 }
@@ -108,4 +111,67 @@ fn doctor_self_heals_missing_guard_extension() {
     fs::remove_file(pi_agent.join("extensions/guard.ts")).unwrap();
     let _result = doctor::run(&config);
     assert!(pi_agent.join("extensions/guard.ts").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_executes_command_lookup_without_needing_its_value() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut config = minimal_config(tmp.path());
+    let helper = tmp.path().join("doctor-secret.sh");
+    let marker = tmp.path().join("doctor-command-ran");
+    fs::write(
+        &helper,
+        format!(
+            "printf 'called' > '{}'\nprintf 'doctor-secret-value'\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    config.secrets.push(ValidatedSecret {
+        env: "AGS_DOCTOR_COMMAND_TEST_TOKEN".to_owned(),
+        source: SecretSource::Command {
+            argv: vec!["/bin/sh".to_owned(), helper.to_string_lossy().into_owned()],
+        },
+        origin: "test".to_owned(),
+        tool: None,
+    });
+
+    let _ = doctor::summarize(&config);
+    assert_eq!(fs::read_to_string(marker).unwrap(), "called");
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_skips_command_after_earlier_source_succeeds() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut config = minimal_config(tmp.path());
+    let helper = tmp.path().join("unused-doctor-secret.sh");
+    let marker = tmp.path().join("unused-command-ran");
+    fs::write(
+        &helper,
+        format!("printf 'called' > '{}'\nprintf 'value'\n", marker.display()),
+    )
+    .unwrap();
+    config.secrets.extend([
+        ValidatedSecret {
+            env: "AGS_DOCTOR_ORDER_TEST_TOKEN".to_owned(),
+            source: SecretSource::Env {
+                from_env: "PATH".to_owned(),
+            },
+            origin: "test".to_owned(),
+            tool: None,
+        },
+        ValidatedSecret {
+            env: "AGS_DOCTOR_ORDER_TEST_TOKEN".to_owned(),
+            source: SecretSource::Command {
+                argv: vec!["/bin/sh".to_owned(), helper.to_string_lossy().into_owned()],
+            },
+            origin: "test".to_owned(),
+            tool: None,
+        },
+    ]);
+
+    let _ = doctor::summarize(&config);
+    assert!(!marker.exists(), "doctor ran an unused command source");
 }

@@ -60,12 +60,16 @@ const BASH: &str = r#"_ags_completion() {
   done
 
   if (( COMP_CWORD == 1 )); then
-    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help" -- "$cur") )
     return 0
   fi
 
   case "${COMP_WORDS[1]}" in
-    setup|doctor|update-image|update-agents|uninstall)
+    update-image)
+      COMPREPLY=( $(compgen -W "--keep-existing -h --help" -- "$cur") )
+      return 0
+      ;;
+    setup|doctor|update-agents|uninstall)
       COMPREPLY=( $(compgen -W "-h --help" -- "$cur") )
       return 0
       ;;
@@ -131,6 +135,9 @@ const BASH: &str = r#"_ags_completion() {
       COMPREPLY=( $(compgen -d -- "$cur") )
       return 0
       ;;
+    --env|--op-secret-set|-1)
+      return 0
+      ;;
   esac
 
   if [[ "$cur" == --agent=* ]]; then
@@ -154,7 +161,7 @@ const BASH: &str = r#"_ags_completion() {
     return 0
   fi
 
-  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --stop-when-done --defaults -D --config --add-dir -d -h --help" -- "$cur") )
+  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help" -- "$cur") )
 }
 
 complete -F _ags_completion ags
@@ -171,12 +178,18 @@ modes=(wrappers aliases both)
 if (( CURRENT == 2 )); then
   _alternative \
     'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions)' \
-    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --stop-when-done --defaults -D --config --add-dir -d -h --help)'
+    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help)'
   return
 fi
 
 case "$words[2]" in
-  setup|doctor|update-image|update-agents|uninstall)
+  update-image)
+    _arguments \
+      '--keep-existing[Keep the previous image after a successful rebuild]' \
+      '(-h --help)'{-h,--help}'[Show help]'
+    return
+    ;;
+  setup|doctor|update-agents|uninstall)
     _values 'option' -h --help
     return
     ;;
@@ -213,12 +226,16 @@ _arguments -S \
   '--yolo[Disable AGS guard integrations for this run]' \
   '--root[Run agent with root access inside the sandbox]' \
   '--lockdown[Minimize host exposure for this run]' \
+  '--wayland-compositor-passthrough[Mount the real Wayland compositor socket]' \
   '--stop-when-done[Exit container when the agent finishes in tmux mode]' \
   '--defaults[Apply AGS-managed defaults for the selected agent harness]' \
   '-D[Apply AGS-managed defaults for the selected agent harness]' \
   '--config[Override config file path]:config file:_files' \
   '(-d)--add-dir[Add an extra same-path directory mount for this run]:host directory:_files -/' \
   '(--add-dir)-d[Add an extra same-path directory mount for this run]:host directory:_files -/' \
+  '*--env[Set a container environment variable (repeatable)]:environment assignment (NAME=VALUE):' \
+  '(-1)--op-secret-set[Inject fields from a 1Password Secure Note]:vault/item:' \
+  '(--op-secret-set)-1[Inject fields from a 1Password Secure Note]:vault/item:' \
   '(-h --help)'{-h,--help}'[Show help]'
 "#;
 
@@ -247,11 +264,18 @@ complete -c ags -n "__fish_use_subcommand" -l psp-keep -d "Keep PSP-managed cont
 complete -c ags -n "__fish_use_subcommand" -l yolo -d "Disable AGS guard integrations for this run"
 complete -c ags -n "__fish_use_subcommand" -l root -d "Run agent with root access inside the sandbox"
 complete -c ags -n "__fish_use_subcommand" -l lockdown -d "Minimize host exposure for this run"
+complete -c ags -n "__fish_use_subcommand" -l wayland-compositor-passthrough -d "Mount the real Wayland compositor socket"
 complete -c ags -n "__fish_use_subcommand" -l stop-when-done -d "Exit container when the agent finishes in tmux mode"
 complete -c ags -n "__fish_use_subcommand" -l defaults -s D -d "Apply AGS-managed defaults for the selected agent harness"
 complete -c ags -n "__fish_use_subcommand" -l config -r -d "Override config file path"
 complete -c ags -n "__fish_use_subcommand" -l add-dir -s d -r -d "Add an extra same-path directory mount for this run"
+complete -c ags -n "__fish_use_subcommand" -l env -r -d "Set a container environment variable (NAME=VALUE; repeatable)"
+complete -c ags -n "__fish_use_subcommand" -l op-secret-set -s 1 -r -d "Inject fields from a 1Password Secure Note"
 complete -c ags -n "__fish_use_subcommand" -s h -l help -d "Show help"
+
+# update-image
+complete -c ags -n "__fish_seen_subcommand_from update-image" -l keep-existing -d "Keep the previous image after a successful rebuild"
+complete -c ags -n "__fish_seen_subcommand_from update-image" -s h -l help -d "Show help"
 
 # install
 complete -c ags -n "__fish_seen_subcommand_from install" -l link-self -d "Link ags to ~/.local/bin/ags"
@@ -270,7 +294,7 @@ complete -c ags -n "__fish_seen_subcommand_from completions" -l shell -r -a "$__
 complete -c ags -n "__fish_seen_subcommand_from completions" -s h -l help -d "Show help"
 
 # simple subcommands
-for __ags_cmd in setup doctor update-image update-agents uninstall
+for __ags_cmd in setup doctor update-agents uninstall
   complete -c ags -n "__fish_seen_subcommand_from $__ags_cmd" -s h -l help -d "Show help"
 end
 "#;
@@ -287,14 +311,19 @@ mod tests {
         assert!(script.contains("--browser"));
         assert!(script.contains("--tmux"));
         assert!(script.contains("--lockdown"));
+        assert!(script.contains("--wayland-compositor-passthrough"));
         assert!(script.contains("--stop-when-done"));
         assert!(script.contains("--defaults"));
         assert!(script.contains("-D"));
         assert!(script.contains("create-aliases"));
         assert!(script.contains("completions"));
         assert!(script.contains("--add-agent-mounts"));
+        assert!(script.contains("--keep-existing"));
         assert!(script.contains("--add-dir"));
         assert!(script.contains("-d"));
+        assert!(script.contains("--env"));
+        assert!(script.contains("--op-secret-set"));
+        assert!(script.contains("-1"));
     }
 
     #[test]
@@ -302,7 +331,13 @@ mod tests {
         let script = render(Shell::Zsh);
         assert!(script.starts_with("#compdef ags"));
         assert!(script.contains("update-agents"));
+        assert!(
+            script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
+        );
         assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
+        assert!(script.contains("--env[Set a container environment variable (repeatable)]"));
+        assert!(script.contains("--op-secret-set[Inject fields from a 1Password Secure Note]"));
+        assert!(script.contains("-1[Inject fields from a 1Password Secure Note]"));
         assert!(
             script.contains(
                 "--psp-keep[Keep PSP-managed containers on exit (debug; requires --psp)]"
@@ -315,9 +350,14 @@ mod tests {
         let script = render(Shell::Fish);
         assert!(script.contains("complete -c ags"));
         assert!(script.contains("-a completions"));
+        assert!(script.contains(
+            "-l keep-existing -d \"Keep the previous image after a successful rebuild\""
+        ));
         assert!(script.contains("-l psp -d \"Enable podman-socket-proxy mode (policy-gated)\""));
         assert!(script.contains(
             "-l psp-keep -d \"Keep PSP-managed containers on exit (debug; requires --psp)\""
         ));
+        assert!(script.contains("-l env -r"));
+        assert!(script.contains("-l op-secret-set -s 1 -r"));
     }
 }

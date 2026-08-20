@@ -8,7 +8,7 @@ Commands:
 \
   doctor         Run health checks on sandbox configuration
 \
-  update-image   Rebuild container image and refresh bundled br/bv/dcg
+  update-image   Rebuild container image and refresh bundled br/dcg
 \
   update-agents  Install/update agents in persistent volumes
 \
@@ -41,6 +41,10 @@ Run flags:
 \
   --lockdown           Minimize host exposure for this run (fail-closed)
 \
+  --wayland-compositor-passthrough
+\
+                       Mount the real Wayland compositor socket (broad desktop access)
+\
   --stop-when-done     Exit container when agent finishes (tmux mode)
 \
   --defaults, -D       Apply AGS-managed defaults for the selected agent harness
@@ -48,6 +52,17 @@ Run flags:
   --config <path>      Use an alternate AGS config file
 \
   --add-dir, -d <path> Add an extra host directory mount (repeatable)
+\
+  --env <NAME=VALUE>   Set a container environment variable (repeatable)
+\
+  --op-secret-set, -1 <vault/item>
+\
+                       Inject fields from a 1Password Secure Note (repeatable; CLI-only)
+
+\
+Update-image flags:
+\
+  --keep-existing Keep the previous image after a successful rebuild
 
 \
 Install flags:

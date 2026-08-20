@@ -35,18 +35,25 @@ fn host_matches_allowed_domain(host: &str, domain: &str) -> bool {
             && host.as_bytes()[host.len() - domain.len() - 1] == b'.')
 }
 
-/// Try zenity, then kdialog, then deny.
-fn prompt_with_dialog(url: &str, has_callback: bool, can_proxy: bool) -> OpenDecision {
-    if let Some(result) = try_zenity(url, has_callback, can_proxy) {
-        return result;
+/// Try the shared AGS dialog renderer, then deny if no renderer is available.
+fn prompt_with_dialog(
+    url: &str,
+    has_callback: bool,
+    can_proxy: bool,
+    host_ui_socket: Option<&Path>,
+) -> OpenDecision {
+    let request = auth_dialog_request(url, has_callback, can_proxy);
+    match crate::host_dialog::prompt_choice(&request, host_ui_socket) {
+        crate::host_dialog::DialogOutcome::Choice(choice) => {
+            parse_named_decision(&choice, can_proxy).unwrap_or(OpenDecision::Cancel)
+        }
+        crate::host_dialog::DialogOutcome::Cancelled => OpenDecision::Cancel,
+        crate::host_dialog::DialogOutcome::Unavailable => {
+            eprintln!("[ags auth-proxy] no dialog tool available (enable [host_ui] or install zenity/kdialog)");
+            eprintln!("[ags auth-proxy] denying URL open: {url}");
+            OpenDecision::Cancel
+        }
     }
-    if let Some(result) = try_kdialog(url, has_callback, can_proxy) {
-        return result;
-    }
-
-    eprintln!("[ags auth-proxy] no dialog tool available (install zenity or kdialog)");
-    eprintln!("[ags auth-proxy] denying URL open: {url}");
-    OpenDecision::Cancel
 }
 
 /// Produce a display-safe URL: strip query string and escape Pango/XML markup characters.
@@ -60,6 +67,7 @@ fn display_url(url: &str) -> String {
         .replace('>', "&gt;")
 }
 
+#[cfg(test)]
 fn prompt_text(url: &str, has_callback: bool, can_proxy: bool) -> String {
     let display = display_url(url);
     let host = parsed_http_host(url).unwrap_or_else(|| "(unable to parse host)".to_owned());
@@ -97,6 +105,68 @@ fn prompt_text(url: &str, has_callback: bool, can_proxy: bool) -> String {
     )
 }
 
+fn auth_dialog_request(
+    url: &str,
+    has_callback: bool,
+    can_proxy: bool,
+) -> crate::host_dialog::DialogRequest {
+    let display = display_url(url)
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">");
+    let host = parsed_http_host(url).unwrap_or_else(|| "(unable to parse host)".to_owned());
+    let action = if has_callback {
+        "A sandbox tool wants to open a URL and relay a localhost callback back into the sandbox."
+    } else {
+        "A sandbox tool wants to open a URL on the host."
+    };
+    let mut details = vec![
+        crate::host_dialog::DialogDetail::new("Requested host", host),
+        crate::host_dialog::DialogDetail::new("URL", display),
+    ];
+    if has_callback {
+        details.push(crate::host_dialog::DialogDetail::new(
+            "Callback relay",
+            "AGS will capture the localhost callback and relay it back into the sandbox.",
+        ));
+    }
+    if can_proxy {
+        details.push(crate::host_dialog::DialogDetail::new(
+            "Proxy option",
+            "Open uses the original URL. Proxy routes this localhost app through AGS.",
+        ));
+    }
+
+    let mut choices = vec![crate::host_dialog::DialogChoice::new(
+        "open",
+        "Open",
+        crate::host_dialog::DialogChoiceRole::Primary,
+    )];
+    if can_proxy {
+        choices.push(crate::host_dialog::DialogChoice::new(
+            "proxy",
+            "Proxy",
+            crate::host_dialog::DialogChoiceRole::Secondary,
+        ));
+    }
+    choices.push(crate::host_dialog::DialogChoice::new(
+        "cancel",
+        "Cancel",
+        crate::host_dialog::DialogChoiceRole::Cancel,
+    ));
+
+    crate::host_dialog::DialogRequest {
+        title: "AGS Auth Proxy".to_owned(),
+        heading: "Allow sandbox URL open?".to_owned(),
+        message: action.to_owned(),
+        details,
+        note: Some("Only approve URLs you expected this sandbox session to open.".to_owned()),
+        choices,
+        width: 560,
+        height: if can_proxy || has_callback { 420 } else { 360 },
+    }
+}
+
 fn parse_named_decision(label: &str, can_proxy: bool) -> Option<OpenDecision> {
     match label.trim().to_ascii_lowercase().as_str() {
         "open" | "ok" => Some(OpenDecision::OpenOriginal),
@@ -106,6 +176,7 @@ fn parse_named_decision(label: &str, can_proxy: bool) -> Option<OpenDecision> {
     }
 }
 
+#[cfg(test)]
 fn parse_zenity_decision(output: &std::process::Output, can_proxy: bool) -> OpenDecision {
     let stdout = String::from_utf8_lossy(&output.stdout);
     if let Some(decision) = parse_named_decision(&stdout, can_proxy) {
@@ -115,75 +186,6 @@ fn parse_zenity_decision(output: &std::process::Output, can_proxy: bool) -> Open
         OpenDecision::OpenOriginal
     } else {
         OpenDecision::Cancel
-    }
-}
-
-fn try_zenity(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDecision> {
-    let text = prompt_text(url, has_callback, can_proxy);
-    let mut cmd = std::process::Command::new("zenity");
-    cmd.args([
-        "--question",
-        "--title",
-        "AGS Auth Proxy",
-        "--width",
-        "520",
-        "--no-wrap",
-        "--ok-label",
-        "Open",
-        "--cancel-label",
-        "Cancel",
-    ])
-    .arg("--text")
-    .arg(&text)
-    .stdin(std::process::Stdio::null())
-    .stderr(std::process::Stdio::null());
-    if can_proxy {
-        cmd.args(["--extra-button", "Proxy"]);
-    }
-    let output = cmd.output().ok()?;
-    Some(parse_zenity_decision(&output, can_proxy))
-}
-
-fn try_kdialog(url: &str, has_callback: bool, can_proxy: bool) -> Option<OpenDecision> {
-    let text = prompt_text(url, has_callback, can_proxy);
-    let mut cmd = std::process::Command::new("kdialog");
-    cmd.arg("--title").arg("AGS Auth Proxy");
-
-    if can_proxy {
-        cmd.arg("--menu").arg(&text).args([
-            "open",
-            "Open original URL",
-            "proxy",
-            "Proxy localhost through AGS",
-            "cancel",
-            "Cancel",
-        ]);
-    } else {
-        cmd.args([
-            "--yesno",
-            &text,
-            "--yes-label",
-            "Open",
-            "--no-label",
-            "Cancel",
-        ]);
-    }
-
-    let output = cmd
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return Some(OpenDecision::Cancel);
-    }
-    if can_proxy {
-        let choice = String::from_utf8_lossy(&output.stdout);
-        Some(parse_named_decision(&choice, true).unwrap_or(OpenDecision::OpenOriginal))
-    } else {
-        Some(OpenDecision::OpenOriginal)
     }
 }
 

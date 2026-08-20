@@ -5,12 +5,12 @@ use toml::Value;
 
 use crate::config::error::ConfigError;
 use crate::config::raw::{
-    RawAgentMount, RawBrowser, RawConfig, RawHostUi, RawMount, RawSecret, RawTool,
+    RawAgentMount, RawBrowser, RawClipboard, RawConfig, RawHostUi, RawMount, RawSecret, RawTool,
 };
 use crate::config::types::{
-    AuthProxyConfig, BrowserConfig, HostUiConfig, MountKind, MountMode, MountWhen, PspConfig,
-    SecretSource, UpdateConfig, ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret,
-    ValidatedTool,
+    AuthProxyConfig, BrowserConfig, ClipboardConfig, ClipboardMode, DesktopPassthroughConfig,
+    HostUiConfig, MountKind, MountMode, MountWhen, PspConfig, SecretSource, UpdateConfig,
+    ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret, ValidatedTool,
 };
 
 /// Read, parse, and validate a config TOML file from disk.
@@ -35,6 +35,7 @@ pub fn parse_and_validate_with_overlay(
 
     if let Some(overlay_path) = overlay_path {
         let overlay = read_toml_value(overlay_path)?;
+        reject_overlay_command_secrets(&overlay, overlay_path)?;
         merge_toml_value(&mut merged, overlay, &[]);
     }
 
@@ -107,6 +108,51 @@ fn is_additive_array_key(path: &[&str], key: &str) -> bool {
     path.is_empty() && super::ADDITIVE_ARRAY_KEYS.contains(&key)
 }
 
+fn reject_overlay_command_secrets(overlay: &Value, overlay_path: &Path) -> Result<(), ConfigError> {
+    let Some(root) = overlay.as_table() else {
+        return Ok(());
+    };
+
+    if let Some(secrets) = root.get("secret").and_then(Value::as_array) {
+        for (index, secret) in secrets.iter().enumerate() {
+            if secret
+                .as_table()
+                .is_some_and(|table| table.contains_key("command"))
+            {
+                return Err(ConfigError::Validation(format!(
+                    "repo-local config {} may not define [[secret]] #{index}.command; command secret sources are allowed only in the user/global config",
+                    overlay_path.display()
+                )));
+            }
+        }
+    }
+
+    if let Some(tools) = root.get("tool").and_then(Value::as_array) {
+        for (tool_index, tool) in tools.iter().enumerate() {
+            let Some(secrets) = tool
+                .as_table()
+                .and_then(|table| table.get("secret"))
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+            for (secret_index, secret) in secrets.iter().enumerate() {
+                if secret
+                    .as_table()
+                    .is_some_and(|table| table.contains_key("command"))
+                {
+                    return Err(ConfigError::Validation(format!(
+                        "repo-local config {} may not define [[tool]] #{tool_index}.secret[{secret_index}].command; command secret sources are allowed only in the user/global config",
+                        overlay_path.display()
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, ConfigError> {
     let sandbox = validate_sandbox(&raw.sandbox)?;
 
@@ -134,6 +180,7 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
 
     let browser = validate_browser(&raw.browser)?;
     let host_ui = validate_host_ui(&raw.host_ui)?;
+    let clipboard = validate_clipboard(&raw.clipboard)?;
 
     Ok(ValidatedConfig {
         config_file: config_path.to_owned(),
@@ -150,6 +197,10 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
             auto_allow_domains: raw.auth_proxy.auto_allow_domains,
         },
         host_ui,
+        clipboard,
+        desktop_passthrough: DesktopPassthroughConfig {
+            wayland: raw.desktop_passthrough.wayland,
+        },
         psp: PspConfig {
             binary: raw.psp.binary,
         },
@@ -231,6 +282,24 @@ fn validate_secret(raw: &RawSecret, ctx: &str) -> Result<Vec<ValidatedSecret>, C
         });
     }
 
+    if let Some(command) = &raw.command {
+        let Some(executable) = command.first() else {
+            return Err(ConfigError::Validation(format!(
+                "{ctx}.command must include at least one argv element"
+            )));
+        };
+        require_non_empty(executable, &format!("{ctx}.command[0]"))?;
+
+        let mut argv = command.clone();
+        argv[0] = resolve_command_executable(executable, &format!("{ctx}.command[0]"))?;
+        out.push(ValidatedSecret {
+            env: env.to_owned(),
+            source: SecretSource::Command { argv },
+            origin: ctx.to_owned(),
+            tool: None,
+        });
+    }
+
     // Legacy provider form
     if let Some(provider) = &raw.provider {
         match provider.to_lowercase().as_str() {
@@ -275,7 +344,7 @@ fn validate_secret(raw: &RawSecret, ctx: &str) -> Result<Vec<ValidatedSecret>, C
 
     if out.is_empty() {
         return Err(ConfigError::Validation(format!(
-            "{ctx} must define at least one source: from_env, secret_store, or provider"
+            "{ctx} must define at least one source: from_env, secret_store, command, or provider"
         )));
     }
 
@@ -333,7 +402,6 @@ fn validate_tool(
     Ok((tool, mounts, secrets))
 }
 
-/// Resolve a binary name: expand paths containing '/' or '~', otherwise keep bare name.
 fn resolve_binary_name(raw: &str, ctx: &str) -> Result<String, ConfigError> {
     let name = require_non_empty(raw, ctx)?;
     if name.contains('/') || name.starts_with('~') {
@@ -341,6 +409,18 @@ fn resolve_binary_name(raw: &str, ctx: &str) -> Result<String, ConfigError> {
     } else {
         Ok(name.to_owned())
     }
+}
+
+fn resolve_command_executable(raw: &str, ctx: &str) -> Result<String, ConfigError> {
+    let executable = require_non_empty(raw, ctx)?;
+    let expanded = expand_env_vars(&expand_tilde(executable)?);
+    let path = Path::new(&expanded);
+    if !path.is_absolute() {
+        return Err(ConfigError::Validation(format!(
+            "{ctx} must resolve to an absolute executable path"
+        )));
+    }
+    Ok(path.to_string_lossy().into_owned())
 }
 
 fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {
@@ -366,6 +446,32 @@ fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {
         debug_port: raw.debug_port,
         pi_skill_path: raw.pi_skill_path.clone(),
         command_args: raw.command_args.clone(),
+    })
+}
+
+fn validate_clipboard(raw: &RawClipboard) -> Result<ClipboardConfig, ConfigError> {
+    let mode = match raw.mode.to_lowercase().as_str() {
+        "off" => ClipboardMode::Off,
+        "read" => ClipboardMode::Read,
+        "readwrite" | "read_write" | "rw" => ClipboardMode::ReadWrite,
+        other => {
+            return Err(ConfigError::Validation(format!(
+                "[clipboard].mode must be 'off', 'read', or 'readwrite', got '{other}'"
+            )));
+        }
+    };
+    if raw.max_bytes == 0 {
+        return Err(ConfigError::Validation(
+            "[clipboard].max_bytes must be greater than zero".to_owned(),
+        ));
+    }
+    Ok(ClipboardConfig {
+        enabled: raw.enabled,
+        mode,
+        max_bytes: raw.max_bytes,
+        approval_required: raw.approval_required,
+        approval_seconds: raw.approval_seconds,
+        approve_writes: raw.approve_writes,
     })
 }
 

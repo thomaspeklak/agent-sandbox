@@ -6,6 +6,8 @@ __pycache__/
 agent/settings.json
 /PKGBUILD
 /target/
+/website-tools/node_modules/
+/site/docs/
 
 # Dotfiles (host/container mounts, not part of repo)
 .bash_profile

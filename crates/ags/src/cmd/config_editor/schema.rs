@@ -1,3 +1,5 @@
+use crate::config::DEFAULT_PI_SPEC;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScalarFieldKind {
     Text,
@@ -163,6 +165,58 @@ const HOST_UI_FIELDS: &[ScalarFieldSchema] = &[
     },
 ];
 
+const CLIPBOARD_FIELDS: &[ScalarFieldSchema] = &[
+    ScalarFieldSchema {
+        key: "enabled",
+        kind: ScalarFieldKind::Bool,
+        required: false,
+        default_input: "true",
+    },
+    ScalarFieldSchema {
+        key: "mode",
+        kind: ScalarFieldKind::Enum(&["off", "read", "readwrite"]),
+        required: false,
+        default_input: "readwrite",
+    },
+    ScalarFieldSchema {
+        key: "max_bytes",
+        kind: ScalarFieldKind::Number {
+            min: 1,
+            max: u64::MAX,
+        },
+        required: false,
+        default_input: "33554432",
+    },
+    ScalarFieldSchema {
+        key: "approval_required",
+        kind: ScalarFieldKind::Bool,
+        required: false,
+        default_input: "true",
+    },
+    ScalarFieldSchema {
+        key: "approval_seconds",
+        kind: ScalarFieldKind::Number {
+            min: 0,
+            max: u64::MAX,
+        },
+        required: false,
+        default_input: "300",
+    },
+    ScalarFieldSchema {
+        key: "approve_writes",
+        kind: ScalarFieldKind::Bool,
+        required: false,
+        default_input: "false",
+    },
+];
+
+const DESKTOP_PASSTHROUGH_FIELDS: &[ScalarFieldSchema] = &[ScalarFieldSchema {
+    key: "wayland",
+    kind: ScalarFieldKind::Bool,
+    required: false,
+    default_input: "false",
+}];
+
 const PSP_FIELDS: &[ScalarFieldSchema] = &[ScalarFieldSchema {
     key: "binary",
     kind: ScalarFieldKind::Text,
@@ -175,7 +229,7 @@ const UPDATE_FIELDS: &[ScalarFieldSchema] = &[
         key: "pi_spec",
         kind: ScalarFieldKind::Text,
         required: false,
-        default_input: "@mariozechner/pi-coding-agent",
+        default_input: DEFAULT_PI_SPEC,
     },
     ScalarFieldSchema {
         key: "minimum_release_age",
@@ -194,6 +248,8 @@ pub fn scalar_fields(section_key: &str) -> &'static [ScalarFieldSchema] {
         "browser" => BROWSER_FIELDS,
         "auth_proxy" => AUTH_PROXY_FIELDS,
         "host_ui" => HOST_UI_FIELDS,
+        "clipboard" => CLIPBOARD_FIELDS,
+        "desktop_passthrough" => DESKTOP_PASSTHROUGH_FIELDS,
         "psp" => PSP_FIELDS,
         "update" => UPDATE_FIELDS,
         _ => &[],

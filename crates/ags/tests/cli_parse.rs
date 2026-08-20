@@ -1,6 +1,6 @@
 use ags::cli::{
     Agent, AliasMode, CliError, Command, CompletionsOptions, CreateAliasesOptions, InstallOptions,
-    Shell, SubCommand, ToolConfigOptions, help_text, parse_args,
+    Shell, SubCommand, ToolConfigOptions, UpdateImageOptions, help_text, parse_args,
 };
 
 fn args(items: &[&str]) -> Vec<String> {
@@ -21,6 +21,7 @@ fn parses_agent_and_passthrough_args() {
             assert!(!opts.psp);
             assert!(!opts.yolo);
             assert!(!opts.lockdown);
+            assert!(!opts.wayland_compositor_passthrough);
             assert!(opts.config_path.is_none());
         }
         _ => panic!("expected Run command"),
@@ -103,6 +104,21 @@ fn parses_lockdown_flag() {
 }
 
 #[test]
+fn parses_wayland_compositor_passthrough_flag() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "--agent",
+        "pi",
+        "--wayland-compositor-passthrough",
+    ]))
+    .unwrap();
+    match cmd {
+        Command::Run(opts) => assert!(opts.wayland_compositor_passthrough),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
 fn parses_defaults_flag() {
     let cmd = parse_args(args(&[
         "ags",
@@ -159,8 +175,14 @@ fn parses_subcommands() {
     for (arg, expected) in [
         ("setup", SubCommand::Setup),
         ("doctor", SubCommand::Doctor),
-        ("update-image", SubCommand::UpdateImage),
-        ("update", SubCommand::UpdateDeprecated),
+        (
+            "update-image",
+            SubCommand::UpdateImage(UpdateImageOptions::default()),
+        ),
+        (
+            "update",
+            SubCommand::UpdateDeprecated(UpdateImageOptions::default()),
+        ),
         ("update-agents", SubCommand::UpdateAgents),
         ("uninstall", SubCommand::Uninstall),
     ] {
@@ -170,12 +192,37 @@ fn parses_subcommands() {
 }
 
 #[test]
+fn parses_update_image_keep_existing_flag() {
+    let cmd = parse_args(args(&["ags", "update-image", "--keep-existing"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::UpdateImage(UpdateImageOptions {
+            keep_existing: true,
+        }))
+    );
+}
+
+#[test]
+fn parses_deprecated_update_keep_existing_flag() {
+    let cmd = parse_args(args(&["ags", "update", "--keep-existing"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::UpdateDeprecated(UpdateImageOptions {
+            keep_existing: true,
+        }))
+    );
+}
+
+#[test]
 fn help_shows_update_image_but_not_deprecated_update_alias() {
     let help = help_text();
     assert!(help.contains("update-image"));
     assert!(help.contains("tools"));
+    assert!(help.contains("--keep-existing Keep the previous image after a successful rebuild"));
     assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
     assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));
+    assert!(help.contains("--wayland-compositor-passthrough"));
+    assert!(help.contains("--env <NAME=VALUE>"));
     assert!(!help.contains("\n     \x20 update         Rebuild container image"));
 }
 
@@ -292,6 +339,52 @@ fn run_add_dir_requires_value() {
 }
 
 #[test]
+fn parses_repeatable_run_env_flags() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "--agent",
+        "pi",
+        "--env",
+        "BROWSER_URL=http://127.0.0.1:9222",
+        "--env=EMPTY=",
+        "--env",
+        "TOKEN=value=with=equals",
+    ]))
+    .unwrap();
+
+    match cmd {
+        Command::Run(opts) => assert_eq!(
+            opts.env,
+            vec![
+                ("BROWSER_URL".to_owned(), "http://127.0.0.1:9222".to_owned()),
+                ("EMPTY".to_owned(), String::new()),
+                ("TOKEN".to_owned(), "value=with=equals".to_owned()),
+            ]
+        ),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn run_env_rejects_missing_or_invalid_assignments() {
+    for flag in ["--env", "--env="] {
+        let err = parse_args(args(&["ags", "--agent", "pi", flag]))
+            .expect_err("expected missing env assignment");
+        assert_eq!(err, CliError::MissingEnvValue);
+    }
+
+    for assignment in ["NO_EQUALS", "=value", "9INVALID=value", "BAD-NAME=value"] {
+        let err = parse_args(args(&["ags", "--agent", "pi", "--env", assignment]))
+            .expect_err("expected invalid env assignment");
+        assert_eq!(err, CliError::InvalidEnvAssignment(assignment.to_owned()));
+    }
+
+    let err = parse_args(args(&["ags", "--agent", "pi", "--env", "AGS_LOCKDOWN=0"]))
+        .expect_err("expected reserved env name");
+    assert_eq!(err, CliError::ReservedEnvName("AGS_LOCKDOWN".to_owned()));
+}
+
+#[test]
 fn parses_create_aliases_defaults() {
     let cmd = parse_args(args(&["ags", "create-aliases"])).unwrap();
     assert_eq!(
@@ -325,6 +418,44 @@ fn parses_create_aliases_flags() {
             force: true,
         }))
     );
+}
+
+#[test]
+fn parses_op_secret_sets_in_cli_order() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "--agent",
+        "pi",
+        "--op-secret-set",
+        "Employee/first item",
+        "-1",
+        "Employee/second/item",
+        "--op-secret-set=IDs/vault-item",
+        "--",
+        "-1",
+    ]))
+    .unwrap();
+
+    match cmd {
+        Command::Run(opts) => assert_eq!(
+            opts.op_secret_sets,
+            vec![
+                "Employee/first item",
+                "Employee/second/item",
+                "IDs/vault-item"
+            ]
+        ),
+        _ => panic!("expected Run command"),
+    }
+}
+
+#[test]
+fn op_secret_set_requires_value() {
+    for flag in ["--op-secret-set", "-1", "--op-secret-set="] {
+        let err = parse_args(args(&["ags", "--agent", "pi", flag]))
+            .expect_err("expected missing secret-set value");
+        assert_eq!(err, CliError::MissingOpSecretSetValue);
+    }
 }
 
 #[test]

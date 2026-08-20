@@ -32,7 +32,7 @@ Symptoms:
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ```
 
 Then if needed:
@@ -43,22 +43,23 @@ ags update-agents
 
 ---
 
-## `br` / `bv` / `dcg` missing inside container
+## `br` / `dcg` missing inside container
 
 If bundled sandbox commands are missing or stale.
 
 ### Fix
 
 ```bash
-ags update
-ags --agent shell -- -lc 'br --version && bv --version && dcg --version'
+ags update-image
+ags --agent shell -- -lc 'br --version && dcg --version'
 ```
 
-`ags update` refreshes from upstream releases:
+`ags update-image` refreshes from upstream releases:
 
 - `beads_rust` (`br`): https://github.com/Dicklesworthstone/beads_rust/releases
-- `beads_viewer` (`bv`): https://github.com/Dicklesworthstone/beads_viewer/releases
 - `destructive_command_guard` (`dcg`): https://github.com/Dicklesworthstone/destructive_command_guard/releases
+
+For each tool, AGS selects the newest stable release containing both the required archive and its checksum for the image architecture. If a newer release only publishes assets for other platforms, AGS warns and uses the newest compatible release instead.
 
 ---
 
@@ -73,7 +74,7 @@ Symptoms:
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ags doctor
 ags --agent shell -- -lc 'dcg --version'
 ```
@@ -94,7 +95,7 @@ If `psql` is not found in sandbox shell.
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ags --agent shell -- -lc 'psql --version'
 ```
 
@@ -114,7 +115,7 @@ Cause:
 ### Fix
 
 ```bash
-ags update
+ags update-image
 ags --agent shell -- -lc 'tmux -V && test -f ~/.tmux.conf'
 ```
 
@@ -160,6 +161,53 @@ For a user-facing overview, see `docs/GLIMPSE.md`.
 
 ---
 
+## Pi Ctrl-V image paste or `/copy` clipboard actions fail
+
+Symptoms:
+
+- Pi Ctrl-V image paste reports no clipboard data or `wl-paste` errors
+- `/copy` reports clipboard failures from inside the sandbox
+- `echo "$AGS_CLIPBOARD_SOCK"` is empty
+
+Cause:
+
+- `[clipboard].enabled` is false or `mode = "off"`
+- the AGS binary/session predates the clipboard bridge
+- host `wl-paste`/`wl-copy` is unavailable or cannot access your host clipboard
+- payload exceeded `[clipboard].max_bytes`
+- clipboard approval was denied or no dialog renderer was available
+
+### Fix
+
+Verify bridge wiring in a fresh session:
+
+```bash
+ags --agent shell -- -lc 'echo "$AGS_CLIPBOARD_SOCK"; echo "$AGS_CLIPBOARD_MODE"; echo "$XDG_SESSION_TYPE"; command -v wl-paste; command -v wl-copy'
+```
+
+Expected:
+
+- `AGS_CLIPBOARD_SOCK=/run/ags-clipboard/clipboard.sock`
+- `AGS_CLIPBOARD_MODE=read` or `readwrite`
+- `XDG_SESSION_TYPE=wayland`
+- `wl-paste`/`wl-copy` resolve to `/home/dev/.local/bin/...`
+
+If the bridge is intentionally disabled, enable it in config:
+
+```toml
+[clipboard]
+enabled = true
+mode = "readwrite"
+approval_required = true
+approval_seconds = 300
+```
+
+Clipboard reads prompt on the host by default. Enable `[host_ui]` for the branded dark/light-aware dialog, or install `zenity`/`kdialog` for the fallback. If you intentionally want the old session-wide bridge behavior, set `approval_required = false`.
+
+For raw GUI clients, do not rely on clipboard settings; use the explicit `--wayland-compositor-passthrough` flag only when you intentionally want broad desktop access.
+
+---
+
 ## SELinux alerts mentioning `pasta` and your source tree
 
 Symptoms:
@@ -199,7 +247,7 @@ Cause:
 Rebuild the image so the sandbox includes `kitty-terminfo`:
 
 ```bash
-ags update
+ags update-image
 ags --agent shell -- -lc 'echo "$TERM" && tmux -V'
 ```
 
@@ -256,6 +304,25 @@ ags update-agents
 
 ---
 
+## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, or Pi loads from `.npm-global`
+
+Cause:
+
+- a pnpm self-update or install script wrote pnpm's own shims into the persistent agent runtime volume
+- old npm-global agent installs can shadow the pnpm-managed AGS agent shims
+- those shims can disagree with the store used by the globally installed agent CLIs
+
+### Fix
+
+```bash
+ags update-image
+ags update-agents
+```
+
+AGS keeps agent CLI launchers in `/usr/local/pnpm`, but runtime `pnpm` should come from the sandbox image (`/usr/local/bin/pnpm`) so stale persistent shims do not shadow it. Codex itself uses its official standalone installer and a dedicated persistent `codex-install` directory. `update-agents` also removes old pnpm/npm-global Codex installs and old npm-global agent shims from the sandbox cache.
+
+---
+
 ## SSH problems (git auth/signing)
 
 Symptoms:
@@ -294,11 +361,18 @@ Symptoms:
 - Is `[[secret]]` / `[[tool.secret]]` configured correctly?
 - Is source env var actually set and non-empty?
 - If using `secret_store`, does `secret-tool lookup ...` return a value?
+- If using `command`, is the executable present and executable on the host?
+- Does the helper finish within five seconds, exit `0`, and print exactly one non-empty UTF-8 value (optionally followed by one `\n` or `\r\n`)?
+- Is the command declared in the user/global config? Repo-local `.ags/config.toml` command sources are rejected.
+- Run `ags doctor`; it checks command availability and lookup success without printing the resolved value or helper stderr/stdout.
 
 ### Fix
 
 - Re-run `ags setup` to re-enter secrets (if using interactive keyring flow)
 - Export env vars before launching `ags`
+- Run the configured helper directly on the host to diagnose native credential-store access. Avoid sharing its output in logs or bug reports.
+
+Command helpers receive only `PATH`, `HOME`, `USER`, `LOGNAME`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR` when those variables exist. If a helper depends on other ambient host variables, wrap it in a narrowly scoped adapter that establishes only the required context. Resolved values are delivered as ordinary container environment variables and can be inspected by sandboxed processes.
 
 ---
 
@@ -336,11 +410,11 @@ Symptoms:
 
 Cause:
 
-- Neither `zenity` nor `kdialog` is installed on the host, so the proxy cannot show the allow/deny dialog and defaults to deny.
+- No AGS dialog renderer is available, so the proxy cannot show the allow/deny dialog and defaults to deny.
 
 ### Fix
 
-Install a dialog tool:
+Enable the branded Glimpse-backed host UI dialog via `[host_ui]`, or install a fallback dialog tool:
 
 ```bash
 # Debian/Ubuntu (GNOME)

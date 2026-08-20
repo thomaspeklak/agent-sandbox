@@ -19,6 +19,12 @@ sign_key = "/tmp/sign"
     assert!(raw.tool.is_empty());
     assert!(raw.secret.is_empty());
     assert!(!raw.browser.enabled);
+    assert!(raw.clipboard.enabled);
+    assert_eq!(raw.clipboard.mode, "readwrite");
+    assert!(raw.clipboard.approval_required);
+    assert_eq!(raw.clipboard.approval_seconds, 300);
+    assert!(!raw.clipboard.approve_writes);
+    assert!(!raw.desktop_passthrough.wayland);
     assert_eq!(raw.update.minimum_release_age, 1440);
 }
 
@@ -56,7 +62,7 @@ create = true
 
 [[tool.secret]]
 env = "KNO_TOKEN"
-from_env = "KNO_TOKEN"
+command = ["/usr/bin/kno-credential", "lookup"]
 
 [[secret]]
 env = "GH_TOKEN"
@@ -76,6 +82,10 @@ secret_store = { service = "github", username = "user" }
     assert_eq!(raw.tool[0].directory.len(), 1);
     assert!(raw.tool[0].directory[0].create);
     assert_eq!(raw.tool[0].secret.len(), 1);
+    assert_eq!(
+        raw.tool[0].secret[0].command.as_deref(),
+        Some(["/usr/bin/kno-credential".to_owned(), "lookup".to_owned()].as_slice())
+    );
 
     assert_eq!(raw.secret.len(), 2);
     assert_eq!(raw.secret[0].from_env.as_deref(), Some("GH_TOKEN"));

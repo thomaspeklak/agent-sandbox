@@ -1,0 +1,13 @@
+{
+  "name": "agent-sandbox-website-tools",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build-docs.mjs",
+    "check": "npm run build && node validate-docs.mjs"
+  },
+  "dependencies": {
+    "marked": "18.0.7"
+  }
+}

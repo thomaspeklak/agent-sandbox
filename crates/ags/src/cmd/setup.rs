@@ -217,7 +217,16 @@ fn store_secrets_interactive(config: &ValidatedConfig) -> Result<(), SetupError>
         }
 
         if !stored {
-            println!("No secret_store configured for {env_name} (env-only).");
+            let has_command = config.secrets.iter().any(|secret| {
+                secret.env == *env_name && matches!(&secret.source, SecretSource::Command { .. })
+            });
+            if has_command {
+                println!(
+                    "No secret_store configured for {env_name} (command sources are lookup-only)."
+                );
+            } else {
+                println!("No secret_store configured for {env_name} (env-only).");
+            }
         }
     }
 

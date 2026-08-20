@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use super::defaults::DEFAULT_PI_SPEC;
+
 /// Top-level config as deserialized directly from TOML.
 /// Field names and shapes match the config file schema exactly.
 #[derive(Debug, Deserialize)]
@@ -23,6 +25,10 @@ pub struct RawConfig {
     pub auth_proxy: RawAuthProxy,
     #[serde(default)]
     pub host_ui: RawHostUi,
+    #[serde(default)]
+    pub clipboard: RawClipboard,
+    #[serde(default)]
+    pub desktop_passthrough: RawDesktopPassthrough,
     #[serde(default)]
     pub psp: RawPsp,
 }
@@ -90,6 +96,7 @@ pub struct RawSecret {
     pub env: String,
     pub from_env: Option<String>,
     pub secret_store: Option<BTreeMap<String, String>>,
+    pub command: Option<Vec<String>>,
     // Legacy form
     pub provider: Option<String>,
     pub var: Option<String>,
@@ -164,6 +171,41 @@ impl Default for RawHostUi {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RawClipboard {
+    #[serde(default = "default_clipboard_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_clipboard_mode")]
+    pub mode: String,
+    #[serde(default = "default_clipboard_max_bytes")]
+    pub max_bytes: usize,
+    #[serde(default = "default_clipboard_approval_required")]
+    pub approval_required: bool,
+    #[serde(default = "default_clipboard_approval_seconds")]
+    pub approval_seconds: u64,
+    #[serde(default = "default_clipboard_approve_writes")]
+    pub approve_writes: bool,
+}
+
+impl Default for RawClipboard {
+    fn default() -> Self {
+        Self {
+            enabled: default_clipboard_enabled(),
+            mode: default_clipboard_mode(),
+            max_bytes: default_clipboard_max_bytes(),
+            approval_required: default_clipboard_approval_required(),
+            approval_seconds: default_clipboard_approval_seconds(),
+            approve_writes: default_clipboard_approve_writes(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RawDesktopPassthrough {
+    #[serde(default)]
+    pub wayland: bool,
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct RawPsp {
     #[serde(default)]
@@ -187,7 +229,7 @@ fn default_ro() -> String {
 }
 
 fn default_pi_spec() -> String {
-    "@mariozechner/pi-coding-agent".to_owned()
+    DEFAULT_PI_SPEC.to_owned()
 }
 
 fn default_release_age() -> u32 {
@@ -208,4 +250,28 @@ fn default_host_ui_idle_timeout_ms() -> u64 {
 
 fn default_host_ui_log_level() -> String {
     "info".to_owned()
+}
+
+fn default_clipboard_enabled() -> bool {
+    true
+}
+
+fn default_clipboard_mode() -> String {
+    "readwrite".to_owned()
+}
+
+fn default_clipboard_max_bytes() -> usize {
+    32 * 1024 * 1024
+}
+
+fn default_clipboard_approval_required() -> bool {
+    true
+}
+
+fn default_clipboard_approval_seconds() -> u64 {
+    300
+}
+
+fn default_clipboard_approve_writes() -> bool {
+    false
 }

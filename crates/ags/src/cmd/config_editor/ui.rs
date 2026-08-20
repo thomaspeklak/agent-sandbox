@@ -214,6 +214,7 @@ include!("ui_input.rs");
 include!("ui_actions.rs");
 
 include!("ui_form_fields.rs");
+include!("ui_secret_values.rs");
 include!("ui_value_helpers.rs");
 
 #[cfg(test)]

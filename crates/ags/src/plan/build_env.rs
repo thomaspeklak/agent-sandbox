@@ -9,18 +9,27 @@ fn build_env(
         write_roots,
         resolved_secrets,
         auth_proxy_runtime_dir,
+        clipboard_runtime_dir,
+        clipboard_mode,
         host_ui_runtime_dir,
         host_ui_session_id,
         webview_relay_runtime_dir,
         psp_socket,
         psp_session_id,
+        env,
         guard_enabled,
         lockdown,
     } = ctx;
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
+        ("PATH".to_owned(), CONTAINER_PATH.to_owned()),
         ("RUSTUP_HOME".to_owned(), "/usr/local/rustup".to_owned()),
         ("AGS_SANDBOX".to_owned(), "1".to_owned()),
+        ("NPM_CONFIG_STORE_DIR".to_owned(), PNPM_STORE_DIR.to_owned()),
+        (
+            "NPM_CONFIG_GLOBAL_BIN_DIR".to_owned(),
+            PNPM_GLOBAL_BIN_DIR.to_owned(),
+        ),
     ];
     if lockdown {
         inline.push(("AGS_LOCKDOWN".to_owned(), "1".to_owned()));
@@ -67,6 +76,23 @@ fn build_env(
         inline.push((
             "BROWSER".to_owned(),
             format!("{CONTAINER_HOME}/.local/bin/auth-proxy-shim"),
+        ));
+    }
+
+    if !lockdown && clipboard_runtime_dir.is_some() {
+        inline.push((
+            "AGS_CLIPBOARD_SOCK".to_owned(),
+            ClipboardGuard::container_socket_path().to_owned(),
+        ));
+        inline.push(("AGS_CLIPBOARD_PROTOCOL".to_owned(), "1".to_owned()));
+        inline.push(("AGS_CLIPBOARD_MODE".to_owned(), clipboard_mode.to_string()));
+        // Pi's Ctrl-V image paste chooses its wl-paste path when it detects a
+        // Wayland session. This env flag enables that code path without
+        // exposing a real compositor socket.
+        inline.push(("XDG_SESSION_TYPE".to_owned(), "wayland".to_owned()));
+        inline.push((
+            "AGS_CLIPBOARD_HINT".to_owned(),
+            "[ags] Clipboard available through mounted socket; no compositor passthrough".to_owned(),
         ));
     }
 
@@ -119,6 +145,16 @@ fn build_env(
         }
     }
 
+    // Explicit per-run values have final precedence over AGS-managed defaults.
+    // Repeated --env names are applied in CLI order, so the last value wins.
+    for (name, value) in env {
+        if let Some((_, existing_value)) = inline.iter_mut().find(|(key, _)| key == name) {
+            existing_value.clone_from(value);
+        } else {
+            inline.push((name.clone(), value.clone()));
+        }
+    }
+
     let passthrough_names = if lockdown {
         Vec::new()
     } else {
@@ -133,12 +169,15 @@ fn build_env(
     } else {
         resolved_secrets
             .iter()
+            // 1Password authentication remains host-only even when a user has
+            // an unrelated configured secret with an OP_* name.
+            .filter(|(name, _)| !is_onepassword_host_env(name))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     };
     if !lockdown {
         for env_name in &config.sandbox.passthrough_env {
-            if resolved_secrets.contains_key(env_name) {
+            if is_onepassword_host_env(env_name) || resolved_secrets.contains_key(env_name) {
                 continue;
             }
             if let Ok(val) = std::env::var(env_name)
@@ -158,6 +197,10 @@ fn build_env(
     }
 }
 
+fn is_onepassword_host_env(name: &str) -> bool {
+    name.starts_with("OP_")
+}
+
 // --- entrypoint ---
 
 struct EntryPointContext<'a> {
@@ -169,6 +212,8 @@ struct EntryPointContext<'a> {
     webview_relay_enabled: bool,
     show_host_services_hint: bool,
     stop_when_done: bool,
+    payload_fd_count: usize,
+    bootstrap_path: Option<&'a str>,
 }
 
 fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
@@ -181,9 +226,15 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         webview_relay_enabled,
         show_host_services_hint,
         stop_when_done,
+        payload_fd_count,
+        bootstrap_path,
     } = ctx;
     let mut script = String::new();
 
+    let close_payload_fds = payload_fd_count
+        .checked_add(2)
+        .filter(|_| payload_fd_count > 0)
+        .map(|last_fd| format!("for fd in $(seq 3 {last_fd}); do eval \"exec $fd>&-\"; done; "));
     let all_dirs: Vec<String> = boot_dirs
         .iter()
         .chain(profile.extra_boot_dirs.iter())
@@ -191,28 +242,43 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         .collect();
 
     if !all_dirs.is_empty() {
-        script.push_str(&format!("mkdir -p {}; ", all_dirs.join(" ")));
+        append_prebootstrap_command(
+            &mut script,
+            &format!("mkdir -p {}", all_dirs.join(" ")),
+            close_payload_fds.as_deref(),
+        );
     }
 
     if !profile.entrypoint_setup.is_empty() {
-        script.push_str(&profile.entrypoint_setup);
-        script.push_str("; ");
+        append_prebootstrap_command(
+            &mut script,
+            &profile.entrypoint_setup,
+            close_payload_fds.as_deref(),
+        );
     }
 
     if browser_mode && browser.enabled {
-        script.push_str(&format!(
-            "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
-             TCP:10.0.2.2:{port} >/tmp/ags-socat.log 2>&1 & ",
-            port = browser.debug_port
-        ));
+        append_prebootstrap_background_command(
+            &mut script,
+            &format!(
+                "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
+                 TCP:{host}:{port} >/tmp/ags-socat.log 2>&1",
+                host = BROWSER_HOST_LOOPBACK,
+                port = browser.debug_port
+            ),
+            close_payload_fds.as_deref(),
+        );
     }
 
     if webview_relay_enabled {
+        script.push_str("if [ -n \"${AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET:-}\" ]; then ");
+        script.push_str("if command -v python3 >/dev/null 2>&1; then ");
+        append_prebootstrap_background_command(
+            &mut script,
+            "python3 /run/ags-webview-relay/webview-relay-shim >/tmp/ags-webview-relay.log 2>&1",
+            close_payload_fds.as_deref(),
+        );
         script.push_str(concat!(
-            "if [ -n \"${AGS_WEBVIEW_RELAY_UPSTREAM_SOCKET:-}\" ]; then ",
-            "if command -v python3 >/dev/null 2>&1; then ",
-            "python3 /run/ags-webview-relay/webview-relay-shim ",
-            ">/tmp/ags-webview-relay.log 2>&1 & ",
             "else ",
             "echo '[ags] warning: python3 is missing; ",
             "sandbox webview relay will not work in this sandbox.' >&2; ",
@@ -228,31 +294,78 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
     }
 
     let agent_exec = build_agent_exec(profile, browser, browser_mode);
+    let final_exec = |command: String| {
+        bootstrap_path.map_or_else(|| command.clone(), |bootstrap| {
+            format!(
+                "exec {} --fd-count {} -- {}",
+                shell_quote(bootstrap), payload_fd_count, command.strip_prefix("exec ").unwrap_or(&command)
+            )
+        })
+    };
 
     if tmux_mode {
-        script.push_str(
-            "if ! command -v tmux >/dev/null 2>&1; then echo '[ags] tmux is not available in the sandbox image. Run `ags update-image` to rebuild the image with tmux support.' >&2; exit 127; fi; ",
+        let mut tmux_setup = String::from(
+            "if ! command -v tmux >/dev/null 2>&1; then echo '[ags] tmux is not available in the sandbox image. Run `ags update-image` to rebuild the image with tmux support.' >&2; exit 127; fi; cat > /tmp/ags-run-in-tmux.sh <<'EOF'\n#!/usr/bin/env bash\n",
         );
-        script.push_str("cat > /tmp/ags-run-in-tmux.sh <<'EOF'\n#!/usr/bin/env bash\n");
         if stop_when_done {
-            script.push_str(&agent_exec);
+            tmux_setup.push_str(&agent_exec);
         } else {
             // Strip leading "exec " so the agent runs as a child process and the
             // script continues after it exits.
             let child_cmd = agent_exec.strip_prefix("exec ").unwrap_or(&agent_exec);
-            script.push_str(child_cmd);
-            script.push_str("\nAGS_EXIT=$?");
-            script.push_str("\necho \"[ags] Agent exited (code $AGS_EXIT). Shell is ready — type 'exit' to stop the container.\"");
-            script.push_str("\nexec bash");
+            tmux_setup.push_str(child_cmd);
+            tmux_setup.push_str("\nAGS_EXIT=$?");
+            tmux_setup.push_str("\necho \"[ags] Agent exited (code $AGS_EXIT). Shell is ready — type 'exit' to stop the container.\"");
+            tmux_setup.push_str("\nexec bash");
         }
-        script.push_str("\nEOF\n");
-        script.push_str("chmod +x /tmp/ags-run-in-tmux.sh; ");
-        script.push_str("exec tmux new-session -A -s ags /tmp/ags-run-in-tmux.sh \"$@\"");
+        tmux_setup.push_str("\nEOF\nchmod +x /tmp/ags-run-in-tmux.sh");
+        append_prebootstrap_command(
+            &mut script,
+            &tmux_setup,
+            close_payload_fds.as_deref(),
+        );
+        script.push_str(&final_exec(
+            "exec tmux new-session -A -s ags /tmp/ags-run-in-tmux.sh \"$@\"".to_owned(),
+        ));
     } else {
-        script.push_str(&agent_exec);
+        script.push_str(&final_exec(agent_exec));
     }
 
     script
+}
+
+/// Run setup in a subshell without inherited payload FDs. The parent shell
+/// retains them solely for the final bootstrap; this prevents setup children
+/// from receiving descriptors through normal inheritance.
+fn append_prebootstrap_command(script: &mut String, command: &str, close_fds: Option<&str>) {
+    if let Some(close_fds) = close_fds {
+        script.push('(');
+        script.push_str(close_fds);
+        script.push_str(command);
+        script.push_str(") || exit $?; ");
+    } else {
+        script.push_str(command);
+        script.push_str("; ");
+    }
+}
+
+/// Start a background helper without inherited payload FDs. The helper is
+/// `exec`'d only inside the FD-closing subshell, preserving the no-payload form.
+fn append_prebootstrap_background_command(
+    script: &mut String,
+    command: &str,
+    close_fds: Option<&str>,
+) {
+    if let Some(close_fds) = close_fds {
+        script.push('(');
+        script.push_str(close_fds);
+        script.push_str("exec ");
+        script.push_str(command);
+        script.push_str(") & ");
+    } else {
+        script.push_str(command);
+        script.push_str(" & ");
+    }
 }
 
 fn build_agent_exec(profile: &AgentProfile, browser: &BrowserConfig, browser_mode: bool) -> String {

@@ -4,11 +4,13 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::BROWSER_HOST_LOOPBACK;
 use crate::agent::{self, AgentProfile};
 use crate::auth_proxy::host::AuthProxyGuard;
 use crate::cli::Agent;
+use crate::clipboard::ClipboardGuard;
 use crate::config::{
-    BrowserConfig, MountKind, MountMode, MountWhen, ValidatedConfig, ValidatedMount,
+    BrowserConfig, ClipboardMode, MountKind, MountMode, MountWhen, ValidatedConfig, ValidatedMount,
 };
 use crate::git;
 use crate::host_ui::HostUiGuard;
@@ -20,9 +22,14 @@ use crate::webview_relay::WebviewRelayGuard;
 const CONTAINER_HOME: &str = "/home/dev";
 const CONTAINER_GITCONFIG: &str = "/home/dev/.config/ags/gitconfig";
 const CONTAINER_SSH_SOCK: &str = "/ssh-agent";
+const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin";
+const PNPM_STORE_DIR: &str = "/usr/local/pnpm/.store";
+const PNPM_GLOBAL_BIN_DIR: &str = "/usr/local/pnpm";
 const HOST_SERVICES_HOST: &str = "host.containers.internal";
 const HOST_SERVICES_HINT: &str =
     "[ags] Host services: use host.containers.internal (localhost is container-local)";
+/// The only container destination accepted for the AGS-owned bootstrap asset.
+pub const ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH: &str = "/run/ags/onepassword-bootstrap";
 
 pub struct BuildLaunchPlanOptions<'a> {
     pub browser_mode: bool,
@@ -32,6 +39,8 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub ssh_auth_sock: Option<&'a Path>,
     pub resolved_secrets: &'a HashMap<String, String>,
     pub auth_proxy_runtime_dir: Option<&'a Path>,
+    pub clipboard_runtime_dir: Option<&'a Path>,
+    pub clipboard_mode: ClipboardMode,
     pub host_ui_runtime_dir: Option<&'a Path>,
     pub host_ui_session_id: Option<&'a str>,
     pub webview_relay_runtime_dir: Option<&'a Path>,
@@ -39,8 +48,16 @@ pub struct BuildLaunchPlanOptions<'a> {
     pub psp_session_id: Option<&'a str>,
     pub extra_mounts: &'a [PlanMount],
     pub extra_mount_dirs: &'a [PathBuf],
+    pub env: &'a [(String, String)],
     pub stop_when_done: bool,
     pub root_mode: bool,
+    pub wayland_passthrough: bool,
+    /// Anonymous item FDs prepared for the final-process bootstrap.
+    pub payload_fd_count: usize,
+    /// Container path of the mounted bootstrap. Must be present with payload FDs.
+    pub bootstrap_path: Option<&'a str>,
+    /// Exact host path of the private, per-run bootstrap asset.
+    pub bootstrap_host_path: Option<&'a Path>,
 }
 
 /// Intermediate env-assembly context. Sidecar fields mirror
@@ -52,11 +69,14 @@ struct BuildEnvContext<'a> {
     write_roots: &'a [String],
     resolved_secrets: &'a HashMap<String, String>,
     auth_proxy_runtime_dir: Option<&'a Path>,
+    clipboard_runtime_dir: Option<&'a Path>,
+    clipboard_mode: ClipboardMode,
     host_ui_runtime_dir: Option<&'a Path>,
     host_ui_session_id: Option<&'a str>,
     webview_relay_runtime_dir: Option<&'a Path>,
     psp_socket: Option<&'a Path>,
     psp_session_id: Option<&'a str>,
+    env: &'a [(String, String)],
     guard_enabled: bool,
     lockdown: bool,
 }
@@ -65,6 +85,7 @@ struct BuildEnvContext<'a> {
 /// An empty env_var means no environment variable is emitted for that mount.
 const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
     ("pnpm-home", "/usr/local/pnpm", "PNPM_HOME"),
+    ("codex-install", "/opt/codex-home", ""),
     ("claude-install", "/opt/claude-home", ""),
     ("cargo-home", "/home/dev/.cargo", "CARGO_HOME"),
     ("go-path", "/home/dev/go", "GOPATH"),
@@ -90,6 +111,8 @@ pub fn build_launch_plan(
         ssh_auth_sock,
         resolved_secrets,
         auth_proxy_runtime_dir,
+        clipboard_runtime_dir,
+        clipboard_mode,
         host_ui_runtime_dir,
         host_ui_session_id,
         webview_relay_runtime_dir,
@@ -97,11 +120,36 @@ pub fn build_launch_plan(
         psp_session_id,
         extra_mounts,
         extra_mount_dirs,
+        env,
         stop_when_done,
         root_mode,
+        wayland_passthrough,
+        payload_fd_count,
+        bootstrap_path,
+        bootstrap_host_path,
     } = options;
+    if payload_fd_count > 0 && bootstrap_path != Some(ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH) {
+        return Err(PlanError::PayloadBootstrapInvalid);
+    }
+    if payload_fd_count > 0 && bootstrap_host_path.is_none() {
+        return Err(PlanError::PayloadBootstrapMissing);
+    }
+    if payload_fd_count == 0 && (bootstrap_path.is_some() || bootstrap_host_path.is_some()) {
+        return Err(PlanError::PayloadBootstrapUnexpected);
+    }
+    if let Some(path) = bootstrap_host_path
+        && !path.is_file()
+    {
+        return Err(PlanError::PayloadBootstrapHostMissing(path.to_owned()));
+    }
     let effective_browser_mode = browser_mode && !lockdown;
     let auth_proxy_runtime_dir = auth_proxy_runtime_dir.filter(|_| !lockdown);
+    let clipboard_runtime_dir = clipboard_runtime_dir.filter(|_| !lockdown);
+    let clipboard_mode = if clipboard_runtime_dir.is_some() {
+        clipboard_mode
+    } else {
+        ClipboardMode::Off
+    };
     let host_ui_runtime_dir = host_ui_runtime_dir.filter(|_| !lockdown);
     let webview_relay_runtime_dir = webview_relay_runtime_dir.filter(|_| !lockdown);
     let psp_socket = psp_socket.filter(|_| !lockdown);
@@ -135,7 +183,11 @@ pub fn build_launch_plan(
         add_infrastructure_mounts(&mut mounts, config, cache_dir);
     }
 
-    let wayland = if lockdown { None } else { detect_wayland()? };
+    let wayland = if lockdown || !wayland_passthrough {
+        None
+    } else {
+        detect_wayland()?
+    };
     if let Some(ref w) = wayland {
         mounts.push(PlanMount {
             host: w.socket_path.clone(),
@@ -199,6 +251,22 @@ pub fn build_launch_plan(
             });
         }
 
+        if let Some(runtime_dir) = clipboard_runtime_dir {
+            mounts.push(PlanMount {
+                host: runtime_dir.to_owned(),
+                container: ClipboardGuard::container_runtime_dir().to_owned(),
+                mode: MountMode::Rw,
+            });
+            let shim_host = runtime_dir.join(crate::clipboard::SHIM_NAME);
+            for name in ["wl-paste", "wl-copy"] {
+                mounts.push(PlanMount {
+                    host: shim_host.clone(),
+                    container: format!("{CONTAINER_HOME}/.local/bin/{name}"),
+                    mode: MountMode::Ro,
+                });
+            }
+        }
+
         if let Some(runtime_dir) = host_ui_runtime_dir {
             mounts.push(PlanMount {
                 host: runtime_dir.to_owned(),
@@ -236,6 +304,17 @@ pub fn build_launch_plan(
         add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
     }
 
+    // Render the trusted bootstrap after every user- or runtime-controlled
+    // mount. The final, exact bind wins even when an earlier destination reaches
+    // `/run` through an image symlink such as `/var/run`.
+    if let Some(host) = bootstrap_host_path {
+        mounts.push(PlanMount {
+            host: host.to_owned(),
+            container: ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH.to_owned(),
+            mode: MountMode::Ro,
+        });
+    }
+
     // Environment
     let env = build_env(
         config,
@@ -246,11 +325,14 @@ pub fn build_launch_plan(
             write_roots: &write_roots,
             resolved_secrets,
             auth_proxy_runtime_dir,
+            clipboard_runtime_dir,
+            clipboard_mode,
             host_ui_runtime_dir,
             host_ui_session_id,
             webview_relay_runtime_dir,
             psp_socket,
             psp_session_id,
+            env,
             guard_enabled,
             lockdown,
         },
@@ -274,6 +356,8 @@ pub fn build_launch_plan(
         webview_relay_enabled: webview_relay_runtime_dir.is_some(),
         show_host_services_hint: !lockdown,
         stop_when_done,
+        payload_fd_count,
+        bootstrap_path,
     });
 
     Ok(LaunchPlan {
@@ -293,6 +377,8 @@ pub fn build_launch_plan(
         network_mode,
         boot_dirs: config.sandbox.container_boot_dirs.clone(),
         entrypoint,
+        payload_fd_count,
+        bootstrap_path: bootstrap_path.map(str::to_owned),
     })
 }
 

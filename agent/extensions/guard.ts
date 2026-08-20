@@ -1,5 +1,5 @@
 import { isAbsolute, normalize, relative, resolve } from "node:path";
-import { isToolCallEventType, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { isToolCallEventType, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const SENSITIVE_PATH_PREFIXES = [
 	"/home/dev/.ssh",

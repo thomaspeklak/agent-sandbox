@@ -11,6 +11,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - `README.md` (this file): quick start + daily usage
 - `docs/COMMANDS.md`: detailed command behavior and side effects
 - `docs/CONFIG.md`: full config schema and semantics
+- `docs/ONEPASSWORD.md`: CLI-only Secure Note environment-set workflow
 - `docs/GLIMPSE.md`: user-facing Glimpse/host UI setup and usage
 - `docs/TROUBLESHOOTING.md`: common problems and fixes
 - `docs/ARCHITECTURE.md`: internal architecture overview
@@ -32,6 +33,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - Tools-only TUI package configurator for host-installed tools
 - Optional hardened `--lockdown` runs for inspecting untrusted/foreign repos with reduced host exposure
 - Optional browser sidecar support for browser-enabled workflows
+- Narrow clipboard bridge for Pi Ctrl-V image paste and copy flows without compositor passthrough
 - Auth proxy for secure sandbox browser opens and OAuth loopback callbacks
 - Health checks via `ags doctor`
 - Convenience alias/wrapper generation via `ags create-aliases`
@@ -154,7 +156,7 @@ cargo run -p ags -- setup
 ### 4) Build/update sandbox image and agent installs
 
 ```bash
-cargo run -p ags -- update
+cargo run -p ags -- update-image
 cargo run -p ags -- update-agents
 ```
 
@@ -162,7 +164,7 @@ cargo run -p ags -- update-agents
 
 ```bash
 cargo run -p ags -- doctor
-cargo run -p ags -- --agent shell -- -lc 'br --version && bv --version && dcg --version && tmux -V && test -f ~/.tmux.conf'
+cargo run -p ags -- --agent shell -- -lc 'br --version && dcg --version && tmux -V && test -f ~/.tmux.conf'
 ```
 
 ---
@@ -271,7 +273,7 @@ This is intentionally **not** the default.
 If `tmux` is reported as missing when using `--tmux`, rebuild the sandbox image first:
 
 ```bash
-ags update
+ags update-image
 ```
 
 Quick check:
@@ -317,7 +319,7 @@ To connect to services running on your host machine, use `host.containers.intern
 - `AGS_HOST_SERVICES_HOST=host.containers.internal`
 - `AGS_HOST_SERVICES_HINT` (human-readable reminder)
 
-And for agents with prompt hooks (`pi`, `claude`, `codex`), `ags` injects a short startup hint into the agent prompt context.
+For `pi`, `claude`, `codex`, and `opencode`, `ags` also injects a short startup hint into the agent prompt context.
 
 Example:
 
@@ -325,13 +327,34 @@ Example:
 ags --agent shell -- -lc 'curl http://host.containers.internal:3000/health'
 ```
 
-Postgres example (`psql` is available in the sandbox image after `ags update`):
+Postgres example (`psql` is available in the sandbox image after `ags update-image`):
 
 ```bash
 ags --agent shell -- -lc 'PGPASSWORD="${PGPASSWORD:-postgres}" psql -h "${AGS_HOST_SERVICES_HOST}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" "${PGDATABASE:-postgres}"'
 ```
 
 Tip: add `PGPASSWORD`, `PGUSER`, `PGDATABASE`, and `PGPORT` to `[sandbox].passthrough_env` if you want host values to flow into the container automatically.
+
+### 1Password Secure Note environment sets
+
+For a one-off database or service credential set, pass a host 1Password Secure Note explicitly:
+
+```console
+ags --agent pi -1 'ExampleVault/readonly-database'
+```
+
+`-1` is short for the repeatable `--op-secret-set VAULT/ITEM` flag. The item must have category `SECURE_NOTE`; every field with a present string value is injected using its custom-field label unchanged, so labels must already be safe environment-variable names. For example: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`. Empty values are valid, and later fields/items override earlier labels.
+
+This is CLI-only: there is no `config.toml` key, field mapping, preset, or automatic activation. **Only 1Password `SECURE_NOTE` items are supported**—not Login, Password, API Credential, or other item categories. AGS runs `op` on the host with normal interactive 1Password authentication; it is not mounted into the sandbox. The final agent process tree—including `psql`, MCP servers, subagents, tmux panes, and post-agent tmux shells—receives the variables. See [`docs/ONEPASSWORD.md`](docs/ONEPASSWORD.md) for the complete workflow.
+
+Values stay out of AGS argv, Podman configuration, regular files, and AGS's long-lived userspace memory. The host `op` process and the final container bootstrap necessarily see them briefly; the final environment remains inspectable by authorized same-user/root processes through `/proc/<pid>/environ`. Vault/item names are metadata and are visible in the host `op` command line. Use a dedicated least-privilege/readonly DB role and rotate or revoke it independently.
+
+`--lockdown` cannot be combined with `-1`/`--op-secret-set`. This transport requires **local** Podman support for `--preserve-fds`; remote Podman is unsupported. To smoke-test a readonly item without printing a password or dumping the environment, check only required names and connectivity, for example:
+
+```console
+ags --agent shell -1 'ExampleVault/readonly-database' -- \
+  -lc 'test -n "${PGHOST-}" && test -n "${PGUSER-}" && psql -c "select 1" >/dev/null'
+```
 
 ### Host-owned Glimpse windows
 
@@ -350,7 +373,7 @@ Start here:
 
 - `ags setup` — generate keys, ensure Pi assets in mounted host path, optional keyring secret setup
 - `ags doctor` — run environment + config health checks
-- `ags update` — rebuild container image from `Containerfile` and refresh bundled `br`/`bv`/`dcg` binaries
+- `ags update-image [--keep-existing]` — rebuild container image from `Containerfile`, refresh bundled `br`/`dcg` binaries, and remove the previous image after a successful rebuild unless it is still referenced by a container or `--keep-existing` is set
 - `ags update-agents` — install/update agent CLIs in persistent volumes
 - `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
 - `ags uninstall` — currently reserved/no-op cleanup
@@ -393,9 +416,11 @@ ags completions --shell fish > ~/.config/fish/completions/ags.fish
 - `--yolo`
 - `--root`
 - `--lockdown` (harden the run by disabling host bridges, secrets, SSH agent, generic mounts/tools, direct agent-home mounts, host-loopback networking, and adding size-limited tmpfs mounts for that run)
+- `--wayland-compositor-passthrough` (mount the real host Wayland compositor socket; broad desktop access and separate from clipboard support)
 - `--defaults` / `-D` (prepend AGS-managed passthrough defaults for the selected harness)
 - `--config <path>`
 - `--add-dir <path>` / `-d <path>` (repeatable, run only; still allowed in lockdown)
+- `--env <NAME=VALUE>` (repeatable, run only; sets an explicit container environment variable, with later assignments winning; do not use for secrets because values appear in the host command line)
 
 ---
 
@@ -416,7 +441,7 @@ Precedence order:
 1. user/global config (`~/.config/ags/config.toml`, or `--config <path>` if provided)
 2. repo-local overlay (`PROJECT_ROOT/.ags/config.toml`) when running inside a git repo/worktree
 
-Repo-local scalar/table fields override the base config. Repeatable sections (`[[mount]]`, `[[agent_mount]]`, `[[tool]]`, `[[secret]]`) are additive.
+Repo-local scalar/table fields override the base config. Repeatable sections (`[[mount]]`, `[[agent_mount]]`, `[[tool]]`, `[[secret]]`) are additive. Host `command` secret sources are the exception: they are rejected in repo-local overlays and must be placed in trusted user/global config.
 
 Use `config/config.example.toml` for full schema examples.
 
@@ -437,11 +462,15 @@ Use `config/config.example.toml` for full schema examples.
   - optional nested `[[tool.directory]]` mounts
   - optional nested `[[tool.secret]]` sources
 - `[[secret]]`
-  - Map env var names to source(s): `from_env` and/or `secret_store`
+  - Map env var names to ordered source alternatives: `from_env`, `secret_store`, and trusted host `command` argv arrays
 - `[auth_proxy]`
   - `auto_allow_domains`: list of domains to skip the allow/deny prompt for (e.g. `["mcp.linear.app"]`)
 - `[browser]`
   - Enables browser sidecar integration used with `--browser`
+- `[clipboard]`
+  - Starts the socket-backed clipboard bridge (`off`, `read`, or `readwrite`) with host approval windows for reads by default
+- `[desktop_passthrough]`
+  - Explicit broad desktop passthrough controls such as raw Wayland compositor access
 - `[update]`
   - Controls Pi package spec and pnpm minimum release age for updates
 
@@ -453,11 +482,13 @@ Use `config/config.example.toml` for full schema examples.
 - Only mount what the agent needs.
 - Prefer read-only (`ro`) mounts unless write access is required.
 - For untrusted or foreign repos, prefer `--lockdown` to minimize host exposure for that run.
-- In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update` if Bash commands are unexpectedly blocked.
+- In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update-image` if Bash commands are unexpectedly blocked.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
 - npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
 - Rotate/revoke credentials quickly if compromise is suspected.
-- The auth proxy requires explicit user approval (via desktop dialog) before opening any URL requested by the sandbox agent. URLs are never opened silently.
+- The clipboard bridge is narrower than raw Wayland passthrough. Host clipboard reads require approval by default and can be allowed for `[clipboard].approval_seconds`; disabling approval restores session-wide read access.
+- Raw Wayland compositor passthrough is disabled by default; enable it only with `[desktop_passthrough].wayland = true` or `--wayland-compositor-passthrough` when you intentionally want sandbox GUI clients on the host desktop.
+- The auth proxy requires explicit user approval via the shared AGS desktop dialog before opening any URL requested by the sandbox agent. URLs are never opened silently.
 - OAuth loopback callbacks are relayed through the host proxy — the container never listens on host network ports directly.
 - This repo ships a project-local dcg policy (`.dcg/packs/git-worktree-sandbox.yaml`) that blocks `git worktree prune` in sandbox sessions because not all host worktrees are necessarily visible from inside the container.
 
@@ -479,7 +510,7 @@ Use `config/config.example.toml` for full schema examples.
 ## Troubleshooting
 
 - Run `ags doctor` first.
-- If image is missing/stale: run `ags update`.
+- If image is missing/stale: run `ags update-image`.
 - If agent CLIs are missing/stale: run `ags update-agents`.
 - If browser mode fails:
   - ensure `[browser].enabled = true`

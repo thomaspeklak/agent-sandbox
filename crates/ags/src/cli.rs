@@ -1,18 +1,18 @@
-#[path = "cli_completions.rs"]
-mod completions;
 #[path = "cli_help.rs"]
 mod help;
+#[path = "cli_subcommands.rs"]
+mod subcommands;
 #[path = "cli_tools.rs"]
 mod tools;
+#[path = "cli_update_image.rs"]
+mod update_image;
 
-pub use completions::CompletionsOptions;
+use crate::run_defaults;
 use help::HELP_TEXT;
-pub use tools::ToolConfigOptions;
-
 use std::fmt;
 use std::path::PathBuf;
 
-use crate::run_defaults;
+pub use tools::ToolConfigOptions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
@@ -71,9 +71,12 @@ pub struct RunOptions {
     pub yolo: bool,
     pub root: bool,
     pub lockdown: bool,
+    pub wayland_compositor_passthrough: bool,
     pub stop_when_done: bool,
     pub config_path: Option<PathBuf>,
     pub add_dirs: Vec<PathBuf>,
+    pub env: Vec<(String, String)>,
+    pub op_secret_sets: Vec<String>,
     pub passthrough_args: Vec<String>,
 }
 
@@ -128,11 +131,21 @@ pub struct InstallOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionsOptions {
+    pub shell: Shell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct UpdateImageOptions {
+    pub keep_existing: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubCommand {
     Setup,
     Doctor,
-    UpdateImage,
-    UpdateDeprecated,
+    UpdateImage(UpdateImageOptions),
+    UpdateDeprecated(UpdateImageOptions),
     UpdateAgents,
     Install(InstallOptions),
     Uninstall,
@@ -150,10 +163,14 @@ pub enum CliError {
     MissingConfigValue,
     MissingToolPackagesValue,
     MissingToolPackagesPath,
+    MissingEnvValue,
+    MissingOpSecretSetValue,
     MissingShellValue,
     MissingAliasModeValue,
     MissingMountPathValue,
     InvalidAgent(String),
+    InvalidEnvAssignment(String),
+    ReservedEnvName(String),
     InvalidShell(String),
     InvalidAliasMode(String),
     UnexpectedFlag(String),
@@ -173,10 +190,22 @@ impl fmt::Display for CliError {
             Self::MissingToolPackagesPath => {
                 f.write_str("missing tool package JSON path (use `ags tools --packages <path>`)")
             }
+            Self::MissingEnvValue => f.write_str("missing value for --env (expected NAME=VALUE)"),
+            Self::MissingOpSecretSetValue => f.write_str("missing value for --op-secret-set / -1"),
             Self::MissingShellValue => f.write_str("missing value for --shell"),
             Self::MissingAliasModeValue => f.write_str("missing value for --mode"),
             Self::MissingMountPathValue => f.write_str("missing value for --add-dir / -d"),
             Self::InvalidAgent(agent) => write!(f, "invalid agent '{agent}'"),
+            Self::InvalidEnvAssignment(value) => write!(
+                f,
+                "invalid environment assignment '{value}' (expected NAME=VALUE)"
+            ),
+            Self::ReservedEnvName(name) => {
+                write!(
+                    f,
+                    "environment variable '{name}' uses the reserved AGS_ prefix"
+                )
+            }
             Self::InvalidShell(shell) => {
                 write!(f, "invalid shell '{shell}' (expected fish|zsh|bash)")
             }
@@ -208,20 +237,28 @@ where
         "-h" | "--help" => return Err(CliError::HelpRequested),
         "setup" => return Ok(Command::Sub(SubCommand::Setup)),
         "doctor" => return Ok(Command::Sub(SubCommand::Doctor)),
-        "update-image" => return Ok(Command::Sub(SubCommand::UpdateImage)),
-        "update" => return Ok(Command::Sub(SubCommand::UpdateDeprecated)),
+        "update-image" => {
+            return Ok(Command::Sub(SubCommand::UpdateImage(
+                update_image::parse_args(iter)?,
+            )));
+        }
+        "update" => {
+            return Ok(Command::Sub(SubCommand::UpdateDeprecated(
+                update_image::parse_args(iter)?,
+            )));
+        }
         "update-agents" => return Ok(Command::Sub(SubCommand::UpdateAgents)),
         "install" => {
-            let opts = parse_install_args(iter)?;
+            let opts = subcommands::parse_install_args(iter)?;
             return Ok(Command::Sub(SubCommand::Install(opts)));
         }
         "uninstall" => return Ok(Command::Sub(SubCommand::Uninstall)),
         "create-aliases" => {
-            let opts = parse_create_aliases_args(iter)?;
+            let opts = subcommands::parse_create_aliases_args(iter)?;
             return Ok(Command::Sub(SubCommand::CreateAliases(opts)));
         }
         "completions" => {
-            let opts = completions::parse_completions_args(iter)?;
+            let opts = subcommands::parse_completions_args(iter)?;
             return Ok(Command::Sub(SubCommand::Completions(opts)));
         }
         "config" => return Ok(Command::Sub(SubCommand::Config)),
@@ -262,9 +299,12 @@ where
         yolo: state.yolo,
         root: state.root,
         lockdown: state.lockdown,
+        wayland_compositor_passthrough: state.wayland_compositor_passthrough,
         stop_when_done: state.stop_when_done,
         config_path: state.config_path,
         add_dirs: state.add_dirs,
+        env: state.env,
+        op_secret_sets: state.op_secret_sets,
         passthrough_args,
     }))
 }
@@ -279,10 +319,13 @@ struct RunParseState {
     yolo: bool,
     root: bool,
     lockdown: bool,
+    wayland_compositor_passthrough: bool,
     stop_when_done: bool,
     use_defaults: bool,
     config_path: Option<PathBuf>,
     add_dirs: Vec<PathBuf>,
+    env: Vec<(String, String)>,
+    op_secret_sets: Vec<String>,
 }
 
 fn parse_run_arg<I: Iterator<Item = String>>(
@@ -343,6 +386,11 @@ fn parse_run_arg<I: Iterator<Item = String>>(
         return Ok(());
     }
 
+    if arg == "--wayland-compositor-passthrough" {
+        state.wayland_compositor_passthrough = true;
+        return Ok(());
+    }
+
     if arg == "--stop-when-done" {
         state.stop_when_done = true;
         return Ok(());
@@ -373,6 +421,34 @@ fn parse_run_arg<I: Iterator<Item = String>>(
         return Ok(());
     }
 
+    if arg == "--env" {
+        let raw = iter.next().ok_or(CliError::MissingEnvValue)?;
+        state.env.push(parse_env_assignment(&raw)?);
+        return Ok(());
+    }
+
+    if let Some(raw) = arg.strip_prefix("--env=") {
+        if raw.is_empty() {
+            return Err(CliError::MissingEnvValue);
+        }
+        state.env.push(parse_env_assignment(raw)?);
+        return Ok(());
+    }
+
+    if arg == "--op-secret-set" || arg == "-1" {
+        let raw = iter.next().ok_or(CliError::MissingOpSecretSetValue)?;
+        state.op_secret_sets.push(raw);
+        return Ok(());
+    }
+
+    if let Some(raw) = arg.strip_prefix("--op-secret-set=") {
+        if raw.is_empty() {
+            return Err(CliError::MissingOpSecretSetValue);
+        }
+        state.op_secret_sets.push(raw.to_owned());
+        return Ok(());
+    }
+
     if let Some(raw) = arg.strip_prefix("--add-dir=") {
         if raw.is_empty() {
             return Err(CliError::MissingMountPathValue);
@@ -388,91 +464,22 @@ fn parse_run_arg<I: Iterator<Item = String>>(
     Err(CliError::UnexpectedPositional(arg.to_owned()))
 }
 
-fn parse_install_args<I>(iter: I) -> Result<InstallOptions, CliError>
-where
-    I: Iterator<Item = String>,
-{
-    let mut link_self = false;
-    let mut force = false;
-    let mut add_agent_mounts = false;
-
-    for arg in iter {
-        if arg == "-h" || arg == "--help" {
-            return Err(CliError::HelpRequested);
-        }
-        if arg == "--link-self" {
-            link_self = true;
-            continue;
-        }
-        if arg == "--force" {
-            force = true;
-            continue;
-        }
-        if arg == "--add-agent-mounts" {
-            add_agent_mounts = true;
-            continue;
-        }
-        if arg.starts_with('-') {
-            return Err(CliError::UnexpectedFlag(arg));
-        }
-        return Err(CliError::UnexpectedPositional(arg));
+fn parse_env_assignment(raw: &str) -> Result<(String, String), CliError> {
+    let (name, value) = raw
+        .split_once('=')
+        .ok_or_else(|| CliError::InvalidEnvAssignment(raw.to_owned()))?;
+    let mut chars = name.chars();
+    let valid_name = chars
+        .next()
+        .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric());
+    if !valid_name {
+        return Err(CliError::InvalidEnvAssignment(raw.to_owned()));
     }
-
-    Ok(InstallOptions {
-        link_self,
-        force,
-        add_agent_mounts,
-    })
-}
-
-fn parse_create_aliases_args<I>(mut iter: I) -> Result<CreateAliasesOptions, CliError>
-where
-    I: Iterator<Item = String>,
-{
-    let mut shell = None;
-    let mut mode = AliasMode::Wrappers;
-    let mut force = false;
-
-    while let Some(arg) = iter.next() {
-        if arg == "-h" || arg == "--help" {
-            return Err(CliError::HelpRequested);
-        }
-        if arg == "--force" {
-            force = true;
-            continue;
-        }
-        if arg == "--shell" {
-            let value = iter.next().ok_or(CliError::MissingShellValue)?;
-            shell = Some(Shell::parse(&value)?);
-            continue;
-        }
-        if let Some(value) = arg.strip_prefix("--shell=") {
-            if value.is_empty() {
-                return Err(CliError::MissingShellValue);
-            }
-            shell = Some(Shell::parse(value)?);
-            continue;
-        }
-        if arg == "--mode" {
-            let value = iter.next().ok_or(CliError::MissingAliasModeValue)?;
-            mode = AliasMode::parse(&value)?;
-            continue;
-        }
-        if let Some(value) = arg.strip_prefix("--mode=") {
-            if value.is_empty() {
-                return Err(CliError::MissingAliasModeValue);
-            }
-            mode = AliasMode::parse(value)?;
-            continue;
-        }
-
-        if arg.starts_with('-') {
-            return Err(CliError::UnexpectedFlag(arg));
-        }
-        return Err(CliError::UnexpectedPositional(arg));
+    if name.starts_with("AGS_") {
+        return Err(CliError::ReservedEnvName(name.to_owned()));
     }
-
-    Ok(CreateAliasesOptions { shell, mode, force })
+    Ok((name.to_owned(), value.to_owned()))
 }
 
 pub fn help_text() -> &'static str {

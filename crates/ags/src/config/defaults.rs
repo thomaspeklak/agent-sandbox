@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
 
+pub const DEFAULT_PI_SPEC: &str = "@earendil-works/pi-coding-agent";
+pub const LEGACY_PI_SPECS: &[&str] = &["@mariozechner/pi-coding-agent"];
+
 pub fn create_default_config(path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -71,4 +74,15 @@ binary = "glimpse-host-ui"
 renderer = "stub"
 idle_timeout_ms = 0
 log_level = "info"
+
+[clipboard]
+enabled = true
+mode = "readwrite"
+max_bytes = 33554432
+approval_required = true
+approval_seconds = 300
+approve_writes = false
+
+[desktop_passthrough]
+wayland = false
 "#;

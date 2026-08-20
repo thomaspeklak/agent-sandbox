@@ -42,13 +42,13 @@ Merge rules:
   - `[[secret]]`
 - other arrays are replaced by the repo-local value
 
-This lets a project add mounts/tools/secrets locally without copying your full personal config.
+This lets a project add mounts, tools, and non-command secrets locally without copying your full personal config. For host security, repo-local overlays cannot define `command` secret sources, including under `[[tool.secret]]`.
 
 ---
 
 ## Path and env expansion behavior
 
-For path-like fields, `ags` supports:
+For path-like fields, including the executable element (`command[0]`) of command secret sources, `ags` supports:
 
 - `~` expansion (home directory)
 - environment variable expansion:
@@ -96,7 +96,7 @@ passthrough_env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
 - `image` (string, required)
   - Podman image tag used for runs.
 - `containerfile` (path, required)
-  - Containerfile path used by `ags update` and auto-build fallback.
+  - Containerfile path used by `ags update-image` and auto-build fallback.
 - `cache_dir` (path, required)
   - Host cache dir for ssh-agent env/socket and tool caches.
 - `gitconfig_path` (path, required)
@@ -285,6 +285,15 @@ from_env = "GH_TOKEN"
 
 [[secret]]
 env = "GH_TOKEN"
+command = [
+  "$HOME/.local/bin/credential-store-adapter",
+  "lookup",
+  "--service",
+  "github",
+]
+
+[[secret]]
+env = "GH_TOKEN"
 secret_store = { service = "github-cli-login-switcher", username = "general" }
 ```
 
@@ -293,8 +302,9 @@ secret_store = { service = "github-cli-login-switcher", username = "general" }
 - `env` (required): target env var name inside container
 - `from_env` (optional): source env var from host process environment
 - `secret_store` (optional): key/value attributes for `secret-tool lookup`
+- `command` (optional): non-empty argv string array for a trusted host credential helper
 
-A single entry can include one or both source types.
+A single entry can include multiple source types. For `command`, the first element must resolve to an absolute executable path; remaining elements are passed as literal argv entries. AGS expands `~`, `$VAR`, and `${VAR}` only in the executable. It invokes the executable directly without a shell, so arguments receive no shell parsing or interpolation.
 
 ### Legacy fields (still accepted)
 
@@ -307,8 +317,30 @@ A single entry can include one or both source types.
 - Secrets are processed in config order.
 - For the same target `env`, first successful source wins.
 - Empty/unresolved sources are ignored.
+- Command lookup has a five-second timeout. AGS kills and reaps a timed-out helper, then tries the next source.
+- Helpers run from the host user's home directory rather than the repository working directory. AGS terminates the helper's process group on timeout or malformed/unbounded output.
+- Command success requires exit status `0` and one non-empty UTF-8 value on stdout. One trailing `\n` or `\r\n` is removed. Empty, multiline, NUL-containing, invalid UTF-8, missing, timed-out, and non-zero results are unresolved.
+- Command helpers receive only allowlisted host variables when present: `PATH`, `HOME`, `USER`, `LOGNAME`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR`. They do not receive previously resolved secrets.
+- Helper stdout and stderr are never included in normal diagnostics. `ags doctor` reports executable availability and lookup success or a structural failure without displaying the value or helper output.
+- `--lockdown` disables all configured secret resolution, including command execution.
+
+### Command source security and delivery
+
+`command` intentionally executes trusted user configuration on the host before the container starts. It is accepted only from the user/global base config (including an explicitly selected `--config` file). AGS rejects command sources from repo-local `.ags/config.toml` overlays, including nested `[[tool.secret]]` declarations.
+
+The resolved value is inserted into AGS's existing secret environment map and delivered through the existing environment-file/container-environment mechanism. A sandboxed process can inspect the resulting environment variable. Command sources expand host-side credential-store support; they do not provide process-scoped delivery or keep the resolved value outside the sandbox.
 
 ---
+
+## 1Password Secure Note sets are run-only
+
+1Password injection has **no `config.toml` key**. Do not add an entry, mapping, preset, or allowlist to this file. It is activated only for a single run with repeatable `--op-secret-set VAULT/ITEM` (or `-1 VAULT/ITEM`), for example:
+
+```console
+ags --agent pi -1 'ExampleVault/readonly-database'
+```
+
+The referenced host item must be a `SECURE_NOTE`; its present string-valued fields are injected by their exact labels into only the final agent process tree. See the README's “1Password Secure Note environment sets” section for ordering, security limits, local-Podman requirement, and a no-value-output smoke test.
 
 ## `[browser]`
 
@@ -343,7 +375,7 @@ command_args = []
 
 ## `[host_ui]`
 
-Controls optional host-owned Glimpse windows for sandboxed code.
+Controls optional host-owned Glimpse windows for sandboxed code and AGS's own branded approval dialogs.
 
 ```toml
 [host_ui]
@@ -376,8 +408,65 @@ log_level = "info"
 Notes:
 
 - AGS handles the sandbox wiring automatically once `[host_ui].enabled = true`.
+- Auth-proxy and clipboard approval prompts use the same host UI sidecar for branded, dark/light-aware dialogs; if disabled, they fall back to zenity/kdialog.
 - Users normally should not set Glimpse transport env vars manually.
 - For end-user setup and troubleshooting, see `docs/GLIMPSE.md`.
+
+---
+
+## `[clipboard]`
+
+Controls the narrow AGS clipboard bridge. The bridge lets sandboxed `wl-paste`/`wl-copy` calls talk to a session-scoped host service instead of mounting the real Wayland compositor socket.
+
+```toml
+[clipboard]
+enabled = true
+mode = "readwrite"  # off | read | readwrite
+max_bytes = 33554432
+approval_required = true
+approval_seconds = 300
+approve_writes = false
+```
+
+### Fields
+
+- `enabled` (bool, default `true`)
+  - Starts the AGS clipboard sidecar for normal runs.
+  - Lockdown mode disables it regardless of config.
+- `mode` (string, default `readwrite`)
+  - `off`: no clipboard bridge.
+  - `read`: host → sandbox reads only, enough for Pi Ctrl-V image paste.
+  - `readwrite`: also allows sandbox → host writes for copy flows.
+- `max_bytes` (usize, default `33554432`)
+  - Maximum clipboard payload size for reads and writes.
+- `approval_required` (bool, default `true`)
+  - Prompts on the host before sandboxed code can read clipboard contents.
+  - Set to `false` to restore session-wide read access while `[clipboard]` is enabled.
+- `approval_seconds` (u64, default `300`)
+  - Adds an **Allow for N seconds** choice to the approval dialog.
+  - Set to `0` to only offer one-shot approval.
+- `approve_writes` (bool, default `false`)
+  - Also require approval before sandboxed `wl-copy` writes to the host clipboard.
+
+Security note: this is narrower than compositor passthrough. Clipboard reads are host-approved by default, but MIME type listing remains available so Pi can decide whether Ctrl-V image paste is possible.
+
+---
+
+## `[desktop_passthrough]`
+
+Controls broad desktop/session primitive passthroughs. These should stay disabled unless explicitly needed for debugging GUI clients inside the sandbox.
+
+```toml
+[desktop_passthrough]
+wayland = false
+```
+
+### Fields
+
+- `wayland` (bool, default `false`)
+  - Mounts the real Wayland compositor socket and injects `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR`.
+  - This lets arbitrary Wayland-capable sandbox processes open host windows.
+  - Can also be enabled per run with `--wayland-compositor-passthrough`.
 
 ---
 
@@ -387,14 +476,15 @@ Controls `ags update-agents` behavior.
 
 ```toml
 [update]
-pi_spec = "@mariozechner/pi-coding-agent"
+pi_spec = "@earendil-works/pi-coding-agent"
 minimum_release_age = 1440
 ```
 
 ### Fields
 
-- `pi_spec` (string, default `@mariozechner/pi-coding-agent`)
+- `pi_spec` (string, default `@earendil-works/pi-coding-agent`)
   - Package spec used for Pi install/update.
+  - Older configs with the exact legacy value `@mariozechner/pi-coding-agent` should be updated; `ags update-agents` treats that value as the current default during migration.
 - `minimum_release_age` (u32, default `1440`)
   - Written to pnpm config (`minimum-release-age`) inside update container.
 

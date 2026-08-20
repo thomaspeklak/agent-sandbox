@@ -1,8 +1,16 @@
 use crate::cli::Agent;
 use crate::config::ValidatedConfig;
+use crate::util::shell_quote;
 
 const HOST_SERVICE_PROMPT_HINT: &str =
     "Sandbox: use host.containers.internal (localhost is container-local).";
+const PNPM_AGENT_BIN_DIR: &str = "/usr/local/pnpm";
+const OPENCODE_SANDBOX_INSTRUCTIONS_DIR: &str = "/tmp/ags-opencode";
+const OPENCODE_SANDBOX_INSTRUCTIONS_PATH: &str = "/tmp/ags-opencode/sandbox-instructions.md";
+
+fn pnpm_agent_command(name: &str) -> String {
+    format!("{PNPM_AGENT_BIN_DIR}/{name}")
+}
 
 /// Agent-specific launch profile: command, args, env, and boot behavior.
 #[derive(Default)]
@@ -63,7 +71,7 @@ fn pi_profile(config: &ValidatedConfig, guard_enabled: bool) -> AgentProfile {
     command_args.push(HOST_SERVICE_PROMPT_HINT.to_owned());
 
     AgentProfile {
-        command: "pi".to_owned(),
+        command: pnpm_agent_command("pi"),
         command_args,
         browser_skill_flag: Some("--skill".to_owned()),
         browser_skill_path: config.browser.pi_skill_path.clone(),
@@ -105,7 +113,7 @@ fn claude_profile(guard_enabled: bool, lockdown: bool) -> AgentProfile {
 
 fn codex_profile() -> AgentProfile {
     AgentProfile {
-        command: "codex".to_owned(),
+        command: pnpm_agent_command("codex"),
         command_args: vec![
             "-c".to_owned(),
             format!(
@@ -132,7 +140,7 @@ fn opencode_boot_dirs() -> Vec<String> {
 
 fn gemini_profile() -> AgentProfile {
     AgentProfile {
-        command: "gemini".to_owned(),
+        command: pnpm_agent_command("gemini"),
         ..AgentProfile::default()
     }
 }
@@ -146,9 +154,22 @@ fn shell_profile() -> AgentProfile {
 }
 
 fn opencode_profile() -> AgentProfile {
+    let mut extra_boot_dirs = opencode_boot_dirs();
+    extra_boot_dirs.push(OPENCODE_SANDBOX_INSTRUCTIONS_DIR.to_owned());
+    let config_content = serde_json::json!({
+        "instructions": [OPENCODE_SANDBOX_INSTRUCTIONS_PATH],
+    })
+    .to_string();
+
     AgentProfile {
-        command: "opencode".to_owned(),
-        extra_boot_dirs: opencode_boot_dirs(),
+        command: pnpm_agent_command("opencode"),
+        extra_env: vec![("OPENCODE_CONFIG_CONTENT".to_owned(), config_content)],
+        extra_boot_dirs,
+        entrypoint_setup: format!(
+            "printf '%s\\n' {} > {}",
+            shell_quote(HOST_SERVICE_PROMPT_HINT),
+            shell_quote(OPENCODE_SANDBOX_INSTRUCTIONS_PATH),
+        ),
         ..AgentProfile::default()
     }
 }

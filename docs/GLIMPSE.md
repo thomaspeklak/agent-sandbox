@@ -110,7 +110,7 @@ If you changed AGS itself, rebuild the release binary and image first:
 
 ```bash
 cargo build --release -p ags
-ags update
+ags update-image
 ```
 
 Start a **fresh** AGS session after rebuilding.

@@ -1,10 +1,39 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use ags::cli::Agent;
-use ags::config::{MountMode, parse_toml_str};
+use ags::config::{ClipboardMode, MountMode, parse_toml_str};
 use ags::plan::{BuildLaunchPlanOptions, LaunchPlan, PlanError, build_launch_plan};
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct EnvVarGuard {
+    name: &'static str,
+    original: Option<OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let original = std::env::var_os(name);
+        unsafe { std::env::set_var(name, value) };
+        Self { name, original }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.original.take() {
+            Some(value) => unsafe { std::env::set_var(self.name, value) },
+            None => unsafe { std::env::remove_var(self.name) },
+        }
+    }
+}
 
 /// Look up an inline env var by key from a launch plan.
 fn find_plan_env(plan: &LaunchPlan, key: &str) -> Option<String> {
@@ -26,6 +55,8 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         ssh_auth_sock: None,
         resolved_secrets: secrets,
         auth_proxy_runtime_dir: None,
+        clipboard_runtime_dir: None,
+        clipboard_mode: ClipboardMode::Off,
         host_ui_runtime_dir: None,
         host_ui_session_id: None,
         webview_relay_runtime_dir: None,
@@ -33,8 +64,13 @@ fn default_options(secrets: &HashMap<String, String>) -> BuildLaunchPlanOptions<
         psp_session_id: None,
         extra_mounts: &[],
         extra_mount_dirs: &[],
+        env: &[],
         stop_when_done: false,
         root_mode: false,
+        wayland_passthrough: false,
+        payload_fd_count: 0,
+        bootstrap_path: None,
+        bootstrap_host_path: None,
     }
 }
 
@@ -179,6 +215,117 @@ fn cache_mounts_created() {
 }
 
 #[test]
+fn clipboard_bridge_mounts_socket_and_shims_when_enabled() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    fs::write(runtime.path().join("clipboard-shim"), "#!/bin/sh\n").unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            clipboard_runtime_dir: Some(runtime.path()),
+            clipboard_mode: ClipboardMode::ReadWrite,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|m| m.container == "/run/ags-clipboard")
+    );
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|m| m.container == "/home/dev/.local/bin/wl-paste")
+    );
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|m| m.container == "/home/dev/.local/bin/wl-copy")
+    );
+    assert_eq!(
+        find_plan_env(&plan, "AGS_CLIPBOARD_SOCK"),
+        Some("/run/ags-clipboard/clipboard.sock".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "AGS_CLIPBOARD_MODE"),
+        Some("readwrite".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "XDG_SESSION_TYPE"),
+        Some("wayland".to_owned())
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn wayland_socket_is_not_mounted_without_explicit_passthrough() {
+    use std::os::unix::net::UnixListener;
+
+    let _guard = env_lock().lock().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let socket_path = runtime.path().join("wayland-test");
+    let _listener = UnixListener::bind(&socket_path).unwrap();
+    let _xdg = EnvVarGuard::set("XDG_RUNTIME_DIR", runtime.path());
+    let _display = EnvVarGuard::set("WAYLAND_DISPLAY", "wayland-test");
+
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from(&toml, workdir.path());
+
+    assert!(
+        plan.mounts
+            .iter()
+            .all(|m| m.container != "/tmp/wayland-test")
+    );
+    assert!(find_plan_env(&plan, "WAYLAND_DISPLAY").is_none());
+}
+
+#[test]
+#[cfg(unix)]
+fn explicit_wayland_passthrough_mounts_compositor_socket() {
+    use std::os::unix::net::UnixListener;
+
+    let _guard = env_lock().lock().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let socket_path = runtime.path().join("wayland-test");
+    let _listener = UnixListener::bind(&socket_path).unwrap();
+    let _xdg = EnvVarGuard::set("XDG_RUNTIME_DIR", runtime.path());
+    let _display = EnvVarGuard::set("WAYLAND_DISPLAY", "wayland-test");
+
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            wayland_passthrough: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|m| m.container == "/tmp/wayland-test")
+    );
+    assert_eq!(
+        find_plan_env(&plan, "WAYLAND_DISPLAY"),
+        Some("wayland-test".to_owned())
+    );
+}
+
+#[test]
 fn env_has_required_inline_vars() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();
@@ -195,6 +342,23 @@ fn env_has_required_inline_vars() {
     );
     assert_eq!(find_plan_env(&plan, "AGS_SANDBOX"), Some("1".to_owned()));
     assert_eq!(
+        find_plan_env(&plan, "NPM_CONFIG_STORE_DIR"),
+        Some("/usr/local/pnpm/.store".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "NPM_CONFIG_GLOBAL_BIN_DIR"),
+        Some("/usr/local/pnpm".to_owned())
+    );
+    let path = find_plan_env(&plan, "PATH").expect("PATH should be set");
+    assert!(
+        path.find(":/usr/bin:").unwrap() < path.find(":/usr/local/pnpm:").unwrap(),
+        "system pnpm should take precedence over stale pnpm shims in PNPM_HOME"
+    );
+    assert!(
+        path.find(":/usr/local/pnpm:").unwrap() < path.find(":/home/dev/.npm-global/bin").unwrap(),
+        "pnpm-managed agent shims should take precedence over stale npm-global agent shims"
+    );
+    assert_eq!(
         find_plan_env(&plan, "AGS_HOST_SERVICES_HOST"),
         Some("host.containers.internal".to_owned())
     );
@@ -204,6 +368,46 @@ fn env_has_required_inline_vars() {
     );
     assert!(find_plan_env(&plan, "PNPM_HOME").is_some());
     assert!(find_plan_env(&plan, "CARGO_HOME").is_some());
+}
+
+#[test]
+fn runtime_env_is_set_and_last_value_overrides_managed_defaults() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let env = vec![
+        ("BROWSER_URL".to_owned(), "http://127.0.0.1:9222".to_owned()),
+        ("HOME".to_owned(), "/first".to_owned()),
+        ("HOME".to_owned(), "/custom-home".to_owned()),
+    ];
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            env: &env,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        find_plan_env(&plan, "BROWSER_URL"),
+        Some("http://127.0.0.1:9222".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "HOME"),
+        Some("/custom-home".to_owned())
+    );
+    assert_eq!(
+        plan.env
+            .inline
+            .iter()
+            .filter(|(key, _)| key == "HOME")
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -367,7 +571,7 @@ fn boot_dirs_in_entrypoint() {
         plan.entrypoint
     );
     assert!(plan.entrypoint.contains("/home/dev/.ssh"));
-    assert!(plan.entrypoint.contains("exec pi -e"));
+    assert!(plan.entrypoint.contains("exec /usr/local/pnpm/pi -e"));
     assert!(
         !plan.entrypoint.contains("--no-extensions"),
         "pi should not disable extensions: {}",
@@ -461,7 +665,7 @@ fn tmux_stop_when_done_uses_exec() {
     .unwrap();
 
     assert!(
-        plan.entrypoint.contains("exec pi -e"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/pi -e"),
         "stop_when_done should exec the agent: {}",
         plan.entrypoint
     );
@@ -625,6 +829,32 @@ fn secrets_in_env_file() {
 }
 
 #[test]
+fn op_authentication_variables_are_never_forwarded() {
+    let toml = minimal_config_toml().replace(
+        "passthrough_env = [\"ANTHROPIC_API_KEY\"]",
+        "passthrough_env = [\"OP_SERVICE_ACCOUNT_TOKEN\"]",
+    );
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let mut secrets = HashMap::new();
+    secrets.insert("OP_CONNECT_TOKEN".to_owned(), "not-forwarded".to_owned());
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        default_options(&secrets),
+    )
+    .unwrap();
+
+    assert!(
+        plan.env
+            .env_file_entries
+            .iter()
+            .all(|(name, _)| !name.starts_with("OP_"))
+    );
+}
+
+#[test]
 fn ssh_socket_mounted_when_provided() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();
@@ -735,6 +965,11 @@ pi_skill_path = "/home/dev/browser-tools"
     assert!(
         plan.entrypoint.contains("socat TCP-LISTEN:9222"),
         "browser mode entrypoint should have socat: {}",
+        plan.entrypoint
+    );
+    assert!(
+        plan.entrypoint.contains("TCP:10.0.2.2:9222"),
+        "browser mode entrypoint should forward through the mapped host-loopback address: {}",
         plan.entrypoint
     );
     assert!(
@@ -854,7 +1089,7 @@ fn codex_agent_entrypoint() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Codex);
 
     assert!(
-        plan.entrypoint.contains("exec codex"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/codex"),
         "codex entrypoint should exec codex: {}",
         plan.entrypoint
     );
@@ -881,7 +1116,7 @@ fn gemini_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Gemini);
 
     assert!(
-        plan.entrypoint.contains("exec gemini"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/gemini"),
         "gemini entrypoint: {}",
         plan.entrypoint
     );
@@ -900,7 +1135,7 @@ fn opencode_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Opencode);
 
     assert!(
-        plan.entrypoint.contains("exec opencode"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/opencode"),
         "opencode entrypoint: {}",
         plan.entrypoint
     );
@@ -910,6 +1145,88 @@ fn opencode_agent_has_sandbox_mount() {
         .find(|m| m.container == "/home/dev/.config/opencode");
     assert!(oc_mount.is_some(), "opencode should have config mount");
     assert_eq!(oc_mount.unwrap().mode, MountMode::Rw);
+    assert!(
+        plan.entrypoint
+            .contains("/tmp/ags-opencode/sandbox-instructions.md"),
+        "opencode should create its sandbox instruction file: {}",
+        plan.entrypoint
+    );
+    assert!(
+        plan.entrypoint
+            .contains("Sandbox: use host.containers.internal (localhost is container-local)."),
+        "opencode sandbox instruction missing: {}",
+        plan.entrypoint
+    );
+    let config_content = find_plan_env(&plan, "OPENCODE_CONFIG_CONTENT")
+        .expect("opencode should receive inline instruction config");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&config_content).expect("opencode inline config should be valid JSON");
+    assert_eq!(
+        parsed["instructions"],
+        serde_json::json!(["/tmp/ags-opencode/sandbox-instructions.md"])
+    );
+    assert!(
+        !plan.entrypoint.contains("--prompt"),
+        "opencode sandbox context must not be injected as a user prompt"
+    );
+}
+
+#[test]
+fn opencode_keeps_sandbox_instructions_in_lockdown() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Opencode,
+        BuildLaunchPlanOptions {
+            lockdown: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert!(
+        find_plan_env(&plan, "OPENCODE_CONFIG_CONTENT").is_some(),
+        "lockdown should retain OpenCode sandbox instructions"
+    );
+    assert!(
+        plan.entrypoint
+            .contains("/tmp/ags-opencode/sandbox-instructions.md")
+    );
+    assert!(
+        plan.entrypoint
+            .contains("Sandbox: use host.containers.internal (localhost is container-local).")
+    );
+}
+
+#[test]
+fn opencode_explicit_inline_config_overrides_managed_instructions() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let env = vec![(
+        "OPENCODE_CONFIG_CONTENT".to_owned(),
+        r#"{"instructions":["custom.md"]}"#.to_owned(),
+    )];
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Opencode,
+        BuildLaunchPlanOptions {
+            env: &env,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        find_plan_env(&plan, "OPENCODE_CONFIG_CONTENT"),
+        Some(r#"{"instructions":["custom.md"]}"#.to_owned())
+    );
 }
 
 #[test]

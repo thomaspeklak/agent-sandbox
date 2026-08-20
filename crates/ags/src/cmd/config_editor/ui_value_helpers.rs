@@ -9,8 +9,7 @@ fn parse_string_list(input: &str) -> Vec<String> {
 
 fn parse_key_value_pairs(input: &str) -> Result<Vec<(String, String)>, String> {
     let mut pairs = Vec::new();
-    for pair in input
-        .split(',')
+    for pair in split_top_level(input, ',')
         .map(str::trim)
         .filter(|pair| !pair.is_empty())
     {
@@ -51,8 +50,7 @@ struct FlattenedEntryParts {
 }
 
 fn parse_flattened_entries(input: &str) -> Result<Vec<FlattenedEntryParts>, String> {
-    input
-        .split(';')
+    split_top_level(input, ';')
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
         .map(|entry| {
@@ -77,6 +75,12 @@ fn parse_flattened_entries(input: &str) -> Result<Vec<FlattenedEntryParts>, Stri
 }
 
 fn flattened_scalar_item(raw: &str) -> toml_edit::Item {
+    if matches!(raw.as_bytes().first(), Some(b'"' | b'\''))
+        && let Ok(document) = format!("value = {raw}").parse::<toml_edit::DocumentMut>()
+        && let Some(value) = document["value"].as_str()
+    {
+        return toml_edit::value(value);
+    }
     if let Ok(value) = raw.parse::<bool>() {
         return toml_edit::value(value);
     }
@@ -103,7 +107,11 @@ fn set_flattened_nested_entries(
     for parsed in parse_flattened_entries(input)? {
         let mut nested_entry = toml_edit::Table::new();
         for (key, value) in parsed.scalars {
-            nested_entry[key.as_str()] = flattened_scalar_item(&value);
+            nested_entry[key.as_str()] = if key == "command" {
+                string_array_item(&key, &value)?
+            } else {
+                flattened_scalar_item(&value)
+            };
         }
         for (inline_key, pairs) in parsed.inline_tables {
             let mut inline = toml_edit::InlineTable::new();
@@ -139,6 +147,7 @@ fn apply_entry_form(
     for &(key, kind, ref value) in field_values {
         match (key, kind) {
             ("secret_store", _) | ("attributes", _) => set_inline_table(entry, key, value)?,
+            ("command", _) => set_string_array(entry, key, value)?,
             ("directories", _) => set_nested_mount_entries(entry, value)?,
             ("secrets", _) => set_nested_secret_entries(entry, value)?,
             (_, FieldKind::Checkbox) => {
@@ -168,11 +177,17 @@ fn apply_entry_form(
             .and_then(|item| item.as_str())
             .is_some();
         let has_secret_store = entry.get("secret_store").is_some();
+        let has_command = entry.get("command").is_some();
         let has_provider = entry
             .get("provider")
             .and_then(|item| item.as_str())
             .is_some();
-        if !env.is_empty() && !has_from_env && !has_secret_store && !has_provider {
+        if !env.is_empty()
+            && !has_from_env
+            && !has_secret_store
+            && !has_command
+            && !has_provider
+        {
             entry["from_env"] = toml_edit::value(env);
         }
     }
@@ -417,6 +432,13 @@ fn summarize_array_entry(toml_key: &str, table: &toml_edit::Table) -> String {
                 format!("{}  from_env={}", env, from_env)
             } else if table.get("secret_store").is_some() {
                 format!("{}  secret_store", env)
+            } else if let Some(executable) = table
+                .get("command")
+                .and_then(|item| item.as_array())
+                .and_then(|array| array.iter().next())
+                .and_then(|value| value.as_str())
+            {
+                format!("{}  command={}", env, executable)
             } else {
                 env.to_string()
             }
