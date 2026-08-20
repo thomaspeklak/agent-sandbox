@@ -292,7 +292,7 @@ fn gemini_profile_basics() {
 }
 
 #[test]
-fn opencode_profile_boot_dirs() {
+fn opencode_profile_injects_sandbox_instructions() {
     let config = minimal_config();
     let profile = profile_for(Agent::Opencode, &config);
     assert_eq!(profile.command, "/usr/local/pnpm/opencode");
@@ -300,7 +300,32 @@ fn opencode_profile_boot_dirs() {
         profile.extra_boot_dirs,
         vec![
             "/home/dev/.local/share/opencode",
-            "/home/dev/.cache/opencode"
+            "/home/dev/.cache/opencode",
+            "/tmp/ags-opencode"
         ]
+    );
+    assert!(profile.command_args.is_empty());
+    assert!(
+        profile
+            .entrypoint_setup
+            .contains("Sandbox: use host.containers.internal (localhost is container-local).")
+    );
+    assert!(
+        profile
+            .entrypoint_setup
+            .contains("/tmp/ags-opencode/sandbox-instructions.md")
+    );
+
+    let config_content = profile
+        .extra_env
+        .iter()
+        .find(|(key, _)| key == "OPENCODE_CONFIG_CONTENT")
+        .map(|(_, value)| value)
+        .expect("OpenCode inline config should be present");
+    let parsed: serde_json::Value =
+        serde_json::from_str(config_content).expect("OpenCode inline config should be valid JSON");
+    assert_eq!(
+        parsed["instructions"],
+        serde_json::json!(["/tmp/ags-opencode/sandbox-instructions.md"])
     );
 }

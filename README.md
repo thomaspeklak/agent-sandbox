@@ -310,7 +310,7 @@ To connect to services running on your host machine, use `host.containers.intern
 - `AGS_HOST_SERVICES_HOST=host.containers.internal`
 - `AGS_HOST_SERVICES_HINT` (human-readable reminder)
 
-And for agents with prompt hooks (`pi`, `claude`, `codex`), `ags` injects a short startup hint into the agent prompt context.
+For `pi`, `claude`, `codex`, and `opencode`, `ags` also injects a short startup hint into the agent prompt context.
 
 Example:
 

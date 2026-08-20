@@ -74,7 +74,7 @@ ags --agent pi --env BROWSER_URL=http://127.0.0.1:9222
 - Agent host state normally comes from explicit `[[agent_mount]]` / `[[mount]]` entries; lockdown overrides that with staged per-run agent state.
 - Agent processes run inside the container: `localhost` is container-local. Use `host.containers.internal` for host machine ports/services.
 - Outside lockdown, runtime env vars are injected for discoverability: `AGS_HOST_SERVICES_HOST` and `AGS_HOST_SERVICES_HINT`.
-- Outside lockdown, `pi`/`claude`/`codex` runs also inject a short host-service hint into prompt context.
+- `pi`/`claude`/`codex`/`opencode` runs inject a short host-service hint into prompt context, including in lockdown.
 - Outside lockdown, interactive launches print a one-line host-service reminder before the agent CLI starts.
 - `--tmux` wraps the agent command in a tmux session inside the container. After the agent exits, an interactive shell remains available for inspection. Combine with `--stop-when-done` to exit immediately instead.
 - `--stop-when-done` (requires `--tmux`) exits the container as soon as the agent process finishes instead of dropping to an interactive shell. Useful for batch/CI runs where you don't need post-task inspection.

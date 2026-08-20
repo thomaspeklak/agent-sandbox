@@ -1145,6 +1145,88 @@ fn opencode_agent_has_sandbox_mount() {
         .find(|m| m.container == "/home/dev/.config/opencode");
     assert!(oc_mount.is_some(), "opencode should have config mount");
     assert_eq!(oc_mount.unwrap().mode, MountMode::Rw);
+    assert!(
+        plan.entrypoint
+            .contains("/tmp/ags-opencode/sandbox-instructions.md"),
+        "opencode should create its sandbox instruction file: {}",
+        plan.entrypoint
+    );
+    assert!(
+        plan.entrypoint
+            .contains("Sandbox: use host.containers.internal (localhost is container-local)."),
+        "opencode sandbox instruction missing: {}",
+        plan.entrypoint
+    );
+    let config_content = find_plan_env(&plan, "OPENCODE_CONFIG_CONTENT")
+        .expect("opencode should receive inline instruction config");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&config_content).expect("opencode inline config should be valid JSON");
+    assert_eq!(
+        parsed["instructions"],
+        serde_json::json!(["/tmp/ags-opencode/sandbox-instructions.md"])
+    );
+    assert!(
+        !plan.entrypoint.contains("--prompt"),
+        "opencode sandbox context must not be injected as a user prompt"
+    );
+}
+
+#[test]
+fn opencode_keeps_sandbox_instructions_in_lockdown() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Opencode,
+        BuildLaunchPlanOptions {
+            lockdown: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert!(
+        find_plan_env(&plan, "OPENCODE_CONFIG_CONTENT").is_some(),
+        "lockdown should retain OpenCode sandbox instructions"
+    );
+    assert!(
+        plan.entrypoint
+            .contains("/tmp/ags-opencode/sandbox-instructions.md")
+    );
+    assert!(
+        plan.entrypoint
+            .contains("Sandbox: use host.containers.internal (localhost is container-local).")
+    );
+}
+
+#[test]
+fn opencode_explicit_inline_config_overrides_managed_instructions() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let env = vec![(
+        "OPENCODE_CONFIG_CONTENT".to_owned(),
+        r#"{"instructions":["custom.md"]}"#.to_owned(),
+    )];
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Opencode,
+        BuildLaunchPlanOptions {
+            env: &env,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        find_plan_env(&plan, "OPENCODE_CONFIG_CONTENT"),
+        Some(r#"{"instructions":["custom.md"]}"#.to_owned())
+    );
 }
 
 #[test]
