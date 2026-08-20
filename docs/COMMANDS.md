@@ -29,7 +29,7 @@ Use `ags --help` for built-in help text.
 
 ## `ags tools`
 
-Tools-only package configurator.
+Sandbox image package configurator.
 
 Typical usage:
 
@@ -40,15 +40,18 @@ ags tools config/tool-packages.example.json --config ~/.config/ags/config.toml
 
 What it does:
 
-- Reads a JSON package file shaped as `[{"package":"general","tools":[...]}]`.
-- Shows one TUI screen per package.
-- Preselects packages and tools that are available on the host `PATH`.
-- Disables tools that are missing on the host until their path can be resolved.
-- Offers an install action for missing tools when the package JSON declares a package for the detected host package manager.
-- Saves selected available tools as managed `[[tool]]` entries in the AGS TOML config.
-- Records only secret names and configured source metadata, never secret values.
+- Reads a JSON catalog shaped as `[{"package":"general","tools":[...]}]`.
+- Shows one TUI screen per package group.
+- Loads the selected base config plus its trusted repo-local overlay and preselects options from the effective `[sandbox].extra_dnf_packages` list.
+- Treats an omitted `extra_dnf_packages` field as the complete default package set.
+- Saves the selected DNF package names to the layer that currently defines `[sandbox].extra_dnf_packages` and creates a config backup.
+- Preserves configured package names that are not represented in the catalog.
+- Removes obsolete `[[tool]]` entries created by older versions of this configurator while preserving user-authored tool mounts.
+- Prints the number of packages added and removed, then prompts you to run `ags update-image`.
 
-The package JSON must use command names, not host binary paths. AGS resolves host paths during configuration using `PATH` lookup. Optional install metadata currently supports Debian-like systems through `apt` and Fedora/RPM-like systems through `dnf`. If a distro installs a different host binary name, declare `apt_binary` or `dnf_binary`; AGS still mounts it into the sandbox under the tool `name`.
+Each catalog tool has a display `name`, a `description`, and one or more `dnf_packages`. A tool owning multiple packages is selected only when all of them are configured. A DNF package may belong to only one catalog tool. Package names cannot be empty, start with `-`, contain whitespace, or contain control characters.
+
+`ags tools` only edits configuration. It does not invoke a host package manager, inspect host `PATH`, mount host binaries, or modify user-authored `[[tool]]` and `[[secret]]` entries. The only `[[tool]]` entries it removes are obsolete entries marked as owned by an older version of the configurator. Deselecting a package prevents AGS from requesting it explicitly; Fedora or another selected package may still install it as a dependency.
 
 ---
 
@@ -172,6 +175,7 @@ Rebuilds sandbox image from configured `Containerfile` and refreshes bundled san
 ```bash
 ags update-image
 ags update-image --keep-existing
+ags update-image --config /path/to/config.toml
 ```
 
 - Resolves the newest stable release that provides the required archive and checksum for the image architecture
@@ -180,6 +184,7 @@ ags update-image --keep-existing
 - Removes the previously tagged sandbox image after the new build succeeds, unless a container still references it
 - Referenced previous images are retained with a warning listing the blocking container IDs
 - `--keep-existing` keeps the previous image for manual rollback/debugging
+- `--config` selects the base config file used for the build; a trusted repo-local overlay still takes precedence
 - Does **not** update agent CLIs installed in persistent volumes
 
 `ags update` remains as a deprecated alias for `ags update-image`.

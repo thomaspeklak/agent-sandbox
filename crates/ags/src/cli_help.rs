@@ -20,7 +20,7 @@ Commands:
 \
   completions    Print shell completion script to stdout
 \
-  tools          Configure host tool packages from JSON
+  tools          Configure sandbox image packages from JSON
 
 \
 Run flags:
@@ -63,6 +63,8 @@ Run flags:
 Update-image flags:
 \
   --keep-existing Keep the previous image after a successful rebuild
+\
+  --config <path> Config file to build from (default: ~/.config/ags/config.toml)
 
 \
 Install flags:

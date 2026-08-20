@@ -36,6 +36,7 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
             bootstrap_files: vec![],
             container_boot_dirs: vec![],
             passthrough_env: vec![],
+            extra_dnf_packages: vec![],
         },
         mounts: vec![ValidatedMount {
             host: pi_root,

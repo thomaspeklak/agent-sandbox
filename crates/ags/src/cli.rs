@@ -135,9 +135,10 @@ pub struct CompletionsOptions {
     pub shell: Shell,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UpdateImageOptions {
     pub keep_existing: bool,
+    pub config_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

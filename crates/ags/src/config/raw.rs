@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use super::defaults::DEFAULT_PI_SPEC;
+use super::defaults::{DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC};
 
 /// Top-level config as deserialized directly from TOML.
 /// Field names and shapes match the config file schema exactly.
@@ -47,6 +47,8 @@ pub struct RawSandbox {
     pub container_boot_dirs: Vec<String>,
     #[serde(default)]
     pub passthrough_env: Vec<String>,
+    #[serde(default = "default_extra_dnf_packages")]
+    pub extra_dnf_packages: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -230,6 +232,13 @@ fn default_ro() -> String {
 
 fn default_pi_spec() -> String {
     DEFAULT_PI_SPEC.to_owned()
+}
+
+fn default_extra_dnf_packages() -> Vec<String> {
+    DEFAULT_EXTRA_DNF_PACKAGES
+        .iter()
+        .map(|package| (*package).to_owned())
+        .collect()
 }
 
 fn default_release_age() -> u32 {

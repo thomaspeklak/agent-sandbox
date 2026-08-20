@@ -76,6 +76,7 @@ impl std::error::Error for PlanError {}
 pub struct LaunchPlan {
     pub image: String,
     pub containerfile: PathBuf,
+    pub extra_dnf_packages: Vec<String>,
     pub container_name: String,
     pub workdir: WorkdirMapping,
     pub mounts: Vec<PlanMount>,

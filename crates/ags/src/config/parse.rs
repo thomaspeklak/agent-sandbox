@@ -207,21 +207,16 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
     })
 }
 
-fn validate_sandbox(raw: &crate::config::raw::RawSandbox) -> Result<ValidatedSandbox, ConfigError> {
-    Ok(ValidatedSandbox {
-        image: require_non_empty(&raw.image, "[sandbox].image")?.to_owned(),
-        containerfile: expand_path(&raw.containerfile, "[sandbox].containerfile")?,
-        cache_dir: expand_path(&raw.cache_dir, "[sandbox].cache_dir")?,
-        gitconfig_path: expand_path(&raw.gitconfig_path, "[sandbox].gitconfig_path")?,
-        auth_key: expand_path(&raw.auth_key, "[sandbox].auth_key")?,
-        sign_key: expand_path(&raw.sign_key, "[sandbox].sign_key")?,
-        bootstrap_files: validate_string_list(&raw.bootstrap_files, "[sandbox].bootstrap_files")?,
-        container_boot_dirs: validate_string_list(
-            &raw.container_boot_dirs,
-            "[sandbox].container_boot_dirs",
-        )?,
-        passthrough_env: validate_string_list(&raw.passthrough_env, "[sandbox].passthrough_env")?,
-    })
+fn validate_dnf_packages(list: &[String], ctx: &str) -> Result<Vec<String>, ConfigError> {
+    let packages = validate_string_list(list, ctx)?;
+    for (index, package) in packages.iter().enumerate() {
+        if !crate::config::is_valid_dnf_package_name(package) {
+            return Err(ConfigError::Validation(format!(
+                "{ctx}[{index}] must be a package name, not an option or shell expression"
+            )));
+        }
+    }
+    Ok(packages)
 }
 
 fn validate_mount(raw: &RawMount, ctx: &str) -> Result<ValidatedMount, ConfigError> {

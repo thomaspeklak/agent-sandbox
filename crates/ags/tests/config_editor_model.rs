@@ -5,6 +5,7 @@ use tempfile::TempDir;
 use toml_edit::DocumentMut;
 
 use ags::cmd::config_editor::model::*;
+use ags::config::DEFAULT_CONFIG;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -1014,33 +1015,7 @@ fn load_empty_global_config() {
 /// Scenario 1: DEFAULT_CONFIG from main.rs produces valid parseable TOML.
 #[test]
 fn default_config_is_valid_toml() {
-    let default_config = r#"[sandbox]
-image = "localhost/agent-sandbox:latest"
-containerfile = "~/.config/ags/Containerfile"
-cache_dir = "~/.cache/ags"
-gitconfig_path = "~/.config/ags/gitconfig-agent"
-auth_key = "~/.ssh/ags-agent-auth"
-sign_key = "~/.ssh/ags-agent-signing"
-bootstrap_files = ["auth.json", "models.json"]
-container_boot_dirs = [
-  "/home/dev/.ssh",
-]
-passthrough_env = [
-  "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY",
-  "GEMINI_API_KEY",
-  "OPENROUTER_API_KEY",
-  "AI_GATEWAY_API_KEY",
-  "OPENCODE_API_KEY",
-]
-
-[[mount]]
-host = "~/.ssh/known_hosts"
-container = "/home/dev/.ssh/known_hosts"
-mode = "ro"
-kind = "file"
-optional = true
-"#;
+    let default_config = DEFAULT_CONFIG;
 
     // Verify it parses as valid TOML
     let doc: DocumentMut = default_config.parse().unwrap();

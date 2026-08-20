@@ -2,6 +2,30 @@ use std::path::Path;
 
 use crate::plan::LaunchPlan;
 
+pub(crate) fn build_image_args(
+    image: &str,
+    containerfile: &Path,
+    context_dir: &Path,
+    build_args: &[(&str, &str)],
+    pull: bool,
+) -> Vec<String> {
+    let mut args = vec![
+        "build".to_owned(),
+        "-t".to_owned(),
+        image.to_owned(),
+        "-f".to_owned(),
+        containerfile.display().to_string(),
+    ];
+    for (name, value) in build_args {
+        args.extend(["--build-arg".to_owned(), format!("{name}={value}")]);
+    }
+    if pull {
+        args.push("--pull".to_owned());
+    }
+    args.push(context_dir.display().to_string());
+    args
+}
+
 /// Build the complete `podman run` argument list from a launch plan.
 ///
 /// The returned Vec does NOT include the `podman` binary itself — the caller

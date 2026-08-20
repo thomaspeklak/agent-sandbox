@@ -98,6 +98,7 @@ auth_key = "{base}/auth"
 sign_key = "{base}/sign"
 container_boot_dirs = ["/home/dev/.ssh", "/home/dev/.cache/kno"]
 passthrough_env = ["ANTHROPIC_API_KEY"]
+extra_dnf_packages = ["ansible-lint", "shellcheck"]
 
 [[agent_mount]]
 host = "{base}/.claude.json"
@@ -145,6 +146,7 @@ fn minimal_plan_has_correct_image() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
     assert_eq!(plan.image, "localhost/agent-sandbox:latest");
+    assert_eq!(plan.extra_dnf_packages, vec!["ansible-lint", "shellcheck"]);
 }
 
 #[test]

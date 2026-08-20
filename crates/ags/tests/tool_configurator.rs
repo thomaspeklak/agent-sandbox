@@ -1,249 +1,228 @@
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use ags::cmd::tool_configurator::install::{
-    InstallDefinition, PackageManager, ToolInstaller, package_manager_from_os_release,
-};
-use ags::cmd::tool_configurator::model::{
-    MANAGED_BY_KEY, MANAGED_BY_VALUE, SecretDefinition, SecretInput, ToolDefinition, ToolPackage,
-    ToolResolver, ToolSelectionState, apply_selection_to_document, container_path_for_tool,
-    load_package_file,
+use ags::{
+    cmd::tool_configurator::model::{
+        ToolDefinition, ToolPackage, ToolSelectionState, apply_selection_to_document,
+        config_file_defines_dnf_packages, configured_packages_from_document, load_package_file,
+        write_selected_tools,
+    },
+    config::DEFAULT_EXTRA_DNF_PACKAGES,
 };
 use toml_edit::DocumentMut;
 
-struct MockResolver {
-    paths: BTreeMap<String, PathBuf>,
-}
-
-impl MockResolver {
-    fn new(items: &[(&str, &str)]) -> Self {
-        Self {
-            paths: items
-                .iter()
-                .map(|(name, path)| ((*name).to_owned(), PathBuf::from(path)))
-                .collect(),
-        }
-    }
-}
-
-impl ToolResolver for MockResolver {
-    fn resolve_tool(&self, name: &str) -> Option<PathBuf> {
-        self.paths.get(name).cloned()
-    }
-}
-
-fn tool(name: &str) -> ToolDefinition {
+fn tool(name: &str, dnf_packages: &[&str]) -> ToolDefinition {
     ToolDefinition {
         name: name.to_owned(),
         description: String::new(),
-        secrets: BTreeMap::new(),
-        install: InstallDefinition::default(),
+        dnf_packages: dnf_packages
+            .iter()
+            .map(|package| (*package).to_owned())
+            .collect(),
     }
 }
 
 #[test]
-fn unavailable_tools_are_not_selected() {
+fn configured_packages_preselect_catalog_tools() {
     let packages = vec![ToolPackage {
         package: "development".to_owned(),
-        tools: vec![tool("gh"), tool("missing")],
+        tools: vec![tool("GitHub CLI", &["gh"]), tool("ripgrep", &["ripgrep"])],
     }];
-    let resolver = MockResolver::new(&[("gh", "/usr/bin/gh")]);
 
-    let state = ToolSelectionState::from_packages(packages, &resolver, None).unwrap();
+    let state = ToolSelectionState::from_packages(packages, &["gh".to_owned()]).unwrap();
     let package = &state.packages[0];
 
-    assert_eq!(package.available_count(), 1);
     assert_eq!(package.selected_count(), 1);
     assert!(package.tools[0].selected);
     assert!(!package.tools[1].selected);
-    assert!(!package.tools[1].available());
 }
 
 #[test]
-fn apply_selection_replaces_only_managed_tool_entries() {
-    let mut secrets = BTreeMap::new();
-    secrets.insert(
-        "GH_TOKEN".to_owned(),
-        SecretInput::Spec(SecretDefinition {
-            description: "GitHub API token".to_owned(),
-            required: true,
-            from_env: Some("GH_TOKEN".to_owned()),
-            secret_store: None,
-        }),
-    );
+fn bundled_tool_is_selected_only_when_all_packages_are_configured() {
     let packages = vec![ToolPackage {
         package: "development".to_owned(),
-        tools: vec![
-            ToolDefinition {
-                name: "gh".to_owned(),
-                description: "GitHub CLI".to_owned(),
-                secrets,
-                install: InstallDefinition::default(),
-            },
-            tool("jq"),
-        ],
+        tools: vec![tool("GCC toolchain", &["gcc", "gcc-c++"])],
     }];
-    let resolver = MockResolver::new(&[("gh", "/usr/bin/gh"), ("jq", "/usr/bin/jq")]);
-    let mut state = ToolSelectionState::from_packages(packages, &resolver, None).unwrap();
-    state.packages[0].tools[1].selected = false;
+
+    let state = ToolSelectionState::from_packages(packages, &["gcc".to_owned()]).unwrap();
+    assert!(!state.packages[0].tools[0].selected);
+}
+
+#[test]
+fn apply_selection_updates_dnf_packages_and_preserves_unknown_entries() {
+    let packages = vec![ToolPackage {
+        package: "development".to_owned(),
+        tools: vec![tool("GitHub CLI", &["gh"]), tool("ripgrep", &["ripgrep"])],
+    }];
+    let mut state = ToolSelectionState::from_packages(
+        packages,
+        &["gh".to_owned(), "custom-package".to_owned()],
+    )
+    .unwrap();
+    state.packages[0].tools[0].selected = false;
+    state.packages[0].tools[0].touched = true;
+    state.packages[0].tools[1].selected = true;
+    state.packages[0].tools[1].touched = true;
 
     let mut doc: DocumentMut = r#"
 [sandbox]
 image = "test"
+extra_dnf_packages = ["gh", "custom-package"]
+
+[[tool]]
+name = "legacy"
+path = "/usr/bin/legacy"
+container_path = "/usr/local/bin/legacy"
+ags_managed_by = "tool-configurator"
 
 [[tool]]
 name = "custom"
 path = "/opt/custom"
 container_path = "/usr/local/bin/custom"
-
-[[tool]]
-name = "old-managed"
-path = "/tmp/old"
-container_path = "/usr/local/bin/old-managed"
-ags_managed_by = "tool-configurator"
 "#
     .parse()
     .unwrap();
 
     let report = apply_selection_to_document(&mut doc, &state);
-    assert_eq!(report.removed_tools, 1);
-    assert_eq!(report.added_tools, 1);
-
-    let tools = doc["tool"].as_array_of_tables().unwrap();
-    assert_eq!(tools.len(), 2);
-    assert_eq!(tools.get(0).unwrap()["name"].as_str().unwrap(), "custom");
-
-    let configured = tools.get(1).unwrap();
-    assert_eq!(configured["name"].as_str().unwrap(), "gh");
-    assert_eq!(configured["path"].as_str().unwrap(), "/usr/bin/gh");
+    assert_eq!(report.selected_tools, 1);
+    assert_eq!(report.added_packages, 1);
+    assert_eq!(report.removed_packages, 1);
+    assert_eq!(report.removed_legacy_tools, 1);
     assert_eq!(
-        configured["container_path"].as_str().unwrap(),
-        container_path_for_tool("gh")
+        configured_packages_from_document(&doc),
+        vec!["ripgrep", "custom-package"]
     );
-    assert_eq!(
-        configured[MANAGED_BY_KEY].as_str().unwrap(),
-        MANAGED_BY_VALUE
-    );
-
-    let tool_secrets = configured["secret"].as_array_of_tables().unwrap();
-    let secret = tool_secrets.get(0).unwrap();
-    assert_eq!(secret["env"].as_str().unwrap(), "GH_TOKEN");
-    assert_eq!(secret["from_env"].as_str().unwrap(), "GH_TOKEN");
+    assert_eq!(doc["tool"].as_array_of_tables().unwrap().len(), 1);
 }
 
 #[test]
-fn package_validation_rejects_binary_paths() {
+fn untouched_partial_bundle_is_preserved_until_explicitly_deselected() {
     let packages = vec![ToolPackage {
         package: "development".to_owned(),
-        tools: vec![tool("/usr/bin/gh")],
+        tools: vec![tool("GCC toolchain", &["gcc", "gcc-c++"])],
     }];
-    let resolver = MockResolver::new(&[]);
-
-    let error = ToolSelectionState::from_packages(packages, &resolver, None).unwrap_err();
-    assert!(error.to_string().contains("must be a command name"));
-}
-
-#[test]
-fn install_command_is_only_available_for_missing_tools_with_matching_manager_metadata() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![ToolDefinition {
-            name: "rg".to_owned(),
-            description: String::new(),
-            secrets: BTreeMap::new(),
-            install: InstallDefinition {
-                apt: Some("ripgrep".to_owned()),
-                dnf: Some("ripgrep".to_owned()),
-                ..InstallDefinition::default()
-            },
-        }],
-    }];
-    let resolver = MockResolver::new(&[]);
-    let state = ToolSelectionState::from_packages(packages, &resolver, None).unwrap();
-    let tool = &state.packages[0].tools[0];
-
-    let command = tool
-        .install_command(ToolInstaller {
-            manager: PackageManager::Apt,
-            use_sudo: true,
-        })
+    let mut state = ToolSelectionState::from_packages(packages, &["gcc".to_owned()]).unwrap();
+    let mut doc: DocumentMut = "[sandbox]\nextra_dnf_packages = [\"gcc\"]\n"
+        .parse()
         .unwrap();
 
-    assert_eq!(command.display_command(), "sudo apt install ripgrep");
+    apply_selection_to_document(&mut doc, &state);
+    assert_eq!(configured_packages_from_document(&doc), vec!["gcc"]);
 
-    let resolver = MockResolver::new(&[("rg", "/usr/bin/rg")]);
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![ToolDefinition {
-            name: "rg".to_owned(),
-            description: String::new(),
-            secrets: BTreeMap::new(),
-            install: InstallDefinition {
-                apt: Some("ripgrep".to_owned()),
-                dnf: Some("ripgrep".to_owned()),
-                ..InstallDefinition::default()
-            },
-        }],
-    }];
-    let state = ToolSelectionState::from_packages(packages, &resolver, None).unwrap();
-
-    assert!(
-        state.packages[0].tools[0]
-            .install_command(ToolInstaller {
-                manager: PackageManager::Apt,
-                use_sudo: true,
-            })
-            .is_none()
-    );
+    state.packages[0].tools[0].touched = true;
+    apply_selection_to_document(&mut doc, &state);
+    assert!(configured_packages_from_document(&doc).is_empty());
 }
 
 #[test]
-fn distro_binary_override_is_used_for_path_resolution() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![ToolDefinition {
-            name: "fd".to_owned(),
-            description: String::new(),
-            secrets: BTreeMap::new(),
-            install: InstallDefinition {
-                apt: Some("fd-find".to_owned()),
-                apt_binary: Some("fdfind".to_owned()),
-                dnf: Some("fd-find".to_owned()),
-                ..InstallDefinition::default()
-            },
-        }],
-    }];
-    let resolver = MockResolver::new(&[("fdfind", "/usr/bin/fdfind")]);
-
+fn save_cleans_legacy_tools_from_the_other_config_layer() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("config.toml");
+    let overlay = dir.path().join("overlay.toml");
+    std::fs::write(&base, "[sandbox]\nextra_dnf_packages = [\"gh\"]\n").unwrap();
+    std::fs::write(
+        &overlay,
+        r#"[[tool]]
+name = "legacy"
+path = "/usr/bin/legacy"
+container_path = "/usr/local/bin/legacy"
+ags_managed_by = "tool-configurator"
+"#,
+    )
+    .unwrap();
     let state = ToolSelectionState::from_packages(
-        packages,
-        &resolver,
-        Some(ToolInstaller {
-            manager: PackageManager::Apt,
-            use_sudo: true,
-        }),
+        vec![ToolPackage {
+            package: "source-control".to_owned(),
+            tools: vec![tool("GitHub CLI", &["gh"])],
+        }],
+        &["gh".to_owned()],
     )
     .unwrap();
 
-    let tool = &state.packages[0].tools[0];
-    assert!(tool.available());
-    assert_eq!(
-        tool.host_path.as_deref(),
-        Some(PathBuf::from("/usr/bin/fdfind").as_path())
+    let report = write_selected_tools(&base, Some(&overlay), &state).unwrap();
+
+    assert_eq!(report.removed_legacy_tools, 1);
+    assert!(report.cleanup_warning.is_none());
+    assert!(
+        !std::fs::read_to_string(overlay)
+            .unwrap()
+            .contains("ags_managed_by")
     );
 }
 
 #[test]
-fn os_release_detection_selects_supported_linux_package_manager() {
+fn detects_the_config_layer_that_defines_packages() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("base.toml");
+    let overlay = dir.path().join("overlay.toml");
+    std::fs::write(&base, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    std::fs::write(&overlay, "[sandbox]\nimage = \"overlay\"\n").unwrap();
+
+    assert!(config_file_defines_dnf_packages(&base).unwrap());
+    assert!(!config_file_defines_dnf_packages(&overlay).unwrap());
+}
+
+#[test]
+fn apply_selection_materializes_defaults_when_config_field_is_missing() {
+    let packages = vec![ToolPackage {
+        package: "quality".to_owned(),
+        tools: vec![tool("ansible-lint", &["python3-ansible-lint"])],
+    }];
+    let mut state = ToolSelectionState::from_packages(packages, &[]).unwrap();
+    state.packages[0].tools[0].selected = true;
+    let mut doc: DocumentMut = "[sandbox]\nimage = \"test\"\n".parse().unwrap();
+
+    let report = apply_selection_to_document(&mut doc, &state);
+    let configured = configured_packages_from_document(&doc);
+
+    assert_eq!(report.added_packages, 0);
     assert_eq!(
-        package_manager_from_os_release("ID=ubuntu\nID_LIKE=debian\n"),
-        Some(PackageManager::Apt)
+        configured,
+        DEFAULT_EXTRA_DNF_PACKAGES
+            .iter()
+            .map(|package| (*package).to_owned())
+            .collect::<Vec<_>>()
     );
-    assert_eq!(
-        package_manager_from_os_release("ID=fedora\n"),
-        Some(PackageManager::Dnf)
+}
+
+#[test]
+fn package_validation_rejects_shell_expressions() {
+    let packages = vec![ToolPackage {
+        package: "development".to_owned(),
+        tools: vec![tool("unsafe", &["--setopt=tsflags=nodocs"])],
+    }];
+
+    let error = ToolSelectionState::from_packages(packages, &[]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("not an option or shell expression")
     );
-    assert_eq!(package_manager_from_os_release("ID=arch\n"), None);
+}
+
+#[test]
+fn package_validation_rejects_shell_globs() {
+    let packages = vec![ToolPackage {
+        package: "development".to_owned(),
+        tools: vec![tool("unsafe", &["python3*"])],
+    }];
+
+    let error = ToolSelectionState::from_packages(packages, &[]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("not an option or shell expression")
+    );
+}
+
+#[test]
+fn package_validation_rejects_duplicate_dnf_ownership() {
+    let packages = vec![ToolPackage {
+        package: "development".to_owned(),
+        tools: vec![tool("one", &["shared"]), tool("two", &["shared"])],
+    }];
+
+    let error = ToolSelectionState::from_packages(packages, &[]).unwrap_err();
+    assert!(error.to_string().contains("assigned to more than one tool"));
 }
 
 #[test]
@@ -252,7 +231,18 @@ fn example_package_json_loads() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/tool-packages.example.json");
 
     let packages = load_package_file(&path).unwrap();
-    assert_eq!(packages.len(), 2);
+    assert_eq!(packages.len(), 8);
     assert_eq!(packages[0].package, "general");
-    assert_eq!(packages[1].package, "ops");
+    assert_eq!(packages[7].package, "quality");
+
+    let mut catalog_packages = packages
+        .iter()
+        .flat_map(|group| &group.tools)
+        .flat_map(|tool| &tool.dnf_packages)
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let mut default_packages = DEFAULT_EXTRA_DNF_PACKAGES.to_vec();
+    catalog_packages.sort_unstable();
+    default_packages.sort_unstable();
+    assert_eq!(catalog_packages, default_packages);
 }

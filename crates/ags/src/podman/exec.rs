@@ -76,7 +76,11 @@ pub fn image_has_binary(image: &str, binary: &str) -> Result<bool, PodmanError> 
 }
 
 /// Build an image from a Containerfile if it does not already exist.
-pub fn ensure_image(image: &str, containerfile: &Path) -> Result<(), PodmanError> {
+pub fn ensure_image(
+    image: &str,
+    containerfile: &Path,
+    extra_dnf_packages: &[String],
+) -> Result<(), PodmanError> {
     if image_exists(image) {
         return Ok(());
     }
@@ -86,9 +90,12 @@ pub fn ensure_image(image: &str, containerfile: &Path) -> Result<(), PodmanError
     let context_dir = containerfile.parent().unwrap_or_else(|| Path::new("."));
 
     let status = Command::new("podman")
-        .args(["build", "--pull", "-t", image, "-f"])
-        .arg(containerfile)
-        .arg(context_dir)
+        .args(build_podman_build_args(
+            image,
+            containerfile,
+            context_dir,
+            extra_dnf_packages,
+        ))
         .status()
         .map_err(|e| PodmanError::ImageBuild(e.to_string()))?;
 
@@ -99,6 +106,22 @@ pub fn ensure_image(image: &str, containerfile: &Path) -> Result<(), PodmanError
     }
 
     Ok(())
+}
+
+fn build_podman_build_args(
+    image: &str,
+    containerfile: &Path,
+    context_dir: &Path,
+    extra_dnf_packages: &[String],
+) -> Vec<String> {
+    let packages = extra_dnf_packages.join(" ");
+    super::build_image_args(
+        image,
+        containerfile,
+        context_dir,
+        &[("EXTRA_DNF_PACKAGES", &packages)],
+        true,
+    )
 }
 
 /// Write the env file with KEY=VALUE entries, one per line.
@@ -184,7 +207,7 @@ pub(crate) fn execute_with_payload_sources(
     ensure_local_podman()?;
     let mut plan = plan.clone();
     adapt_network_mode_for_installed_podman(&mut plan);
-    ensure_image(&plan.image, &plan.containerfile)?;
+    ensure_image(&plan.image, &plan.containerfile, &plan.extra_dnf_packages)?;
     let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
     let result = run_payload_sources(&plan, &env_file, passthrough_args, sources);
@@ -224,7 +247,7 @@ fn ensure_local_podman() -> Result<(), PodmanError> {
 fn execute_inner(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, PodmanError> {
     let mut plan = plan.clone();
     adapt_network_mode_for_installed_podman(&mut plan);
-    ensure_image(&plan.image, &plan.containerfile)?;
+    ensure_image(&plan.image, &plan.containerfile, &plan.extra_dnf_packages)?;
     let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
     let result = run_container(&plan, &env_file, passthrough_args);
@@ -347,4 +370,35 @@ fn probe_network_mode_failure(plan: &LaunchPlan) -> Result<String, PodmanError> 
     let mut message = String::from_utf8_lossy(&output.stderr).into_owned();
     message.push_str(&String::from_utf8_lossy(&output.stdout));
     Ok(message)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::build_podman_build_args;
+
+    #[test]
+    fn image_build_args_include_configured_dnf_packages() {
+        let args = build_podman_build_args(
+            "localhost/agent-sandbox:latest",
+            Path::new("/tmp/Containerfile"),
+            Path::new("/tmp"),
+            &["ansible-lint".to_owned(), "shellcheck".to_owned()],
+        );
+
+        assert!(args.contains(&"EXTRA_DNF_PACKAGES=ansible-lint shellcheck".to_owned()));
+    }
+
+    #[test]
+    fn image_build_args_override_containerfile_default_for_empty_package_list() {
+        let args = build_podman_build_args(
+            "localhost/agent-sandbox:latest",
+            Path::new("/tmp/Containerfile"),
+            Path::new("/tmp"),
+            &[],
+        );
+
+        assert!(args.contains(&"EXTRA_DNF_PACKAGES=".to_owned()));
+    }
 }

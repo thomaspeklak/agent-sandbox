@@ -11,6 +11,16 @@ sign_key = "~/.ssh/ags-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
 container_boot_dirs = ["/home/dev/.ssh", "/home/dev/.config/example-tool"]
 passthrough_env = ["EXAMPLE_API_KEY"]
+extra_dnf_packages = [
+  "python3-ansible-lint", "bash", "ca-certificates", "coreutils", "curl", "dbus-devel", "diffutils",
+  "fd-find", "file", "findutils", "gcc", "gcc-c++", "gh", "git", "grep", "jq",
+  "kitty-terminfo", "less", "make", "nodejs24-bin", "nodejs24-npm-bin",
+  "openssh-clients", "patch", "pkgconf-pkg-config", "procps-ng", "python3",
+  "ripgrep", "rsync", "sccache", "sed", "socat", "tar", "tree", "tmux",
+  "unzip", "util-linux", "wget", "which", "wl-clipboard", "xz", "zip",
+  "golang", "ImageMagick", "java-devel", "postgresql", "python3-pip", "ruby",
+  "sqlite-devel", "zig",
+]
 
 # Required agent config mounts (explicit and inspectable)
 [[agent_mount]]

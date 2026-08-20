@@ -60,13 +60,13 @@ Optional but useful:
 
 > Tip: run `ags doctor` after setup to verify your environment.
 
-Optional tool package configuration:
+Optional sandbox package configuration:
 
 ```bash
 ags tools --packages config/tool-packages.example.json
 ```
 
-This configures tools that exist on your host `PATH`. For missing tools, the TUI can offer an install action when the package file declares an apt/dnf package for your host OS.
+This opens a TUI for selecting DNF packages installed in the sandbox image. It updates `[sandbox].extra_dnf_packages`; run `ags update-image` afterward to rebuild the image. It does not install host packages or create host binary mounts.
 
 ---
 

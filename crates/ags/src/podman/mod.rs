@@ -3,6 +3,7 @@ mod exec;
 mod fd_exec;
 mod network;
 
+pub(crate) use args::build_image_args;
 pub use args::build_run_args;
 pub(crate) use exec::execute_with_payload_sources;
 pub use exec::{

@@ -32,6 +32,7 @@ pub struct ValidatedSandbox {
     pub bootstrap_files: Vec<String>,
     pub container_boot_dirs: Vec<String>,
     pub passthrough_env: Vec<String>,
+    pub extra_dnf_packages: Vec<String>,
 }
 
 impl ValidatedConfig {

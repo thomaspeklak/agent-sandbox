@@ -1,19 +1,16 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use toml_edit::{ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
+use toml_edit::{Array, DocumentMut, Item, Table};
 
-use super::install::{
-    InstallCommand, InstallDefinition, ToolInstaller, find_on_path, validate_install_definition,
-};
+use crate::config::DEFAULT_EXTRA_DNF_PACKAGES;
 
-pub const MANAGED_BY_KEY: &str = "ags_managed_by";
-pub const MANAGED_BY_VALUE: &str = "tool-configurator";
-pub const MANAGED_PACKAGE_KEY: &str = "ags_package";
+const LEGACY_MANAGED_BY_KEY: &str = "ags_managed_by";
+const LEGACY_MANAGED_BY_VALUE: &str = "tool-configurator";
 
 #[derive(Debug)]
 pub enum ToolConfigError {
@@ -70,97 +67,14 @@ pub struct ToolDefinition {
     pub name: String,
     #[serde(default)]
     pub description: String,
-    #[serde(default)]
-    pub secrets: BTreeMap<String, SecretInput>,
-    #[serde(default)]
-    pub install: InstallDefinition,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum SecretInput {
-    Description(String),
-    Spec(SecretDefinition),
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SecretDefinition {
-    #[serde(default)]
-    pub description: String,
-    #[serde(default = "default_required")]
-    pub required: bool,
-    #[serde(default)]
-    pub from_env: Option<String>,
-    #[serde(default)]
-    pub secret_store: Option<BTreeMap<String, String>>,
-}
-
-fn default_required() -> bool {
-    true
-}
-
-impl SecretInput {
-    pub fn normalized(&self, env: &str) -> SecretDefinition {
-        let mut spec = match self {
-            Self::Description(description) => SecretDefinition {
-                description: description.clone(),
-                required: true,
-                from_env: None,
-                secret_store: None,
-            },
-            Self::Spec(spec) => spec.clone(),
-        };
-
-        let has_from_env = spec
-            .from_env
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty());
-        let has_secret_store = spec
-            .secret_store
-            .as_ref()
-            .is_some_and(|store| !store.is_empty());
-
-        if !has_from_env && !has_secret_store {
-            spec.from_env = Some(env.to_owned());
-        }
-
-        spec
-    }
-}
-
-pub trait ToolResolver {
-    fn resolve_tool(&self, name: &str) -> Option<PathBuf>;
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PathToolResolver;
-
-impl ToolResolver for PathToolResolver {
-    fn resolve_tool(&self, name: &str) -> Option<PathBuf> {
-        find_on_path(name)
-    }
+    pub dnf_packages: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ToolState {
     pub definition: ToolDefinition,
-    pub host_path: Option<PathBuf>,
     pub selected: bool,
-}
-
-impl ToolState {
-    pub fn available(&self) -> bool {
-        self.host_path.is_some()
-    }
-
-    pub fn install_command(&self, installer: ToolInstaller) -> Option<InstallCommand> {
-        if self.available() {
-            return None;
-        }
-
-        let package = self.definition.install.package_for(installer.manager)?;
-        Some(installer.command_for(package))
-    }
+    pub touched: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -170,24 +84,12 @@ pub struct PackageState {
 }
 
 impl PackageState {
-    pub fn available_count(&self) -> usize {
-        self.tools.iter().filter(|tool| tool.available()).count()
-    }
-
     pub fn selected_count(&self) -> usize {
-        self.tools
-            .iter()
-            .filter(|tool| tool.available() && tool.selected)
-            .count()
+        self.tools.iter().filter(|tool| tool.selected).count()
     }
 
-    pub fn missing_count(&self) -> usize {
-        self.tools.iter().filter(|tool| !tool.available()).count()
-    }
-
-    pub fn all_available_selected(&self) -> bool {
-        let available = self.available_count();
-        available > 0 && self.selected_count() == available
+    pub fn all_selected(&self) -> bool {
+        !self.tools.is_empty() && self.selected_count() == self.tools.len()
     }
 }
 
@@ -199,32 +101,27 @@ pub struct ToolSelectionState {
 impl ToolSelectionState {
     pub fn from_packages(
         packages: Vec<ToolPackage>,
-        resolver: &dyn ToolResolver,
-        installer: Option<ToolInstaller>,
+        configured_packages: &[String],
     ) -> Result<Self, ToolConfigError> {
         validate_packages(&packages)?;
+        let configured: BTreeSet<&str> = configured_packages.iter().map(String::as_str).collect();
 
         let packages = packages
             .into_iter()
-            .map(|package| {
-                let tools = package
+            .map(|package| PackageState {
+                package: package.package,
+                tools: package
                     .tools
                     .into_iter()
-                    .map(|definition| {
-                        let host_path = resolve_tool_path(&definition, resolver, installer);
-                        let selected = host_path.is_some();
-                        ToolState {
-                            definition,
-                            host_path,
-                            selected,
-                        }
+                    .map(|definition| ToolState {
+                        selected: definition
+                            .dnf_packages
+                            .iter()
+                            .all(|package| configured.contains(package.as_str())),
+                        definition,
+                        touched: false,
                     })
-                    .collect();
-
-                PackageState {
-                    package: package.package,
-                    tools,
-                }
+                    .collect(),
             })
             .collect();
 
@@ -235,15 +132,47 @@ impl ToolSelectionState {
         self.packages
             .iter()
             .flat_map(|package| package.tools.iter())
-            .filter(|tool| tool.available() && tool.selected)
+            .filter(|tool| tool.selected)
             .count()
+    }
+
+    fn catalog_packages(&self) -> BTreeSet<&str> {
+        self.packages
+            .iter()
+            .flat_map(|package| package.tools.iter())
+            .flat_map(|tool| tool.definition.dnf_packages.iter().map(String::as_str))
+            .collect()
+    }
+
+    fn selected_packages(&self) -> impl Iterator<Item = &str> {
+        self.packages
+            .iter()
+            .flat_map(|package| package.tools.iter())
+            .filter(|tool| tool.selected)
+            .flat_map(|tool| tool.definition.dnf_packages.iter().map(String::as_str))
+    }
+
+    fn preserves_untouched_package(&self, package: &str) -> bool {
+        self.packages
+            .iter()
+            .flat_map(|group| &group.tools)
+            .find(|tool| {
+                tool.definition
+                    .dnf_packages
+                    .iter()
+                    .any(|candidate| candidate == package)
+            })
+            .is_some_and(|tool| !tool.selected && !tool.touched)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaveReport {
-    pub added_tools: usize,
-    pub removed_tools: usize,
+    pub selected_tools: usize,
+    pub added_packages: usize,
+    pub removed_packages: usize,
+    pub removed_legacy_tools: usize,
+    pub cleanup_warning: Option<String>,
 }
 
 pub fn load_package_file(path: &Path) -> Result<Vec<ToolPackage>, ToolConfigError> {
@@ -253,8 +182,20 @@ pub fn load_package_file(path: &Path) -> Result<Vec<ToolPackage>, ToolConfigErro
     Ok(packages)
 }
 
+pub fn config_file_defines_dnf_packages(path: &Path) -> Result<bool, ToolConfigError> {
+    let content = fs::read_to_string(path)?;
+    let doc = content
+        .parse::<DocumentMut>()
+        .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
+    Ok(doc
+        .get("sandbox")
+        .and_then(|sandbox| sandbox.get("extra_dnf_packages"))
+        .is_some())
+}
+
 pub fn write_selected_tools(
     config_path: &Path,
+    legacy_cleanup_path: Option<&Path>,
     state: &ToolSelectionState,
 ) -> Result<SaveReport, ToolConfigError> {
     let content = fs::read_to_string(config_path)?;
@@ -262,95 +203,91 @@ pub fn write_selected_tools(
         .parse::<DocumentMut>()
         .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
 
-    let report = apply_selection_to_document(&mut doc, state);
+    let mut report = apply_selection_to_document(&mut doc, state);
     backup_file(config_path)?;
     atomic_write(config_path, &doc.to_string())?;
+    if let Some(path) = legacy_cleanup_path {
+        match remove_legacy_managed_tools_from_file(path) {
+            Ok(removed) => report.removed_legacy_tools += removed,
+            Err(error) => {
+                report.cleanup_warning = Some(format!(
+                    "saved package selection, but could not remove legacy tool mounts from {}: {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
     Ok(report)
+}
+
+pub fn configured_packages_from_document(doc: &DocumentMut) -> Vec<String> {
+    doc.get("sandbox")
+        .and_then(|sandbox| sandbox.get("extra_dnf_packages"))
+        .and_then(Item::as_array)
+        .map(|packages| {
+            packages
+                .iter()
+                .filter_map(|package| package.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            DEFAULT_EXTRA_DNF_PACKAGES
+                .iter()
+                .map(|package| (*package).to_owned())
+                .collect()
+        })
 }
 
 pub fn apply_selection_to_document(
     doc: &mut DocumentMut,
     state: &ToolSelectionState,
 ) -> SaveReport {
-    let removed_tools = remove_managed_tools(doc);
-    let added_tools = append_selected_tools(doc, state);
-    SaveReport {
-        added_tools,
-        removed_tools,
-    }
-}
+    let previous = configured_packages_from_document(doc);
+    let catalog_packages = state.catalog_packages();
+    let mut seen = BTreeSet::new();
+    let mut configured = Vec::new();
 
-pub fn container_path_for_tool(name: &str) -> String {
-    format!("/usr/local/bin/{name}")
-}
-
-fn validate_packages(packages: &[ToolPackage]) -> Result<(), ToolConfigError> {
-    if packages.is_empty() {
-        return Err(ToolConfigError::InvalidPackage(
-            "JSON must contain at least one package".to_owned(),
-        ));
-    }
-
-    for package in packages {
-        if package.package.trim().is_empty() {
-            return Err(ToolConfigError::InvalidPackage(
-                "package name must not be empty".to_owned(),
-            ));
-        }
-        for tool in &package.tools {
-            validate_tool_name(&package.package, &tool.name)?;
-            validate_install_definition(&package.package, &tool.name, &tool.install)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_tool_name(package: &str, name: &str) -> Result<(), ToolConfigError> {
-    if name.trim().is_empty() {
-        return Err(ToolConfigError::InvalidPackage(format!(
-            "tool name in package '{package}' must not be empty"
-        )));
-    }
-
-    if name.contains('/') || name.contains('\\') || name.chars().any(char::is_whitespace) {
-        return Err(ToolConfigError::InvalidPackage(format!(
-            "tool '{name}' in package '{package}' must be a command name, not a path or shell expression"
-        )));
-    }
-
-    Ok(())
-}
-
-pub fn resolve_tool_path(
-    definition: &ToolDefinition,
-    resolver: &dyn ToolResolver,
-    installer: Option<ToolInstaller>,
-) -> Option<PathBuf> {
-    if let Some(binary) =
-        installer.and_then(|installer| definition.install.binary_for(installer.manager))
-        && let Some(path) = resolver.resolve_tool(binary)
+    for package in state
+        .selected_packages()
+        .chain(previous.iter().map(String::as_str).filter(|package| {
+            !catalog_packages.contains(package) || state.preserves_untouched_package(package)
+        }))
     {
-        return Some(path);
+        if seen.insert(package.to_owned()) {
+            configured.push(package.to_owned());
+        }
     }
 
-    resolver.resolve_tool(&definition.name)
-}
-
-fn remove_managed_tools(doc: &mut DocumentMut) -> usize {
-    let Some(tools) = doc["tool"].as_array_of_tables_mut() else {
-        return 0;
+    let previous_set: BTreeSet<&str> = previous.iter().map(String::as_str).collect();
+    let configured_set: BTreeSet<&str> = configured.iter().map(String::as_str).collect();
+    let report = SaveReport {
+        selected_tools: state.selected_tool_count(),
+        added_packages: configured_set.difference(&previous_set).count(),
+        removed_packages: previous_set.difference(&configured_set).count(),
+        removed_legacy_tools: remove_legacy_managed_tools(doc),
+        cleanup_warning: None,
     };
 
+    if doc.get("sandbox").and_then(Item::as_table_like).is_none() {
+        doc["sandbox"] = Item::Table(Table::new());
+    }
+    let array = Array::from_iter(configured.iter().map(String::as_str));
+    doc["sandbox"]["extra_dnf_packages"] = Item::Value(toml_edit::Value::Array(array));
+    report
+}
+
+fn remove_legacy_managed_tools(doc: &mut DocumentMut) -> usize {
+    let Some(tools) = doc.get_mut("tool").and_then(Item::as_array_of_tables_mut) else {
+        return 0;
+    };
     let mut removed = 0;
     let mut index = 0;
     while index < tools.len() {
         let is_managed = tools
             .get(index)
-            .and_then(|tool| tool.get(MANAGED_BY_KEY))
-            .and_then(|item| item.as_str())
-            == Some(MANAGED_BY_VALUE);
-
+            .and_then(|tool| tool.get(LEGACY_MANAGED_BY_KEY))
+            .and_then(Item::as_str)
+            == Some(LEGACY_MANAGED_BY_VALUE);
         if is_managed {
             tools.remove(index);
             removed += 1;
@@ -358,90 +295,70 @@ fn remove_managed_tools(doc: &mut DocumentMut) -> usize {
             index += 1;
         }
     }
-
     removed
 }
 
-fn append_selected_tools(doc: &mut DocumentMut, state: &ToolSelectionState) -> usize {
-    if doc.get("tool").is_none() || doc["tool"].as_array_of_tables().is_none() {
-        doc["tool"] = Item::ArrayOfTables(ArrayOfTables::new());
+fn remove_legacy_managed_tools_from_file(path: &Path) -> Result<usize, ToolConfigError> {
+    let content = fs::read_to_string(path)?;
+    let mut doc = content
+        .parse::<DocumentMut>()
+        .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
+    let removed = remove_legacy_managed_tools(&mut doc);
+    if removed > 0 {
+        backup_file(path)?;
+        atomic_write(path, &doc.to_string())?;
+    }
+    Ok(removed)
+}
+
+fn validate_packages(packages: &[ToolPackage]) -> Result<(), ToolConfigError> {
+    if packages.is_empty() {
+        return Err(ToolConfigError::InvalidPackage(
+            "JSON must contain at least one package group".to_owned(),
+        ));
     }
 
-    let Some(tools) = doc["tool"].as_array_of_tables_mut() else {
-        return 0;
-    };
-
-    let mut added = 0;
-    for package in &state.packages {
+    let mut claimed_packages = BTreeSet::new();
+    for package in packages {
+        if package.package.trim().is_empty() {
+            return Err(ToolConfigError::InvalidPackage(
+                "package group name must not be empty".to_owned(),
+            ));
+        }
         for tool in &package.tools {
-            if !tool.available() || !tool.selected {
-                continue;
+            if tool.name.trim().is_empty() {
+                return Err(ToolConfigError::InvalidPackage(format!(
+                    "tool name in package group '{}' must not be empty",
+                    package.package
+                )));
             }
-            tools.push(tool_table(&package.package, tool));
-            added += 1;
+            if tool.dnf_packages.is_empty() {
+                return Err(ToolConfigError::InvalidPackage(format!(
+                    "tool '{}' in package group '{}' must define at least one dnf_packages entry",
+                    tool.name, package.package
+                )));
+            }
+            for dnf_package in &tool.dnf_packages {
+                validate_dnf_package(&package.package, &tool.name, dnf_package)?;
+                if !claimed_packages.insert(dnf_package.as_str()) {
+                    return Err(ToolConfigError::InvalidPackage(format!(
+                        "dnf package '{dnf_package}' is assigned to more than one tool"
+                    )));
+                }
+            }
         }
     }
 
-    added
+    Ok(())
 }
 
-fn tool_table(package: &str, tool: &ToolState) -> Table {
-    let mut table = Table::new();
-    table["name"] = toml_edit::value(tool.definition.name.as_str());
-    table["path"] = toml_edit::value(
-        tool.host_path
-            .as_ref()
-            .expect("selected tools must be available")
-            .to_string_lossy()
-            .as_ref(),
-    );
-    table["container_path"] = toml_edit::value(container_path_for_tool(&tool.definition.name));
-    table["mode"] = toml_edit::value("ro");
-    table["when"] = toml_edit::value("always");
-    table["optional"] = toml_edit::value(false);
-    table[MANAGED_BY_KEY] = toml_edit::value(MANAGED_BY_VALUE);
-    table[MANAGED_PACKAGE_KEY] = toml_edit::value(package);
-
-    if !tool.definition.description.trim().is_empty() {
-        table["description"] = toml_edit::value(tool.definition.description.as_str());
+fn validate_dnf_package(group: &str, tool: &str, package: &str) -> Result<(), ToolConfigError> {
+    if !crate::config::is_valid_dnf_package_name(package) {
+        return Err(ToolConfigError::InvalidPackage(format!(
+            "dnf package for tool '{tool}' in group '{group}' must be a package name, not an option or shell expression"
+        )));
     }
-
-    let secrets = secret_tables(&tool.definition.secrets);
-    if !secrets.is_empty() {
-        table["secret"] = Item::ArrayOfTables(secrets);
-    }
-
-    table
-}
-
-fn secret_tables(secrets: &BTreeMap<String, SecretInput>) -> ArrayOfTables {
-    let mut tables = ArrayOfTables::new();
-    for (env, input) in secrets {
-        let spec = input.normalized(env);
-        let mut table = Table::new();
-        table["env"] = toml_edit::value(env.as_str());
-
-        if let Some(from_env) = spec
-            .from_env
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            table["from_env"] = toml_edit::value(from_env);
-        }
-
-        if let Some(store) = spec.secret_store.as_ref().filter(|store| !store.is_empty()) {
-            let mut inline = InlineTable::new();
-            for (key, value) in store {
-                inline.insert(key, Value::from(value.as_str()));
-            }
-            table["secret_store"] = Item::Value(Value::InlineTable(inline));
-        }
-
-        tables.push(table);
-    }
-
-    tables
+    Ok(())
 }
 
 fn backup_file(path: &Path) -> io::Result<PathBuf> {

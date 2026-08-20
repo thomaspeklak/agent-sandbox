@@ -89,6 +89,7 @@ sign_key = "~/.ssh/ags-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
 container_boot_dirs = ["/home/dev/.ssh"]
 passthrough_env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+extra_dnf_packages = ["bash", "git", "python3", "ripgrep"]
 ```
 
 ### Fields
@@ -111,6 +112,13 @@ passthrough_env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
   - Directories created in container before launching agent.
 - `passthrough_env` (string array, optional)
   - Host env vars to pass into container if set and not already resolved from secrets.
+- `extra_dnf_packages` (string array, optional)
+  - DNF packages installed explicitly in the sandbox image by automatic builds and `ags update-image`.
+  - When omitted, AGS uses the canonical default set: the previously bundled packages plus sandbox-native `ansible-lint`.
+  - Set it to `[]` to request no runtime packages. This may make AGS features unusable; for example, normal launches require Bash, browser mode requires `socat`, `--tmux` requires tmux, and several shims require Python.
+  - Repo-local overlays replace the complete base list rather than appending to it.
+  - Package names cannot be empty, start with `-`, contain whitespace, or contain control characters.
+  - Use `ags tools --packages <catalog.json>` to edit the list interactively, then run `ags update-image`.
 
 ---
 
@@ -232,7 +240,7 @@ This keeps dcg core protections on (implicit) and adds common AGS-adjacent packs
 
 Declares a tool binary mount, optional directories, optional secrets.
 
-`ags tools --packages <json>` can generate managed `[[tool]]` entries from a package JSON file. Package definitions intentionally contain command names rather than host binary paths; AGS resolves host binaries from the user's `PATH` while configuring and disables missing tools in the TUI. Missing tools can show an install action when the package JSON includes package-manager metadata for the current host (`apt` for Debian-like systems or `dnf` for Fedora/RPM-like systems). Use `apt_binary` or `dnf_binary` when a distro package installs a host command with a different name than the sandbox-facing tool `name`.
+`[[tool]]` remains the low-level mechanism for mounting a specific host binary into the sandbox. It is independent of `ags tools`, which now edits sandbox image packages through `[sandbox].extra_dnf_packages` and does not generate `[[tool]]` entries.
 
 ```toml
 [[tool]]

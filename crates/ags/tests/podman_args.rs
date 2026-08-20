@@ -8,6 +8,7 @@ fn minimal_plan() -> LaunchPlan {
     LaunchPlan {
         image: "localhost/agent-sandbox:latest".to_owned(),
         containerfile: PathBuf::from("/tmp/Containerfile"),
+        extra_dnf_packages: vec![],
         container_name: "ags-project-abcd".to_owned(),
         workdir: WorkdirMapping {
             host: PathBuf::from("/home/user/project"),

@@ -15,6 +15,10 @@ sign_key = "/tmp/sign"
 "#;
     let raw: ags::config::RawConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(raw.sandbox.image, "localhost/agent-sandbox:latest");
+    assert_eq!(
+        raw.sandbox.extra_dnf_packages,
+        ags::config::DEFAULT_EXTRA_DNF_PACKAGES
+    );
     assert!(raw.mount.is_empty());
     assert!(raw.tool.is_empty());
     assert!(raw.secret.is_empty());
@@ -26,6 +30,26 @@ sign_key = "/tmp/sign"
     assert!(!raw.clipboard.approve_writes);
     assert!(!raw.desktop_passthrough.wayland);
     assert_eq!(raw.update.minimum_release_age, 1440);
+}
+
+#[test]
+fn generated_config_and_containerfile_use_canonical_package_defaults() {
+    let raw: ags::config::RawConfig = toml::from_str(ags::config::DEFAULT_CONFIG).unwrap();
+    assert_eq!(
+        raw.sandbox.extra_dnf_packages,
+        ags::config::DEFAULT_EXTRA_DNF_PACKAGES
+    );
+
+    let containerfile = include_str!("../../../config/Containerfile");
+    let argument = containerfile
+        .lines()
+        .find_map(|line| line.strip_prefix("ARG EXTRA_DNF_PACKAGES=\""))
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap();
+    assert_eq!(
+        argument.split_whitespace().collect::<Vec<_>>(),
+        ags::config::DEFAULT_EXTRA_DNF_PACKAGES
+    );
 }
 
 #[test]

@@ -84,9 +84,14 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 .config_path
                 .clone()
                 .unwrap_or_else(ags::config::default_config_path);
+            let overlay_path = ags::lifecycle::resolve_repo_local_config(&config_path);
             return try_sub(
                 "tools",
-                ags::cmd::tool_configurator::run(&config_path, &opts.packages_path),
+                ags::cmd::tool_configurator::run(
+                    &config_path,
+                    overlay_path.as_deref(),
+                    &opts.packages_path,
+                ),
             );
         }
         SubCommand::Setup
@@ -96,7 +101,13 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
         | SubCommand::UpdateAgents => {}
     }
 
-    let config = match ags::lifecycle::load_config(None) {
+    let config_path = match &sub {
+        SubCommand::UpdateImage(opts) | SubCommand::UpdateDeprecated(opts) => {
+            opts.config_path.as_deref()
+        }
+        _ => None,
+    };
+    let config = match ags::lifecycle::load_config(config_path) {
         Ok(c) => c,
         Err(code) => return code,
     };

@@ -98,6 +98,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
         context_dir,
         &br_version,
         &dcg_version,
+        &config.sandbox.extra_dnf_packages,
         opts.pull,
     );
 
@@ -351,27 +352,21 @@ fn build_podman_build_args(
     context_dir: &Path,
     br_version: &str,
     dcg_version: &str,
+    extra_dnf_packages: &[String],
     pull: bool,
 ) -> Vec<String> {
-    let mut args = vec![
-        "build".to_owned(),
-        "-t".to_owned(),
-        image.to_owned(),
-        "-f".to_owned(),
-        containerfile.display().to_string(),
-    ];
-
-    for (name, version) in [("BR_VERSION", br_version), ("DCG_VERSION", dcg_version)] {
-        args.push("--build-arg".to_owned());
-        args.push(format!("{name}={version}"));
-    }
-
-    if pull {
-        args.push("--pull".to_owned());
-    }
-
-    args.push(context_dir.display().to_string());
-    args
+    let packages = extra_dnf_packages.join(" ");
+    crate::podman::build_image_args(
+        image,
+        containerfile,
+        context_dir,
+        &[
+            ("BR_VERSION", br_version),
+            ("DCG_VERSION", dcg_version),
+            ("EXTRA_DNF_PACKAGES", &packages),
+        ],
+        pull,
+    )
 }
 
 #[cfg(test)]
@@ -393,6 +388,7 @@ mod tests {
             Path::new("/tmp"),
             "v1.0.0",
             "v3.0.0",
+            &["ansible-lint".to_owned(), "shellcheck".to_owned()],
             true,
         );
 
@@ -400,7 +396,23 @@ mod tests {
         assert!(args.contains(&"BR_VERSION=v1.0.0".to_owned()));
         assert!(!args.iter().any(|arg| arg.starts_with("BV_VERSION=")));
         assert!(args.contains(&"DCG_VERSION=v3.0.0".to_owned()));
+        assert!(args.contains(&"EXTRA_DNF_PACKAGES=ansible-lint shellcheck".to_owned()));
         assert_eq!(args.last().unwrap(), "/tmp");
+    }
+
+    #[test]
+    fn build_args_override_containerfile_default_for_empty_package_list() {
+        let args = build_podman_build_args(
+            "localhost/agent-sandbox:latest",
+            Path::new("/tmp/Containerfile"),
+            Path::new("/tmp"),
+            "v1.0.0",
+            "v3.0.0",
+            &[],
+            false,
+        );
+
+        assert!(args.contains(&"EXTRA_DNF_PACKAGES=".to_owned()));
     }
 
     #[test]

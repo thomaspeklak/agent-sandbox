@@ -198,6 +198,7 @@ fn parses_update_image_keep_existing_flag() {
         cmd,
         Command::Sub(SubCommand::UpdateImage(UpdateImageOptions {
             keep_existing: true,
+            ..Default::default()
         }))
     );
 }
@@ -209,6 +210,19 @@ fn parses_deprecated_update_keep_existing_flag() {
         cmd,
         Command::Sub(SubCommand::UpdateDeprecated(UpdateImageOptions {
             keep_existing: true,
+            ..Default::default()
+        }))
+    );
+}
+
+#[test]
+fn parses_update_image_config_path() {
+    let cmd = parse_args(args(&["ags", "update-image", "--config=/tmp/ags.toml"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::UpdateImage(UpdateImageOptions {
+            config_path: Some("/tmp/ags.toml".into()),
+            ..Default::default()
         }))
     );
 }

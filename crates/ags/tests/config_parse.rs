@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use ags::config::{
-    DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource, ValidatedConfig,
-    parse_and_validate_with_overlay, parse_toml_str,
+    DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource,
+    ValidatedConfig, parse_and_validate_with_overlay, parse_toml_str,
 };
 use tempfile::tempdir;
 
@@ -34,6 +34,7 @@ fn parse_err(extra: &str) -> String {
 fn minimal_config_parses() {
     let cfg = parse_minimal("");
     assert_eq!(cfg.sandbox.image, "localhost/agent-sandbox:latest");
+    assert_eq!(cfg.sandbox.extra_dnf_packages, DEFAULT_EXTRA_DNF_PACKAGES);
     assert!(cfg.mounts.is_empty());
     assert!(cfg.tools.is_empty());
     assert!(cfg.secrets.is_empty());
@@ -46,6 +47,26 @@ fn minimal_config_parses() {
     assert!(!cfg.desktop_passthrough.wayland);
     assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
+}
+
+#[test]
+fn sandbox_dnf_packages_can_be_explicitly_empty() {
+    let cfg = parse_minimal("extra_dnf_packages = []");
+    assert!(cfg.sandbox.extra_dnf_packages.is_empty());
+}
+
+#[test]
+fn sandbox_dnf_packages_reject_options_and_shell_expressions() {
+    for package in ["--setopt=tsflags=nodocs", "two packages", "python3*"] {
+        let err = parse_err(&format!(
+            "extra_dnf_packages = [{}]",
+            toml::Value::String(package.to_owned())
+        ));
+        assert!(
+            err.contains("must be a package name, not an option or shell expression"),
+            "got: {err}"
+        );
+    }
 }
 
 #[test]
@@ -674,6 +695,7 @@ gitconfig_path = "/tmp/gitconfig"
 auth_key = "/tmp/auth"
 sign_key = "/tmp/sign"
 passthrough_env = ["BASE_TOKEN"]
+extra_dnf_packages = ["base-package"]
 
 [[mount]]
 host = "/base"
@@ -696,6 +718,7 @@ auto_allow_domains = ["base.example"]
 [sandbox]
 image = "repo:latest"
 passthrough_env = ["REPO_TOKEN"]
+extra_dnf_packages = ["repo-package"]
 
 [[mount]]
 host = "/repo"
@@ -715,6 +738,7 @@ auto_allow_domains = ["repo.example"]
 
     assert_eq!(cfg.sandbox.image, "repo:latest");
     assert_eq!(cfg.sandbox.passthrough_env, vec!["REPO_TOKEN"]);
+    assert_eq!(cfg.sandbox.extra_dnf_packages, vec!["repo-package"]);
     assert_eq!(cfg.update.pi_spec, "@repo/pi");
     assert_eq!(cfg.update.minimum_release_age, 1440);
     assert_eq!(cfg.auth_proxy.auto_allow_domains, vec!["repo.example"]);
