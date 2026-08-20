@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.19.0] — 2026-08-20
+
+### Features
+
+- feat: inject sandbox context into OpenCode (33d2c71)
+
 ## [v0.18.1] — 2026-08-16
 
 ### Bug Fixes
