@@ -35,6 +35,8 @@ fn minimal_config_parses() {
     let cfg = parse_minimal("");
     assert_eq!(cfg.sandbox.image, "localhost/agent-sandbox:latest");
     assert_eq!(cfg.sandbox.extra_dnf_packages, DEFAULT_EXTRA_DNF_PACKAGES);
+    assert!(cfg.sandbox.tool_download_lock.is_none());
+    assert!(cfg.sandbox.tool_downloads.is_empty());
     assert!(cfg.mounts.is_empty());
     assert!(cfg.tools.is_empty());
     assert!(cfg.secrets.is_empty());
@@ -67,6 +69,128 @@ fn sandbox_dnf_packages_reject_options_and_shell_expressions() {
             "got: {err}"
         );
     }
+}
+
+#[test]
+fn sandbox_loads_and_validates_tool_download_lock() {
+    let dir = tempdir().unwrap();
+    let lock = dir.path().join("tool-downloads.lock.json");
+    std::fs::write(
+        &lock,
+        format!(
+            r#"[
+  {{
+    "id": "terraform",
+    "download": {{
+      "version": "1.0.0",
+      "archive": "zip",
+      "member": "terraform",
+      "install_as": "terraform",
+      "artifacts": {{
+        "x86_64": {{"url": "https://example.com/terraform-amd64.zip", "sha256": "{}"}},
+        "aarch64": {{"url": "https://example.com/terraform-arm64.zip", "sha256": "{}"}}
+      }}
+    }}
+  }}
+]"#,
+            "a".repeat(64),
+            "b".repeat(64)
+        ),
+    )
+    .unwrap();
+
+    let cfg = parse_minimal(&format!(
+        "tool_download_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert_eq!(
+        cfg.sandbox.tool_download_lock.as_deref(),
+        Some(lock.as_path())
+    );
+    assert_eq!(cfg.sandbox.tool_downloads.len(), 1);
+    assert_eq!(cfg.sandbox.tool_downloads[0].id, "terraform");
+}
+
+#[test]
+fn sandbox_resolves_relative_tool_download_lock_from_its_config_directory() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let lock = dir.path().join("tool-downloads.content.lock.json");
+    std::fs::write(
+        &lock,
+        format!(
+            r#"[{{"id":"tool","download":{{"version":"1","archive":"zip","member":"tool","install_as":"tool","artifacts":{{"x86_64":{{"url":"https://example.com/tool.zip","sha256":"{}"}},"aarch64":{{"url":"https://example.com/tool.zip","sha256":"{}"}}}}}}}}]"#,
+            "a".repeat(64),
+            "b".repeat(64)
+        ),
+    )
+    .unwrap();
+    let toml = format!(
+        "{}\ntool_download_lock = \"tool-downloads.content.lock.json\"",
+        minimal_sandbox_toml()
+    );
+
+    let cfg = parse_toml_str(&toml, &config).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.tool_download_lock.as_deref(),
+        Some(lock.as_path())
+    );
+}
+
+#[test]
+fn overlay_resolves_relative_tool_download_lock_from_overlay_directory() {
+    let dir = tempdir().unwrap();
+    let base_dir = dir.path().join("user-config");
+    let overlay_dir = dir.path().join("project/.ags");
+    std::fs::create_dir_all(&base_dir).unwrap();
+    std::fs::create_dir_all(&overlay_dir).unwrap();
+    let base = base_dir.join("config.toml");
+    let overlay = overlay_dir.join("config.toml");
+    let lock = overlay_dir.join("tool-downloads.content.lock.json");
+    std::fs::write(&base, minimal_sandbox_toml()).unwrap();
+    std::fs::write(
+        &lock,
+        format!(
+            r#"[{{"id":"tool","download":{{"version":"1","archive":"zip","member":"tool","install_as":"tool","artifacts":{{"x86_64":{{"url":"https://example.com/tool.zip","sha256":"{}"}},"aarch64":{{"url":"https://example.com/tool.zip","sha256":"{}"}}}}}}}}]"#,
+            "a".repeat(64),
+            "b".repeat(64)
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        &overlay,
+        "[sandbox]\ntool_download_lock = \"tool-downloads.content.lock.json\"\n",
+    )
+    .unwrap();
+
+    let cfg = parse_and_validate_with_overlay(&base, Some(&overlay)).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.tool_download_lock.as_deref(),
+        Some(lock.as_path())
+    );
+}
+
+#[test]
+fn sandbox_rejects_incomplete_tool_download_lock() {
+    let dir = tempdir().unwrap();
+    let lock = dir.path().join("tool-downloads.lock.json");
+    std::fs::write(
+        &lock,
+        format!(
+            r#"[{{"id":"tool","download":{{"version":"1","archive":"zip","member":"tool","install_as":"tool","artifacts":{{"x86_64":{{"url":"https://example.com/tool.zip","sha256":"{}"}}}}}}}}]"#,
+            "a".repeat(64)
+        ),
+    )
+    .unwrap();
+
+    let error = parse_err(&format!(
+        "tool_download_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+    assert!(error.contains("must define exactly 'x86_64' and 'aarch64'"));
 }
 
 #[test]

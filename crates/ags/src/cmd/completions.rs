@@ -230,7 +230,7 @@ case "$words[2]" in
     ;;
   tools)
     _arguments \
-      '--packages[Tool package JSON file]:catalog file:_files' \
+      '--packages[Tool catalog JSON file]:catalog file:_files' \
       '--config[Config file to update]:config file:_files' \
       '1:catalog file:_files' \
       '(-h --help)'{-h,--help}'[Show help]'
@@ -276,7 +276,7 @@ complete -c ags -n "__fish_use_subcommand" -a install -d "Install assets/config 
 complete -c ags -n "__fish_use_subcommand" -a uninstall -d "Reserved no-op"
 complete -c ags -n "__fish_use_subcommand" -a create-aliases -d "Create wrappers and/or aliases"
 complete -c ags -n "__fish_use_subcommand" -a completions -d "Print completion script"
-complete -c ags -n "__fish_use_subcommand" -a tools -d "Configure sandbox image packages"
+complete -c ags -n "__fish_use_subcommand" -a tools -d "Choose sandbox tools by profession"
 
 complete -c ags -n "__fish_use_subcommand" -l agent -r -a "$__ags_agents" -d "Agent to run"
 complete -c ags -n "__fish_use_subcommand" -l browser -d "Enable browser sidecar"
@@ -317,7 +317,7 @@ complete -c ags -n "__fish_seen_subcommand_from completions" -l shell -r -a "$__
 complete -c ags -n "__fish_seen_subcommand_from completions" -s h -l help -d "Show help"
 
 # tools
-complete -c ags -n "__fish_seen_subcommand_from tools" -l packages -r -d "Tool package JSON file"
+complete -c ags -n "__fish_seen_subcommand_from tools" -l packages -r -d "Tool catalog JSON file"
 complete -c ags -n "__fish_seen_subcommand_from tools" -l config -r -d "Config file to update"
 complete -c ags -n "__fish_seen_subcommand_from tools" -s h -l help -d "Show help"
 
@@ -363,7 +363,7 @@ mod tests {
         assert!(
             script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
         );
-        assert!(script.contains("--packages[Tool package JSON file]"));
+        assert!(script.contains("--packages[Tool catalog JSON file]"));
         assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
         assert!(script.contains("--env[Set a container environment variable (repeatable)]"));
         assert!(script.contains("--op-secret-set[Inject fields from a 1Password Secure Note]"));

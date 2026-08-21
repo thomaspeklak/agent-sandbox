@@ -5,9 +5,10 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use super::model::{
-    PackageState, SaveReport, ToolConfigError, ToolSelectionState, ToolState, load_package_file,
+    GroupRow, SaveReport, ToolConfigError, ToolSelectionState, load_package_file,
     write_selected_tools,
 };
+use crate::config::LockedToolDownload;
 
 #[derive(Clone, Copy)]
 enum StatusKind {
@@ -22,8 +23,9 @@ pub struct App {
     packages_path: PathBuf,
     state: ToolSelectionState,
     running: bool,
-    current_package: usize,
-    selected_tool: usize,
+    current_group: usize,
+    selected_row: usize,
+    table_state: TableState,
     show_help: bool,
     status_message: Option<(String, StatusKind)>,
     save_report: Option<SaveReport>,
@@ -34,7 +36,8 @@ impl App {
         config_path: &Path,
         legacy_cleanup_path: Option<&Path>,
         packages_path: &Path,
-        configured_packages: &[String],
+        configured_packages: Option<&[String]>,
+        configured_downloads: Option<&[LockedToolDownload]>,
     ) -> Result<Self, ToolConfigError> {
         if !config_path.exists() {
             return Err(ToolConfigError::Config(format!(
@@ -43,24 +46,31 @@ impl App {
             )));
         }
 
-        let packages = load_package_file(packages_path)?;
-        let state = ToolSelectionState::from_packages(packages, configured_packages)?;
-
-        Ok(Self {
+        let catalog = load_package_file(packages_path)?;
+        let state = ToolSelectionState::from_catalog_with_config(
+            catalog,
+            configured_packages,
+            configured_downloads,
+        )?;
+        let mut app = Self {
             config_path: config_path.to_owned(),
             legacy_cleanup_path: legacy_cleanup_path.map(Path::to_owned),
             packages_path: packages_path.to_owned(),
             state,
             running: true,
-            current_package: 0,
-            selected_tool: 0,
+            current_group: 0,
+            selected_row: 0,
+            table_state: TableState::default(),
             show_help: false,
             status_message: Some((
-                "Selections reflect packages configured for the sandbox image.".to_owned(),
+                "Choose tools by profession; shared tools stay synchronized across tabs."
+                    .to_owned(),
                 StatusKind::Info,
             )),
             save_report: None,
-        })
+        };
+        app.normalize_selection();
+        Ok(app)
     }
 
     pub fn run(&mut self) -> Result<Option<SaveReport>, Box<dyn std::error::Error>> {
@@ -87,35 +97,38 @@ impl App {
     }
 
     fn normalize_selection(&mut self) {
-        if self.state.packages.is_empty() {
-            self.current_package = 0;
-            self.selected_tool = 0;
+        if self.state.groups.is_empty() {
+            self.current_group = 0;
+            self.selected_row = 0;
+            self.table_state.select(None);
             return;
         }
-
-        if self.current_package >= self.state.packages.len() {
-            self.current_package = self.state.packages.len() - 1;
+        self.current_group = self.current_group.min(self.state.groups.len() - 1);
+        let rows = self.state.group_rows(self.current_group);
+        if rows.is_empty() {
+            self.selected_row = 0;
+            self.table_state.select(None);
+            return;
         }
-
-        let tool_count = self.current_package().map(|p| p.tools.len()).unwrap_or(0);
-        if tool_count == 0 {
-            self.selected_tool = 0;
-        } else if self.selected_tool >= tool_count {
-            self.selected_tool = tool_count - 1;
+        self.selected_row = self.selected_row.min(rows.len() - 1);
+        if !matches!(rows[self.selected_row], GroupRow::Tool(_)) {
+            self.selected_row = rows
+                .iter()
+                .position(|row| matches!(row, GroupRow::Tool(_)))
+                .unwrap_or(0);
         }
+        self.table_state.select(Some(self.selected_row));
     }
 
-    fn current_package(&self) -> Option<&PackageState> {
-        self.state.packages.get(self.current_package)
-    }
-
-    fn current_package_mut(&mut self) -> Option<&mut PackageState> {
-        self.state.packages.get_mut(self.current_package)
-    }
-
-    fn current_tool(&self) -> Option<&ToolState> {
-        self.current_package()
-            .and_then(|package| package.tools.get(self.selected_tool))
+    fn current_tool_index(&self) -> Option<usize> {
+        match self
+            .state
+            .group_rows(self.current_group)
+            .get(self.selected_row)
+        {
+            Some(GroupRow::Tool(index)) => Some(*index),
+            _ => None,
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
@@ -128,67 +141,56 @@ impl App {
             KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
             KeyCode::Char('s') => self.save_and_quit(),
-            KeyCode::Char('p') | KeyCode::Char('P') => self.toggle_current_package(),
+            KeyCode::Char('d') | KeyCode::Char('D') => self.restore_defaults(),
             KeyCode::Char(' ') => self.toggle_current_tool(),
-            KeyCode::Right | KeyCode::Char('l') => self.move_package(1),
-            KeyCode::Left | KeyCode::Char('h') => self.move_package(-1),
+            KeyCode::Right | KeyCode::Char('l') => self.move_group(1),
+            KeyCode::Left | KeyCode::Char('h') => self.move_group(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_tool(1),
             KeyCode::Up | KeyCode::Char('k') => self.move_tool(-1),
             _ => {}
         }
     }
 
-    fn move_package(&mut self, delta: isize) {
-        let count = self.state.packages.len();
+    fn move_group(&mut self, delta: isize) {
+        let count = self.state.groups.len();
         if count == 0 {
             return;
         }
-        let current = self.current_package as isize;
-        let next = (current + delta).clamp(0, (count - 1) as isize) as usize;
-        if next != self.current_package {
-            self.current_package = next;
-            self.selected_tool = 0;
+        let next = (self.current_group as isize + delta).clamp(0, (count - 1) as isize) as usize;
+        if next != self.current_group {
+            self.current_group = next;
+            self.selected_row = 0;
+            self.table_state = TableState::default();
+            self.status_message = None;
+            self.normalize_selection();
         }
     }
 
     fn move_tool(&mut self, delta: isize) {
-        let Some(package) = self.current_package() else {
-            return;
-        };
-        if package.tools.is_empty() {
+        let rows = self.state.group_rows(self.current_group);
+        if rows.is_empty() {
             return;
         }
-        let current = self.selected_tool as isize;
-        self.selected_tool =
-            (current + delta).clamp(0, (package.tools.len() - 1) as isize) as usize;
-    }
-
-    fn toggle_current_package(&mut self) {
-        let Some(package) = self.current_package_mut() else {
-            return;
-        };
-        let select = !package.all_selected();
-        for tool in &mut package.tools {
-            tool.selected = select;
-            tool.touched = true;
+        let mut next = self.selected_row as isize;
+        loop {
+            next += delta;
+            if next < 0 || next >= rows.len() as isize {
+                return;
+            }
+            if matches!(rows[next as usize], GroupRow::Tool(_)) {
+                self.selected_row = next as usize;
+                self.table_state.select(Some(self.selected_row));
+                self.status_message = None;
+                return;
+            }
         }
-
-        let action = if select { "Selected" } else { "Deselected" };
-        self.status_message = Some((
-            format!("{action} every tool option in '{}'.", package.package),
-            StatusKind::Info,
-        ));
     }
 
     fn toggle_current_tool(&mut self) {
-        let selected_tool = self.selected_tool;
-        let Some(package) = self.current_package_mut() else {
+        let Some(tool_index) = self.current_tool_index() else {
             return;
         };
-        let Some(tool) = package.tools.get_mut(selected_tool) else {
-            return;
-        };
-
+        let tool = &mut self.state.tools[tool_index];
         tool.selected = !tool.selected;
         tool.touched = true;
         let state = if tool.selected {
@@ -197,7 +199,15 @@ impl App {
             "deselected"
         };
         self.status_message = Some((
-            format!("{} {state}.", tool.definition.name),
+            format!("{} {state} in every profession view.", tool.definition.name),
+            StatusKind::Info,
+        ));
+    }
+
+    fn restore_defaults(&mut self) {
+        self.state.reset_to_defaults();
+        self.status_message = Some((
+            "Restored the catalog's recommended tool selection.".to_owned(),
             StatusKind::Info,
         ));
     }
@@ -210,7 +220,7 @@ impl App {
         ) {
             Ok(report) => {
                 self.status_message = Some((
-                    format!("Saved {} selected tool options.", report.selected_tools),
+                    format!("Saved {} selected tools.", report.selected_tools),
                     StatusKind::Success,
                 ));
                 self.save_report = Some(report);
@@ -224,3 +234,6 @@ impl App {
 }
 
 include!("ui_render.rs");
+
+#[cfg(test)]
+include!("ui_tests.rs");

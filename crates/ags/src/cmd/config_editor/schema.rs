@@ -76,7 +76,13 @@ const SANDBOX_FIELDS: &[ScalarFieldSchema] = &[
         key: "extra_dnf_packages",
         kind: ScalarFieldKind::StringList,
         required: false,
-        default_input: "python3-ansible-lint, bash, ca-certificates, coreutils, curl, dbus-devel, diffutils, fd-find, file, findutils, gcc, gcc-c++, gh, git, grep, jq, kitty-terminfo, less, make, nodejs24-bin, nodejs24-npm-bin, openssh-clients, patch, pkgconf-pkg-config, procps-ng, python3, ripgrep, rsync, sccache, sed, socat, tar, tree, tmux, unzip, util-linux, wget, which, wl-clipboard, xz, zip, golang, ImageMagick, java-devel, postgresql, python3-pip, ruby, sqlite-devel, zig",
+        default_input: "git, gh, openssh-clients, fd-find, ripgrep, rsync, tmux, kitty-terminfo, socat, make, pkgconf-pkg-config, sccache",
+    },
+    ScalarFieldSchema {
+        key: "tool_download_lock",
+        kind: ScalarFieldKind::Text,
+        required: false,
+        default_input: "",
     },
 ];
 

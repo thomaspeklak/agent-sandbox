@@ -15,6 +15,7 @@ sign_key = "/tmp/sign"
 "#;
     let raw: ags::config::RawConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(raw.sandbox.image, "localhost/agent-sandbox:latest");
+    assert!(raw.sandbox.tool_download_lock.is_empty());
     assert_eq!(
         raw.sandbox.extra_dnf_packages,
         ags::config::DEFAULT_EXTRA_DNF_PACKAGES
@@ -50,6 +51,50 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
         argument.split_whitespace().collect::<Vec<_>>(),
         ags::config::DEFAULT_EXTRA_DNF_PACKAGES
     );
+
+    let baseline = containerfile
+        .lines()
+        .find_map(|line| line.strip_prefix("RUN BASE_DNF_PACKAGES=\""))
+        .and_then(|value| value.split('"').next())
+        .unwrap();
+    assert_eq!(
+        baseline.split_whitespace().collect::<Vec<_>>(),
+        ags::config::BASE_DNF_PACKAGES
+    );
+    assert!(containerfile.contains("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\""));
+    assert!(containerfile.contains("sha256sum -c -"));
+
+    let example: ags::config::RawConfig =
+        toml::from_str(include_str!("../../../config/config.example.toml")).unwrap();
+    assert_eq!(
+        example.sandbox.extra_dnf_packages,
+        ags::config::DEFAULT_EXTRA_DNF_PACKAGES
+    );
+}
+
+#[test]
+fn verified_download_loop_propagates_installer_failures() {
+    let containerfile = include_str!("../../../config/Containerfile");
+
+    assert!(containerfile.contains("RUN set -eu; \\"));
+    assert!(containerfile.contains("lock=\"$(mktemp)\"; entries=\"$(mktemp)\";"));
+    assert!(containerfile.contains("done < \"$entries\"; \\"));
+    assert!(!containerfile.contains("done < \"$entries\" &&"));
+    assert!(containerfile.contains("tar -xOzf \"$archive\" -- \"$member\""));
+}
+
+#[test]
+fn image_uses_conservative_system_wide_uv_policy() {
+    let containerfile = include_str!("../../../config/Containerfile");
+    let policy = include_str!("../../../config/uv.toml");
+
+    assert!(containerfile.contains("COPY uv.toml /etc/uv/uv.toml"));
+    assert!(policy.contains("exclude-newer = \"1 week\""));
+    assert!(policy.contains("index-strategy = \"first-index\""));
+    assert!(policy.contains("verify-hashes = true"));
+    assert!(!policy.contains("require-hashes"));
+    assert!(!policy.contains("no-build"));
+    assert!(!policy.contains("malware-check"));
 }
 
 #[test]

@@ -1,90 +1,311 @@
-[
-  {
-    "package": "general",
-    "tools": [
-      { "name": "Bash", "dnf_packages": ["bash"], "description": "Shell used by every normal AGS launch." },
-      { "name": "CA certificates", "dnf_packages": ["ca-certificates"], "description": "TLS certificate trust for HTTPS clients." },
-      { "name": "Coreutils", "dnf_packages": ["coreutils"], "description": "Core file, process, and text utilities used by AGS scripts." },
-      { "name": "curl", "dnf_packages": ["curl"], "description": "HTTP client used by agent update workflows." },
-      { "name": "diffutils", "dnf_packages": ["diffutils"], "description": "File comparison tools." },
-      { "name": "file", "dnf_packages": ["file"], "description": "File type detection." },
-      { "name": "findutils", "dnf_packages": ["findutils"], "description": "Standard find and xargs utilities." },
-      { "name": "grep", "dnf_packages": ["grep"], "description": "Text matching; also used by Claude guard hooks." },
-      { "name": "jq", "dnf_packages": ["jq"], "description": "JSON processor; also used by Claude guard hooks." },
-      { "name": "less", "dnf_packages": ["less"], "description": "Terminal pager." },
-      { "name": "procps", "dnf_packages": ["procps-ng"], "description": "Process inspection tools such as ps and top." },
-      { "name": "sed", "dnf_packages": ["sed"], "description": "Stream editor." },
-      { "name": "tar", "dnf_packages": ["tar"], "description": "Archive creation and extraction." },
-      { "name": "tree", "dnf_packages": ["tree"], "description": "Directory tree viewer." },
-      { "name": "unzip", "dnf_packages": ["unzip"], "description": "ZIP archive extraction." },
-      { "name": "util-linux", "dnf_packages": ["util-linux"], "description": "Common Linux system utilities." },
-      { "name": "wget", "dnf_packages": ["wget"], "description": "HTTP download client." },
-      { "name": "which", "dnf_packages": ["which"], "description": "Executable path lookup." },
-      { "name": "xz", "dnf_packages": ["xz"], "description": "XZ compression tools." },
-      { "name": "zip", "dnf_packages": ["zip"], "description": "ZIP archive creation." }
-    ]
-  },
-  {
-    "package": "source-control",
-    "tools": [
-      { "name": "Git", "dnf_packages": ["git"], "description": "Version control client used by sandbox workflows." },
-      { "name": "GitHub CLI", "dnf_packages": ["gh"], "description": "GitHub issue, pull request, and repository workflows." },
-      { "name": "OpenSSH clients", "dnf_packages": ["openssh-clients"], "description": "SSH Git authentication and commit signing." },
-      { "name": "rsync", "dnf_packages": ["rsync"], "description": "Incremental file synchronization." }
-    ]
-  },
-  {
-    "package": "search",
-    "tools": [
-      { "name": "fd", "dnf_packages": ["fd-find"], "description": "Fast filesystem search." },
-      { "name": "ripgrep", "dnf_packages": ["ripgrep"], "description": "Fast recursive text search." }
-    ]
-  },
-  {
-    "package": "native-development",
-    "tools": [
-      { "name": "D-Bus headers", "dnf_packages": ["dbus-devel"], "description": "D-Bus native development headers." },
-      { "name": "GCC toolchain", "dnf_packages": ["gcc", "gcc-c++"], "description": "C/C++ compilers; GCC also links ordinary Rust binaries." },
-      { "name": "make", "dnf_packages": ["make"], "description": "Make build automation." },
-      { "name": "patch", "dnf_packages": ["patch"], "description": "Apply unified source patches." },
-      { "name": "pkg-config", "dnf_packages": ["pkgconf-pkg-config"], "description": "Native dependency discovery." },
-      { "name": "sccache", "dnf_packages": ["sccache"], "description": "Compiler cache configured as the default Rust wrapper." }
-    ]
-  },
-  {
-    "package": "languages",
-    "tools": [
-      { "name": "Go", "dnf_packages": ["golang"], "description": "Go compiler and tooling." },
-      { "name": "Java", "dnf_packages": ["java-devel"], "description": "Java development kit." },
-      { "name": "Node.js 24", "dnf_packages": ["nodejs24-bin"], "description": "Runtime required by pnpm-installed Pi, Gemini, and OpenCode agents." },
-      { "name": "npm", "dnf_packages": ["nodejs24-npm-bin"], "description": "Node.js package manager." },
-      { "name": "Python 3", "dnf_packages": ["python3"], "description": "Runtime required by AGS clipboard, auth, webview, and 1Password shims." },
-      { "name": "Python pip", "dnf_packages": ["python3-pip"], "description": "Python package installer." },
-      { "name": "Ruby", "dnf_packages": ["ruby"], "description": "Ruby runtime and standard tooling." },
-      { "name": "Zig", "dnf_packages": ["zig"], "description": "Zig compiler and build system." }
-    ]
-  },
-  {
-    "package": "terminal-desktop",
-    "tools": [
-      { "name": "ImageMagick", "dnf_packages": ["ImageMagick"], "description": "Image conversion and inspection tools." },
-      { "name": "Kitty terminfo", "dnf_packages": ["kitty-terminfo"], "description": "Terminal metadata needed by tmux under Kitty." },
-      { "name": "socat", "dnf_packages": ["socat"], "description": "TCP relay required by AGS browser mode." },
-      { "name": "tmux", "dnf_packages": ["tmux"], "description": "Terminal multiplexer required by the --tmux flag." },
-      { "name": "Wayland clipboard", "dnf_packages": ["wl-clipboard"], "description": "Direct Wayland clipboard utilities." }
-    ]
-  },
-  {
-    "package": "data",
-    "tools": [
-      { "name": "PostgreSQL client", "dnf_packages": ["postgresql"], "description": "psql client for PostgreSQL services." },
-      { "name": "SQLite headers", "dnf_packages": ["sqlite-devel"], "description": "SQLite native development headers." }
-    ]
-  },
-  {
-    "package": "quality",
-    "tools": [
-      { "name": "ansible-lint", "dnf_packages": ["python3-ansible-lint"], "description": "Lint Ansible playbooks and roles inside the sandbox." }
-    ]
-  }
-]
+{
+  "tools": [
+    {
+      "id": "git",
+      "name": "Git",
+      "description": "Track source history and collaborate through Git repositories.",
+      "default": true,
+      "dnf_packages": ["git"]
+    },
+    {
+      "id": "github-cli",
+      "name": "GitHub CLI",
+      "description": "Work with GitHub repositories, issues, pull requests, and releases.",
+      "default": true,
+      "dnf_packages": ["gh"]
+    },
+    {
+      "id": "openssh-clients",
+      "name": "OpenSSH clients",
+      "description": "Connect to remote systems and use SSH-backed Git authentication and signing.",
+      "default": true,
+      "dnf_packages": ["openssh-clients"]
+    },
+    {
+      "id": "fd",
+      "name": "fd",
+      "description": "Find files and directories quickly with concise search expressions.",
+      "default": true,
+      "dnf_packages": ["fd-find"]
+    },
+    {
+      "id": "ripgrep",
+      "name": "ripgrep",
+      "description": "Search source trees and text files recursively.",
+      "default": true,
+      "dnf_packages": ["ripgrep"]
+    },
+    {
+      "id": "rsync",
+      "name": "rsync",
+      "description": "Synchronize files and directory trees efficiently.",
+      "default": true,
+      "dnf_packages": ["rsync"]
+    },
+    {
+      "id": "tmux",
+      "name": "tmux",
+      "description": "Run persistent terminal sessions and use the AGS --tmux workflow.",
+      "default": true,
+      "dnf_packages": ["tmux", "kitty-terminfo"]
+    },
+    {
+      "id": "socat",
+      "name": "socat",
+      "description": "Relay network streams and support AGS browser forwarding.",
+      "default": true,
+      "dnf_packages": ["socat"]
+    },
+    {
+      "id": "gpp",
+      "name": "G++",
+      "description": "Compile and link C++ programs with the GNU toolchain.",
+      "default": false,
+      "dnf_packages": ["gcc-c++"]
+    },
+    {
+      "id": "make",
+      "name": "make",
+      "description": "Execute Makefile-based build and automation workflows.",
+      "default": true,
+      "dnf_packages": ["make"]
+    },
+    {
+      "id": "pkg-config",
+      "name": "pkg-config",
+      "description": "Discover compiler and linker settings for native dependencies.",
+      "default": true,
+      "dnf_packages": ["pkgconf-pkg-config"]
+    },
+    {
+      "id": "sccache",
+      "name": "sccache",
+      "description": "Cache compiler results to speed up repeated native and Rust builds.",
+      "default": true,
+      "dnf_packages": ["sccache"]
+    },
+    {
+      "id": "go",
+      "name": "Go",
+      "description": "Build, test, and run Go programs.",
+      "default": false,
+      "dnf_packages": ["golang"]
+    },
+    {
+      "id": "java",
+      "name": "Java JDK",
+      "description": "Build and run Java applications with the Java development kit.",
+      "default": false,
+      "dnf_packages": ["java-devel"]
+    },
+    {
+      "id": "ruby",
+      "name": "Ruby",
+      "description": "Run Ruby applications, scripts, and standard tooling.",
+      "default": false,
+      "dnf_packages": ["ruby"]
+    },
+    {
+      "id": "zig",
+      "name": "Zig",
+      "description": "Build and test Zig programs with the Zig compiler and build system.",
+      "default": false,
+      "dnf_packages": ["zig"]
+    },
+    {
+      "id": "npm",
+      "name": "npm",
+      "description": "Install and manage Node.js packages.",
+      "default": false,
+      "dnf_packages": ["nodejs24-npm-bin"]
+    },
+    {
+      "id": "python-pip",
+      "name": "Python pip",
+      "description": "Install and manage Python packages.",
+      "default": false,
+      "dnf_packages": ["python3-pip"]
+    },
+    {
+      "id": "postgresql-client",
+      "name": "PostgreSQL client",
+      "description": "Inspect and administer PostgreSQL services with psql and related clients.",
+      "default": false,
+      "dnf_packages": ["postgresql"]
+    },
+    {
+      "id": "ansible-lint",
+      "name": "ansible-lint",
+      "description": "Check Ansible playbooks and roles for quality and correctness.",
+      "default": false,
+      "dnf_packages": ["python3-ansible-lint"]
+    },
+    {
+      "id": "terraform",
+      "name": "Terraform",
+      "description": "Provision and manage infrastructure from declarative configuration.",
+      "default": false,
+      "download": {
+        "version": "1.15.9",
+        "archive": "zip",
+        "member": "terraform",
+        "install_as": "terraform",
+        "artifacts": {
+          "x86_64": {
+            "url": "https://releases.hashicorp.com/terraform/1.15.9/terraform_1.15.9_linux_amd64.zip",
+            "sha256": "76edd0b22d2f27d3d2e097cd793209646f719cf60f02ff3af626b07361137da1"
+          },
+          "aarch64": {
+            "url": "https://releases.hashicorp.com/terraform/1.15.9/terraform_1.15.9_linux_arm64.zip",
+            "sha256": "0afa6c29f61ca5ea270e950e43e50ecf2418b598507bf580e8ae76e1e6699b19"
+          }
+        }
+      }
+    },
+    {
+      "id": "openshift-cli",
+      "name": "OpenShift CLI (oc)",
+      "description": "Deploy and administer applications and clusters on OpenShift.",
+      "default": false,
+      "download": {
+        "version": "4.22.9",
+        "archive": "tar.gz",
+        "member": "oc",
+        "install_as": "oc",
+        "artifacts": {
+          "x86_64": {
+            "url": "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.22.9/openshift-client-linux-4.22.9.tar.gz",
+            "sha256": "76e22160684a4313daec380437abf54a029bddc3249a824928a84379069840d1"
+          },
+          "aarch64": {
+            "url": "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.22.9/openshift-client-linux-arm64-4.22.9.tar.gz",
+            "sha256": "c5d399d8a22f874596cdf824905dd9c8a7c724382dde310e0e1f3f124f62823b"
+          }
+        }
+      }
+    },
+    {
+      "id": "ansible-playbook",
+      "name": "Ansible Playbook",
+      "description": "Automate configuration and deployment by running Ansible playbooks.",
+      "default": false,
+      "dnf_packages": ["ansible-core"]
+    },
+    {
+      "id": "kubectl",
+      "name": "kubectl",
+      "description": "Inspect and manage Kubernetes workloads and cluster resources.",
+      "default": false,
+      "dnf_packages": ["kubernetes-client"]
+    },
+    {
+      "id": "aws-cli",
+      "name": "AWS CLI",
+      "description": "Manage Amazon Web Services resources and automation workflows.",
+      "default": false,
+      "dnf_packages": ["awscli2"]
+    },
+    {
+      "id": "helm",
+      "name": "Helm",
+      "description": "Package, configure, and deploy applications to Kubernetes.",
+      "default": false,
+      "dnf_packages": ["helm"]
+    },
+    {
+      "id": "dig",
+      "name": "dig",
+      "description": "Query DNS servers and diagnose name-resolution behavior.",
+      "default": false,
+      "dnf_packages": ["bind-utils"]
+    },
+    {
+      "id": "hcloud",
+      "name": "hcloud",
+      "description": "Manage Hetzner Cloud servers, networks, and related resources.",
+      "default": false,
+      "dnf_packages": ["hcloud"]
+    },
+    {
+      "id": "uv",
+      "name": "uv",
+      "description": "Manage Python projects, dependencies, environments, and tools.",
+      "default": false,
+      "dnf_packages": ["uv"]
+    },
+    {
+      "id": "black",
+      "name": "Black",
+      "description": "Format Python source code consistently with Black.",
+      "default": false,
+      "dnf_packages": ["black"]
+    },
+    {
+      "id": "imagemagick",
+      "name": "ImageMagick",
+      "description": "Inspect, convert, and transform image assets.",
+      "default": false,
+      "dnf_packages": ["ImageMagick"]
+    },
+    {
+      "id": "wayland-clipboard",
+      "name": "Wayland clipboard",
+      "description": "Read and write Wayland clipboard content with wl-copy and wl-paste.",
+      "default": false,
+      "dnf_packages": ["wl-clipboard"]
+    }
+  ],
+  "groups": [
+    {
+      "id": "general",
+      "name": "General",
+      "subcategories": [
+        { "name": "Source control and secure access", "tools": ["git", "github-cli", "openssh-clients"] },
+        { "name": "Search and navigation", "tools": ["fd", "ripgrep"] },
+        { "name": "File transfer", "tools": ["rsync"] },
+        { "name": "Network", "tools": ["dig"] },
+        { "name": "Terminal", "tools": ["tmux"] },
+        { "name": "Media and desktop", "tools": ["imagemagick", "wayland-clipboard"] }
+      ]
+    },
+    {
+      "id": "software-development",
+      "name": "Software Development",
+      "subcategories": [
+        { "name": "Source control", "tools": ["git", "github-cli", "openssh-clients"] },
+        { "name": "Search and navigation", "tools": ["fd", "ripgrep"] },
+        { "name": "Native development", "tools": ["gpp", "make", "pkg-config", "sccache"] },
+        { "name": "Languages", "tools": ["go", "java", "ruby", "zig"] },
+        { "name": "Package managers", "tools": ["npm", "python-pip", "uv"] },
+        { "name": "Code quality", "tools": ["black"] },
+        { "name": "Network", "tools": ["socat", "dig"] },
+        { "name": "Deployment and transfer", "tools": ["rsync"] },
+        { "name": "Databases", "tools": ["postgresql-client"] },
+        { "name": "Infrastructure automation", "tools": ["terraform", "ansible-playbook", "ansible-lint"] },
+        { "name": "Containers and orchestration", "tools": ["openshift-cli", "kubectl", "helm"] },
+        { "name": "Cloud platforms", "tools": ["aws-cli", "hcloud"] },
+        { "name": "Developer productivity", "tools": ["tmux"] },
+        { "name": "Media and desktop", "tools": ["imagemagick", "wayland-clipboard"] }
+      ]
+    },
+    {
+      "id": "operations-devops",
+      "name": "Operations and DevOps",
+      "subcategories": [
+        { "name": "Source control", "tools": ["git", "github-cli"] },
+        { "name": "Administration", "tools": ["openssh-clients", "tmux"] },
+        { "name": "Search and diagnostics", "tools": ["fd", "ripgrep"] },
+        { "name": "Network", "tools": ["socat", "dig"] },
+        { "name": "Transfer and deployment", "tools": ["rsync"] },
+        { "name": "Build and CI", "tools": ["gpp", "make", "pkg-config", "sccache"] },
+        { "name": "Languages", "tools": ["go", "java", "ruby", "zig"] },
+        { "name": "Package managers", "tools": ["npm", "python-pip", "uv"] },
+        { "name": "Databases", "tools": ["postgresql-client"] },
+        { "name": "Infrastructure automation", "tools": ["terraform", "ansible-playbook", "ansible-lint"] },
+        { "name": "Containers and orchestration", "tools": ["openshift-cli", "kubectl", "helm"] },
+        { "name": "Cloud platforms", "tools": ["aws-cli", "hcloud"] },
+        { "name": "Desktop integration", "tools": ["wayland-clipboard"] }
+      ]
+    }
+  ]
+}

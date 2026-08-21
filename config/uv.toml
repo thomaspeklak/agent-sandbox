@@ -1,0 +1,9 @@
+# Give newly uploaded registry artifacts time for community review.
+exclude-newer = "1 week"
+
+# Stop at the first index that contains a package to resist dependency confusion.
+index-strategy = "first-index"
+
+[pip]
+# Verify hashes whenever a requirements file provides them.
+verify-hashes = true

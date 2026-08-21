@@ -49,6 +49,8 @@ pub struct RawSandbox {
     pub passthrough_env: Vec<String>,
     #[serde(default = "default_extra_dnf_packages")]
     pub extra_dnf_packages: Vec<String>,
+    #[serde(default)]
+    pub tool_download_lock: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -9,6 +9,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 ## Documentation map
 
 - `README.md` (this file): quick start + daily usage
+- `QUICKSETUP.md`: under-five-minute install and update flow
 - `docs/COMMANDS.md`: detailed command behavior and side effects
 - `docs/CONFIG.md`: full config schema and semantics
 - `docs/ONEPASSWORD.md`: CLI-only Secure Note environment-set workflow
@@ -30,7 +31,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - First-run setup for SSH auth + signing keys
 - Persistent per-agent host volumes by default (lockdown uses ephemeral staged homes)
 - Configurable mounts, tool binaries, and secret sources
-- Tools-only TUI package configurator for host-installed tools
+- Profession-guided TUI for choosing purposeful tools in the sandbox image
 - Optional hardened `--lockdown` runs for inspecting untrusted/foreign repos with reduced host exposure
 - Optional browser sidecar support for browser-enabled workflows
 - Narrow clipboard bridge for Pi Ctrl-V image paste and copy flows without compositor passthrough
@@ -60,13 +61,13 @@ Optional but useful:
 
 > Tip: run `ags doctor` after setup to verify your environment.
 
-Optional sandbox package configuration:
+Optional sandbox tool selection:
 
 ```bash
 ags tools --packages config/tool-packages.example.json
 ```
 
-This opens a TUI for selecting DNF packages installed in the sandbox image. It updates `[sandbox].extra_dnf_packages`; run `ags update-image` afterward to rebuild the image. It does not install host packages or create host binary mounts.
+This opens a profession-guided TUI with General, Software Development, and Operations and DevOps views. Tools are grouped by area, and shared tools keep one selection across every view. AGS keeps its runtime and standard utilities in a fixed image baseline; the picker updates optional Fedora packages and checksum-verified vendor downloads. Run `ags update-image` afterward to rebuild the image.
 
 ---
 
@@ -116,6 +117,7 @@ This writes:
 
 - `~/.config/ags/Containerfile`
 - `~/.config/ags/tmux.conf`
+- `~/.config/ags/uv.toml` (copied into the image as `/etc/uv/uv.toml`)
 - `~/.config/ags/pi/extensions/guard.ts`
 - `~/.config/ags/pi/settings.json` (if missing)
 
@@ -375,6 +377,7 @@ Start here:
 - `ags doctor` — run environment + config health checks
 - `ags update-image [--keep-existing]` — rebuild container image from `Containerfile`, refresh bundled `br`/`dcg` binaries, and remove the previous image after a successful rebuild unless it is still referenced by a container or `--keep-existing` is set
 - `ags update-agents` — install/update agent CLIs in persistent volumes
+- `ags tools --packages <catalog.json>` — choose optional sandbox tools by profession and area
 - `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
 - `ags uninstall` — currently reserved/no-op cleanup
 - `ags create-aliases` — create managed wrappers and/or shell alias blocks
@@ -452,6 +455,7 @@ Use `config/config.example.toml` for full schema examples.
   - SSH key paths
   - bootstrap files
   - base env passthrough allowlist
+  - optional DNF packages and the generated verified-tool download lock
 - `[[agent_mount]]`
   - Dedicated required mounts for agent home-state paths (explicit, no implicit agent mounts)
 - `[[mount]]`
@@ -485,6 +489,7 @@ Use `config/config.example.toml` for full schema examples.
 - In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update-image` if Bash commands are unexpectedly blocked.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
 - npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
+- Non-RPM tools selected through `ags tools` use pinned HTTPS artifacts for both supported architectures. AGS validates their catalog metadata and verifies SHA-256 before extracting only the declared executable.
 - Rotate/revoke credentials quickly if compromise is suspected.
 - The clipboard bridge is narrower than raw Wayland passthrough. Host clipboard reads require approval by default and can be allowed for `[clipboard].approval_seconds`; disabling approval restores session-wide read access.
 - Raw Wayland compositor passthrough is disabled by default; enable it only with `[desktop_passthrough].wayland = true` or `--wayland-compositor-passthrough` when you intentionally want sandbox GUI clients on the host desktop.

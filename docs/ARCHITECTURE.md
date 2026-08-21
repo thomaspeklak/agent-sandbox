@@ -19,12 +19,14 @@
   - TOML deserialization + validation into strongly typed config.
 - `cmd/*`
   - Subcommand implementations (`setup`, `doctor`, `update`, etc).
+  - The tool configurator validates DNF or verified-archive providers and materializes selected downloads as a lock beside the owning config.
 - `agent.rs`
   - Agent-specific profiles (command, mounts, env, browser integration).
 - `plan/*`
   - Converts config + runtime state into final `LaunchPlan`.
 - `podman/*`
   - Turns `LaunchPlan` into `podman run` arguments and executes.
+  - Encodes validated tool-download locks into both explicit and automatic image builds.
 - `ssh.rs`
   - Dedicated ssh-agent lifecycle + key loading.
 - `secrets.rs`
@@ -47,7 +49,7 @@
   - Pairs with embedded sandbox helper scripts written by `assets.rs`.
   - `glimpseui` is the intended owner of localhost-to-relay URL resolution for Glimpse-based packages.
 - `assets.rs`
-  - Writes embedded Containerfile/guard/settings/auth-proxy-shim/clipboard/webview relay assets.
+  - Writes embedded Containerfile, tmux, system-wide uv policy, guard, settings, auth-proxy-shim, clipboard, and webview relay assets.
 
 ---
 
@@ -76,4 +78,5 @@
 - Principle of least privilege for mounts and env.
 - Reproducible defaults via embedded assets.
 - Config-driven behavior with validation before launch.
+- External tools use pinned architecture-specific HTTPS artifacts and are installed only after SHA-256 verification.
 - Agent state persisted on host volumes.

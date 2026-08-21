@@ -339,6 +339,7 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
                 &plan.image,
                 &plan.containerfile,
                 &plan.extra_dnf_packages,
+                &plan.tool_downloads,
             ) {
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;

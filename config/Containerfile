@@ -150,14 +150,59 @@ RUN set -eu && \
 
 FROM registry.fedoraproject.org/fedora:44
 
-# Configurable final-image tooling. Keep this near the end so package selection
-# changes reuse the builder stages above. The default preserves the package set
-# shipped before this list became configurable, plus sandbox-native ansible-lint.
-ARG EXTRA_DNF_PACKAGES="python3-ansible-lint bash ca-certificates coreutils curl dbus-devel diffutils fd-find file findutils gcc gcc-c++ gh git grep jq kitty-terminfo less make nodejs24-bin nodejs24-npm-bin openssh-clients patch pkgconf-pkg-config procps-ng python3 ripgrep rsync sccache sed socat tar tree tmux unzip util-linux wget which wl-clipboard xz zip golang ImageMagick java-devel postgresql python3-pip ruby sqlite-devel zig"
+COPY uv.toml /etc/uv/uv.toml
+
+# Stable AGS runtime and standard utility baseline. These packages are not user
+# choices: the image and its documented workflows may rely on them being present.
+RUN BASE_DNF_PACKAGES="bash ca-certificates coreutils curl dbus-devel diffutils file findutils gcc grep jq less nodejs24-bin patch procps-ng python3 sed sqlite-devel tar tree unzip util-linux wget which xz zip" && \
+    dnf -y install $BASE_DNF_PACKAGES && \
+    dnf clean all
+
+# Purposeful user-selectable tools. Keep this near the end so tool selection
+# changes reuse the stable baseline and builder stages above.
+ARG EXTRA_DNF_PACKAGES="git gh openssh-clients fd-find ripgrep rsync tmux kitty-terminfo socat make pkgconf-pkg-config sccache"
 RUN if [ -n "$EXTRA_DNF_PACKAGES" ]; then \
       dnf -y install $EXTRA_DNF_PACKAGES; \
     fi && \
     dnf clean all
+
+# Optional tools unavailable in Fedora are supplied as pinned, architecture-aware
+# vendor archives. AGS validates this lock before encoding it as a build argument.
+ARG EXTRA_TOOL_DOWNLOADS_B64="W10="
+RUN set -eu; \
+    lock="$(mktemp)"; entries="$(mktemp)"; \
+    printf '%s' "$EXTRA_TOOL_DOWNLOADS_B64" | base64 -d > "$lock"; \
+    jq -c 'if type == "array" then .[] else error("tool download lock must be an array") end' \
+      "$lock" > "$entries"; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64) arch="x86_64" ;; \
+      aarch64|arm64) arch="aarch64" ;; \
+      *) echo "unsupported architecture for downloaded tools: $arch" >&2; exit 1 ;; \
+    esac; \
+    while IFS= read -r tool; do \
+      id="$(printf '%s' "$tool" | jq -er '.id | strings | select(test("^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))')"; \
+      version="$(printf '%s' "$tool" | jq -er '.download.version | strings | select(length > 0)')"; \
+      format="$(printf '%s' "$tool" | jq -er '.download.archive | select(. == "zip" or . == "tar.gz")')"; \
+      member="$(printf '%s' "$tool" | jq -er '.download.member | strings | select(length > 0 and startswith("/") == false and startswith("-") == false and test("(^|/)\\.\\.?(/|$)|[*?\\[\\]]") == false)')"; \
+      install_as="$(printf '%s' "$tool" | jq -er '.download.install_as | strings | select(test("^[a-z][a-z0-9._-]*$"))')"; \
+      artifact="$(printf '%s' "$tool" | jq -ec --arg arch "$arch" '.download.artifacts[$arch] // error("missing architecture")')"; \
+      url="$(printf '%s' "$artifact" | jq -er '.url | strings | select(startswith("https://"))')"; \
+      sha256="$(printf '%s' "$artifact" | jq -er '.sha256 | strings | select(test("^[A-Fa-f0-9]{64}$"))')"; \
+      work="$(mktemp -d)"; archive="$work/archive"; binary="$work/binary"; \
+      echo "Installing $id $version for $arch"; \
+      curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 300 \
+        --retry 2 --retry-delay 1 "$url" -o "$archive"; \
+      printf '%s  %s\n' "$sha256" "$archive" | sha256sum -c -; \
+      case "$format" in \
+        zip) unzip -p "$archive" "$member" > "$binary" ;; \
+        tar.gz) tar -xOzf "$archive" -- "$member" > "$binary" ;; \
+      esac; \
+      test -s "$binary"; \
+      install -D -m 0755 "$binary" "/usr/local/bin/$install_as"; \
+      rm -rf "$work"; \
+    done < "$entries"; \
+    rm -f "$lock" "$entries"
 
 RUN useradd -m -u 1000 -s /bin/bash dev && \
     mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/ags && \

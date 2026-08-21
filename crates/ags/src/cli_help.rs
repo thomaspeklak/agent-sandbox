@@ -20,7 +20,7 @@ Commands:
 \
   completions    Print shell completion script to stdout
 \
-  tools          Configure sandbox image packages from JSON
+  tools          Choose sandbox tools from a profession-guided JSON catalog
 
 \
 Run flags:
@@ -91,7 +91,7 @@ Completions flags:
 \
 Tools flags:
 \
-  --packages <path> Tool package JSON file (or pass as first positional argument)
+  --packages <path> Tool catalog JSON file (or pass as first positional argument)
 \
   --config <path>   Config file to update (default: ~/.config/ags/config.toml)
 ";

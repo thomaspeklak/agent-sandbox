@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use crate::config::MountMode;
+use crate::config::{LockedToolDownload, MountMode};
 
 /// Error during launch plan construction.
 #[derive(Debug)]
@@ -77,6 +77,7 @@ pub struct LaunchPlan {
     pub image: String,
     pub containerfile: PathBuf,
     pub extra_dnf_packages: Vec<String>,
+    pub tool_downloads: Vec<LockedToolDownload>,
     pub container_name: String,
     pub workdir: WorkdirMapping,
     pub mounts: Vec<PlanMount>,

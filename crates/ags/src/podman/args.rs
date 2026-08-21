@@ -1,6 +1,14 @@
 use std::path::Path;
 
+use base64::Engine;
+
+use crate::config::LockedToolDownload;
 use crate::plan::LaunchPlan;
+
+pub(crate) fn encode_tool_downloads(downloads: &[LockedToolDownload]) -> String {
+    let json = serde_json::to_vec(downloads).expect("tool download lock must serialize");
+    base64::engine::general_purpose::STANDARD.encode(json)
+}
 
 pub(crate) fn build_image_args(
     image: &str,

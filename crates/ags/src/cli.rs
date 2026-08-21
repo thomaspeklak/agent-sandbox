@@ -189,7 +189,7 @@ impl fmt::Display for CliError {
             Self::MissingConfigValue => f.write_str("missing value for --config"),
             Self::MissingToolPackagesValue => f.write_str("missing value for --packages"),
             Self::MissingToolPackagesPath => {
-                f.write_str("missing tool package JSON path (use `ags tools --packages <path>`)")
+                f.write_str("missing tool catalog JSON path (use `ags tools --packages <path>`)")
             }
             Self::MissingEnvValue => f.write_str("missing value for --env (expected NAME=VALUE)"),
             Self::MissingOpSecretSetValue => f.write_str("missing value for --op-secret-set / -1"),

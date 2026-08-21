@@ -1,67 +1,170 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use ags::{
     cmd::tool_configurator::model::{
-        ToolDefinition, ToolPackage, ToolSelectionState, apply_selection_to_document,
-        config_file_defines_dnf_packages, configured_packages_from_document, load_package_file,
-        write_selected_tools,
+        GroupRow, ToolCatalog, ToolDefinition, ToolGroupDefinition, ToolSelectionState,
+        ToolSubcategoryDefinition, apply_selection_to_document, config_file_defines_tool_selection,
+        configured_packages_from_document, load_package_file, write_selected_tools,
     },
-    config::DEFAULT_EXTRA_DNF_PACKAGES,
+    config::{
+        BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, LockedToolDownload, ToolArchiveFormat,
+        ToolDownloadArtifact, ToolDownloadSource,
+    },
 };
 use toml_edit::DocumentMut;
 
-fn tool(name: &str, dnf_packages: &[&str]) -> ToolDefinition {
+fn tool(id: &str, dnf_packages: &[&str], default: bool) -> ToolDefinition {
     ToolDefinition {
-        name: name.to_owned(),
-        description: String::new(),
+        id: id.to_owned(),
+        name: id.to_owned(),
+        description: format!("Use {id} to complete work."),
+        default,
         dnf_packages: dnf_packages
             .iter()
             .map(|package| (*package).to_owned())
             .collect(),
+        download: None,
     }
 }
 
+fn download_source() -> ToolDownloadSource {
+    ToolDownloadSource {
+        version: "1.0.0".to_owned(),
+        archive: ToolArchiveFormat::Zip,
+        member: "tool".to_owned(),
+        install_as: "tool".to_owned(),
+        artifacts: BTreeMap::from([
+            (
+                "aarch64".to_owned(),
+                ToolDownloadArtifact {
+                    url: "https://downloads.example.com/tool-arm64.zip".to_owned(),
+                    sha256: "a".repeat(64),
+                },
+            ),
+            (
+                "x86_64".to_owned(),
+                ToolDownloadArtifact {
+                    url: "https://downloads.example.com/tool-amd64.zip".to_owned(),
+                    sha256: "b".repeat(64),
+                },
+            ),
+        ]),
+    }
+}
+
+fn download_tool(id: &str, default: bool) -> ToolDefinition {
+    let mut download = download_source();
+    download.install_as = id.to_owned();
+    ToolDefinition {
+        id: id.to_owned(),
+        name: id.to_owned(),
+        description: format!("Use {id} to complete work."),
+        default,
+        dnf_packages: vec![],
+        download: Some(download),
+    }
+}
+
+fn group(id: &str, name: &str, tools: &[String]) -> ToolGroupDefinition {
+    ToolGroupDefinition {
+        id: id.to_owned(),
+        name: name.to_owned(),
+        subcategories: vec![ToolSubcategoryDefinition {
+            name: "Area".to_owned(),
+            tools: tools.to_vec(),
+        }],
+    }
+}
+
+fn catalog(tools: Vec<ToolDefinition>) -> ToolCatalog {
+    let ids = tools.iter().map(|tool| tool.id.clone()).collect::<Vec<_>>();
+    ToolCatalog {
+        tools,
+        groups: vec![
+            group("general", "General", &ids),
+            group("software-development", "Software Development", &ids),
+            group("operations-devops", "Operations and DevOps", &ids),
+        ],
+    }
+}
+
+fn example_catalog() -> ToolCatalog {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/tool-packages.example.json");
+    load_package_file(&path).unwrap()
+}
+
 #[test]
-fn configured_packages_preselect_catalog_tools() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![tool("GitHub CLI", &["gh"]), tool("ripgrep", &["ripgrep"])],
-    }];
+fn configured_packages_preselect_canonical_tools() {
+    let state = ToolSelectionState::from_catalog(
+        catalog(vec![
+            tool("github-cli", &["gh"], true),
+            tool("ripgrep", &["ripgrep"], true),
+        ]),
+        &["gh".to_owned()],
+    )
+    .unwrap();
 
-    let state = ToolSelectionState::from_packages(packages, &["gh".to_owned()]).unwrap();
-    let package = &state.packages[0];
+    assert_eq!(state.selected_tool_count(), 1);
+    assert!(state.tools[0].selected);
+    assert!(!state.tools[1].selected);
+}
 
-    assert_eq!(package.selected_count(), 1);
-    assert!(package.tools[0].selected);
-    assert!(!package.tools[1].selected);
+#[test]
+fn configured_download_id_preselects_downloaded_tool() {
+    let definition = download_tool("terraform", false);
+    let locked = LockedToolDownload {
+        id: definition.id.clone(),
+        download: definition.download.clone().unwrap(),
+    };
+    let state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![definition]),
+        Some(&[]),
+        Some(&[locked]),
+    )
+    .unwrap();
+
+    assert!(state.tools[0].selected);
 }
 
 #[test]
 fn bundled_tool_is_selected_only_when_all_packages_are_configured() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![tool("GCC toolchain", &["gcc", "gcc-c++"])],
-    }];
-
-    let state = ToolSelectionState::from_packages(packages, &["gcc".to_owned()]).unwrap();
-    assert!(!state.packages[0].tools[0].selected);
+    let state = ToolSelectionState::from_catalog(
+        catalog(vec![tool("tmux", &["tmux", "kitty-terminfo"], true)]),
+        &["tmux".to_owned()],
+    )
+    .unwrap();
+    assert!(!state.tools[0].selected);
 }
 
 #[test]
-fn apply_selection_updates_dnf_packages_and_preserves_unknown_entries() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![tool("GitHub CLI", &["gh"]), tool("ripgrep", &["ripgrep"])],
-    }];
-    let mut state = ToolSelectionState::from_packages(
-        packages,
+fn profession_rows_reference_the_same_canonical_tool() {
+    let state = ToolSelectionState::from_catalog(
+        catalog(vec![tool("openssh-clients", &["openssh-clients"], true)]),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(state.group_rows(0)[1], GroupRow::Tool(0));
+    assert_eq!(state.group_rows(1)[1], GroupRow::Tool(0));
+    assert_eq!(state.group_rows(2)[1], GroupRow::Tool(0));
+}
+
+#[test]
+fn apply_selection_updates_tools_and_preserves_unknown_entries() {
+    let mut state = ToolSelectionState::from_catalog(
+        catalog(vec![
+            tool("github-cli", &["gh"], true),
+            tool("ripgrep", &["ripgrep"], true),
+        ]),
         &["gh".to_owned(), "custom-package".to_owned()],
     )
     .unwrap();
-    state.packages[0].tools[0].selected = false;
-    state.packages[0].tools[0].touched = true;
-    state.packages[0].tools[1].selected = true;
-    state.packages[0].tools[1].touched = true;
+    state.tools[0].selected = false;
+    state.tools[0].touched = true;
+    state.tools[1].selected = true;
+    state.tools[1].touched = true;
 
     let mut doc: DocumentMut = r#"
 [sandbox]
@@ -84,8 +187,8 @@ container_path = "/usr/local/bin/custom"
 
     let report = apply_selection_to_document(&mut doc, &state);
     assert_eq!(report.selected_tools, 1);
-    assert_eq!(report.added_packages, 1);
-    assert_eq!(report.removed_packages, 1);
+    assert_eq!(report.added_components, 1);
+    assert_eq!(report.removed_components, 1);
     assert_eq!(report.removed_legacy_tools, 1);
     assert_eq!(
         configured_packages_from_document(&doc),
@@ -95,22 +198,105 @@ container_path = "/usr/local/bin/custom"
 }
 
 #[test]
+fn overlay_with_only_download_lock_preserves_effective_base_packages() {
+    let state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![tool("github-cli", &["gh"], true)]),
+        Some(&["gh".to_owned(), "custom-package".to_owned()]),
+        Some(&[]),
+    )
+    .unwrap();
+    let mut overlay: DocumentMut =
+        "[sandbox]\ntool_download_lock = \"tool-downloads.existing.lock.json\"\n"
+            .parse()
+            .unwrap();
+
+    apply_selection_to_document(&mut overlay, &state);
+
+    assert_eq!(
+        configured_packages_from_document(&overlay),
+        vec!["gh", "custom-package"]
+    );
+}
+
+#[test]
+fn save_removes_fixed_baseline_packages_from_extra_packages() {
+    let state = ToolSelectionState::from_catalog(
+        catalog(vec![tool("git", &["git"], true)]),
+        &[
+            "git".to_owned(),
+            "bash".to_owned(),
+            "sqlite-devel".to_owned(),
+        ],
+    )
+    .unwrap();
+    let mut doc: DocumentMut =
+        "[sandbox]\nextra_dnf_packages = [\"git\", \"bash\", \"sqlite-devel\"]\n"
+            .parse()
+            .unwrap();
+
+    let report = apply_selection_to_document(&mut doc, &state);
+
+    assert_eq!(configured_packages_from_document(&doc), vec!["git"]);
+    assert_eq!(report.removed_components, 0);
+}
+
+#[test]
 fn untouched_partial_bundle_is_preserved_until_explicitly_deselected() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![tool("GCC toolchain", &["gcc", "gcc-c++"])],
-    }];
-    let mut state = ToolSelectionState::from_packages(packages, &["gcc".to_owned()]).unwrap();
-    let mut doc: DocumentMut = "[sandbox]\nextra_dnf_packages = [\"gcc\"]\n"
+    let mut state = ToolSelectionState::from_catalog(
+        catalog(vec![tool("tmux", &["tmux", "kitty-terminfo"], true)]),
+        &["tmux".to_owned()],
+    )
+    .unwrap();
+    let mut doc: DocumentMut = "[sandbox]\nextra_dnf_packages = [\"tmux\"]\n"
         .parse()
         .unwrap();
 
     apply_selection_to_document(&mut doc, &state);
-    assert_eq!(configured_packages_from_document(&doc), vec!["gcc"]);
+    assert_eq!(configured_packages_from_document(&doc), vec!["tmux"]);
 
-    state.packages[0].tools[0].touched = true;
+    state.tools[0].touched = true;
     apply_selection_to_document(&mut doc, &state);
     assert!(configured_packages_from_document(&doc).is_empty());
+}
+
+#[test]
+fn reset_to_defaults_uses_tool_metadata() {
+    let mut state = ToolSelectionState::from_catalog(
+        catalog(vec![
+            tool("recommended", &["recommended"], true),
+            tool("optional", &["optional"], false),
+        ]),
+        &["optional".to_owned()],
+    )
+    .unwrap();
+
+    state.reset_to_defaults();
+
+    assert!(state.tools[0].selected);
+    assert!(!state.tools[1].selected);
+    assert!(state.tools.iter().all(|tool| tool.touched));
+}
+
+#[test]
+fn omitted_config_uses_the_supplied_catalog_defaults() {
+    let state = ToolSelectionState::from_catalog_or_defaults(
+        catalog(vec![
+            tool("custom-default", &["custom-default"], true),
+            tool("custom-optional", &["custom-optional"], false),
+        ]),
+        None,
+    )
+    .unwrap();
+    let mut doc: DocumentMut = "[sandbox]\nimage = \"test\"\n".parse().unwrap();
+
+    apply_selection_to_document(&mut doc, &state);
+
+    assert!(state.tools[0].selected);
+    assert!(!state.tools[1].selected);
+    assert_eq!(
+        configured_packages_from_document(&doc),
+        vec!["custom-default"]
+    );
 }
 
 #[test]
@@ -129,11 +315,8 @@ ags_managed_by = "tool-configurator"
 "#,
     )
     .unwrap();
-    let state = ToolSelectionState::from_packages(
-        vec![ToolPackage {
-            package: "source-control".to_owned(),
-            tools: vec![tool("GitHub CLI", &["gh"])],
-        }],
+    let state = ToolSelectionState::from_catalog(
+        catalog(vec![tool("github-cli", &["gh"], true)]),
         &["gh".to_owned()],
     )
     .unwrap();
@@ -150,6 +333,105 @@ ags_managed_by = "tool-configurator"
 }
 
 #[test]
+fn save_materializes_selected_downloads_as_a_verified_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    let mut state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![download_tool("terraform", false)]),
+        Some(&[]),
+        Some(&[]),
+    )
+    .unwrap();
+    state.tools[0].selected = true;
+    state.tools[0].touched = true;
+
+    let report = write_selected_tools(&config, None, &state).unwrap();
+
+    assert_eq!(report.added_components, 1);
+    let saved = std::fs::read_to_string(&config).unwrap();
+    assert!(saved.contains("tool_download_lock"));
+    let saved: DocumentMut = saved.parse().unwrap();
+    let lock_name = saved["sandbox"]["tool_download_lock"].as_str().unwrap();
+    assert!(lock_name.starts_with("tool-downloads."));
+    assert!(lock_name.ends_with(".lock.json"));
+    assert!(PathBuf::from(lock_name).is_relative());
+    let lock_path = dir.path().join(lock_name);
+    let lock: Vec<LockedToolDownload> =
+        serde_json::from_str(&std::fs::read_to_string(lock_path).unwrap()).unwrap();
+    assert_eq!(lock.len(), 1);
+    assert_eq!(lock[0].id, "terraform");
+    assert_eq!(lock[0].download.install_as, "terraform");
+}
+
+#[test]
+fn save_keeps_previously_referenced_download_lock_immutable() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    let mut state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![download_tool("terraform", false)]),
+        Some(&[]),
+        Some(&[]),
+    )
+    .unwrap();
+    state.tools[0].selected = true;
+    write_selected_tools(&config, None, &state).unwrap();
+
+    let first_config: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+    let first_name = first_config["sandbox"]["tool_download_lock"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let first_path = dir.path().join(&first_name);
+    let first_content = std::fs::read_to_string(&first_path).unwrap();
+
+    state.tools[0].selected = false;
+    write_selected_tools(&config, None, &state).unwrap();
+
+    let second_config: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+    let second_name = second_config["sandbox"]["tool_download_lock"]
+        .as_str()
+        .unwrap();
+    assert_ne!(first_name, second_name);
+    assert_eq!(std::fs::read_to_string(first_path).unwrap(), first_content);
+    assert!(dir.path().join(second_name).is_file());
+}
+
+#[test]
+fn save_drops_unknown_download_that_collides_with_selected_catalog_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    let mut unknown_download = download_source();
+    unknown_download.install_as = "terraform".to_owned();
+    let unknown = LockedToolDownload {
+        id: "legacy-terraform".to_owned(),
+        download: unknown_download,
+    };
+    let mut state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![download_tool("terraform", false)]),
+        Some(&[]),
+        Some(&[unknown]),
+    )
+    .unwrap();
+    state.tools[0].selected = true;
+
+    let report = write_selected_tools(&config, None, &state).unwrap();
+
+    let saved: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+    let lock_name = saved["sandbox"]["tool_download_lock"].as_str().unwrap();
+    let lock: Vec<LockedToolDownload> =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(lock_name)).unwrap())
+            .unwrap();
+    assert_eq!(
+        lock.iter().map(|tool| tool.id.as_str()).collect::<Vec<_>>(),
+        vec!["terraform"]
+    );
+    assert_eq!(report.removed_components, 1);
+}
+
+#[test]
 fn detects_the_config_layer_that_defines_packages() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path().join("base.toml");
@@ -157,41 +439,41 @@ fn detects_the_config_layer_that_defines_packages() {
     std::fs::write(&base, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
     std::fs::write(&overlay, "[sandbox]\nimage = \"overlay\"\n").unwrap();
 
-    assert!(config_file_defines_dnf_packages(&base).unwrap());
-    assert!(!config_file_defines_dnf_packages(&overlay).unwrap());
+    assert!(config_file_defines_tool_selection(&base).unwrap());
+    assert!(!config_file_defines_tool_selection(&overlay).unwrap());
 }
 
 #[test]
 fn apply_selection_materializes_defaults_when_config_field_is_missing() {
-    let packages = vec![ToolPackage {
-        package: "quality".to_owned(),
-        tools: vec![tool("ansible-lint", &["python3-ansible-lint"])],
-    }];
-    let mut state = ToolSelectionState::from_packages(packages, &[]).unwrap();
-    state.packages[0].tools[0].selected = true;
+    let mut state = ToolSelectionState::from_catalog(
+        example_catalog(),
+        &DEFAULT_EXTRA_DNF_PACKAGES
+            .iter()
+            .map(|package| (*package).to_owned())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    for tool in &mut state.tools {
+        tool.touched = true;
+    }
     let mut doc: DocumentMut = "[sandbox]\nimage = \"test\"\n".parse().unwrap();
 
     let report = apply_selection_to_document(&mut doc, &state);
-    let configured = configured_packages_from_document(&doc);
 
-    assert_eq!(report.added_packages, 0);
+    assert_eq!(report.added_components, 0);
     assert_eq!(
-        configured,
+        configured_packages_from_document(&doc),
         DEFAULT_EXTRA_DNF_PACKAGES
-            .iter()
-            .map(|package| (*package).to_owned())
-            .collect::<Vec<_>>()
     );
 }
 
 #[test]
-fn package_validation_rejects_shell_expressions() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![tool("unsafe", &["--setopt=tsflags=nodocs"])],
-    }];
-
-    let error = ToolSelectionState::from_packages(packages, &[]).unwrap_err();
+fn catalog_validation_rejects_shell_expressions() {
+    let error = ToolSelectionState::from_catalog(
+        catalog(vec![tool("unsafe", &["--setopt=tsflags=nodocs"], false)]),
+        &[],
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -200,49 +482,237 @@ fn package_validation_rejects_shell_expressions() {
 }
 
 #[test]
-fn package_validation_rejects_shell_globs() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![tool("unsafe", &["python3*"])],
-    }];
-
-    let error = ToolSelectionState::from_packages(packages, &[]).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("not an option or shell expression")
-    );
+fn catalog_validation_requires_exactly_one_install_provider() {
+    let mut definition = tool("invalid", &["invalid"], false);
+    definition.download = Some(download_source());
+    let error = ToolSelectionState::from_catalog(catalog(vec![definition]), &[]).unwrap_err();
+    assert!(error.to_string().contains("exactly one"));
 }
 
 #[test]
-fn package_validation_rejects_duplicate_dnf_ownership() {
-    let packages = vec![ToolPackage {
-        package: "development".to_owned(),
-        tools: vec![tool("one", &["shared"]), tool("two", &["shared"])],
-    }];
+fn catalog_validation_rejects_unverified_downloads() {
+    let mut definition = download_tool("download", false);
+    definition
+        .download
+        .as_mut()
+        .unwrap()
+        .artifacts
+        .get_mut("x86_64")
+        .unwrap()
+        .sha256 = "unverified".to_owned();
+    let error = ToolSelectionState::from_catalog(catalog(vec![definition]), &[]).unwrap_err();
+    assert!(error.to_string().contains("64 hexadecimal digits"));
+}
 
-    let error = ToolSelectionState::from_packages(packages, &[]).unwrap_err();
+#[test]
+fn catalog_validation_rejects_option_and_glob_archive_members() {
+    for member in ["-unsafe", "bin/*", "bin/te?t", "bin/[t]ool"] {
+        let mut definition = download_tool("download", false);
+        definition.download.as_mut().unwrap().member = member.to_owned();
+
+        let error = ToolSelectionState::from_catalog(catalog(vec![definition]), &[]).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("must not begin with '-' or contain archive glob characters"),
+            "member {member:?} produced: {error}"
+        );
+    }
+}
+
+#[test]
+fn catalog_validation_rejects_duplicate_dnf_ownership() {
+    let error = ToolSelectionState::from_catalog(
+        catalog(vec![
+            tool("one", &["shared"], false),
+            tool("two", &["shared"], false),
+        ]),
+        &[],
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("assigned to more than one tool"));
 }
 
 #[test]
-fn example_package_json_loads() {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/tool-packages.example.json");
+fn catalog_validation_rejects_baseline_packages_as_tools() {
+    let error = ToolSelectionState::from_catalog(
+        catalog(vec![tool("certificates", &["ca-certificates"], false)]),
+        &[],
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("fixed baseline package"));
+}
 
-    let packages = load_package_file(&path).unwrap();
-    assert_eq!(packages.len(), 8);
-    assert_eq!(packages[0].package, "general");
-    assert_eq!(packages[7].package, "quality");
+#[test]
+fn catalog_validation_rejects_unknown_tool_references() {
+    let mut catalog = catalog(vec![tool("known", &["known"], false)]);
+    catalog.groups[1].subcategories[0].tools[0] = "missing".to_owned();
 
-    let mut catalog_packages = packages
+    let error = ToolSelectionState::from_catalog(catalog, &[]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("references unknown tool 'missing'")
+    );
+}
+
+#[test]
+fn catalog_validation_requires_exact_profession_names() {
+    let mut catalog = catalog(vec![tool("known", &["known"], false)]);
+    catalog.groups[1].name = "Development".to_owned();
+
+    let error = ToolSelectionState::from_catalog(catalog, &[]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("must be named 'Software Development'")
+    );
+}
+
+#[test]
+fn example_catalog_has_profession_views_and_canonical_defaults() {
+    let catalog = example_catalog();
+    assert_eq!(catalog.tools.len(), 32);
+    assert_eq!(catalog.groups.len(), 3);
+    assert_eq!(catalog.groups[0].name, "General");
+    assert_eq!(catalog.groups[1].name, "Software Development");
+    assert_eq!(catalog.groups[2].name, "Operations and DevOps");
+
+    let mut catalog_defaults = catalog
+        .tools
         .iter()
-        .flat_map(|group| &group.tools)
+        .filter(|tool| tool.default)
         .flat_map(|tool| &tool.dnf_packages)
         .map(String::as_str)
         .collect::<Vec<_>>();
-    let mut default_packages = DEFAULT_EXTRA_DNF_PACKAGES.to_vec();
-    catalog_packages.sort_unstable();
-    default_packages.sort_unstable();
-    assert_eq!(catalog_packages, default_packages);
+    let mut runtime_defaults = DEFAULT_EXTRA_DNF_PACKAGES.to_vec();
+    catalog_defaults.sort_unstable();
+    runtime_defaults.sort_unstable();
+    assert_eq!(catalog_defaults, runtime_defaults);
+
+    let baseline = BASE_DNF_PACKAGES.iter().copied().collect::<BTreeSet<_>>();
+    let selectable = catalog
+        .tools
+        .iter()
+        .flat_map(|tool| &tool.dnf_packages)
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert!(baseline.is_disjoint(&selectable));
+    assert_eq!(baseline.len(), BASE_DNF_PACKAGES.len());
+    assert_eq!(baseline.len() + selectable.len(), 57);
+    assert_eq!(catalog.tools.iter().filter(|tool| tool.default).count(), 11);
+    assert_eq!(
+        catalog
+            .tools
+            .iter()
+            .filter(|tool| tool.download.is_some())
+            .count(),
+        2
+    );
+    assert!(BASE_DNF_PACKAGES.contains(&"curl"));
+    assert!(!catalog.tools.iter().any(|tool| tool.id == "curl"));
+    for id in [
+        "terraform",
+        "openshift-cli",
+        "ansible-playbook",
+        "kubectl",
+        "aws-cli",
+        "helm",
+        "dig",
+        "hcloud",
+        "uv",
+        "black",
+    ] {
+        assert!(
+            !catalog
+                .tools
+                .iter()
+                .find(|tool| tool.id == id)
+                .unwrap()
+                .default
+        );
+    }
+}
+
+#[test]
+fn requested_rpm_tools_use_fedora_package_names() {
+    let catalog = example_catalog();
+    let packages = |id: &str| {
+        catalog
+            .tools
+            .iter()
+            .find(|tool| tool.id == id)
+            .unwrap()
+            .dnf_packages
+            .clone()
+    };
+
+    assert_eq!(packages("ansible-playbook"), vec!["ansible-core"]);
+    assert_eq!(packages("kubectl"), vec!["kubernetes-client"]);
+    assert_eq!(packages("aws-cli"), vec!["awscli2"]);
+    assert_eq!(packages("helm"), vec!["helm"]);
+    assert_eq!(packages("dig"), vec!["bind-utils"]);
+    assert_eq!(packages("hcloud"), vec!["hcloud"]);
+    assert_eq!(packages("uv"), vec!["uv"]);
+    assert_eq!(packages("black"), vec!["black"]);
+}
+
+#[test]
+fn languages_package_managers_and_clipboard_have_requested_placements() {
+    let catalog = example_catalog();
+    let placements = |group_id: &str, subcategory: &str| {
+        catalog
+            .groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .unwrap()
+            .subcategories
+            .iter()
+            .find(|area| area.name == subcategory)
+            .unwrap()
+            .tools
+            .clone()
+    };
+
+    let languages = vec!["go", "java", "ruby", "zig"];
+    assert_eq!(placements("software-development", "Languages"), languages);
+    assert_eq!(placements("operations-devops", "Languages"), languages);
+
+    let package_managers = vec!["npm", "python-pip", "uv"];
+    assert_eq!(
+        placements("software-development", "Package managers"),
+        package_managers
+    );
+    assert_eq!(
+        placements("operations-devops", "Package managers"),
+        package_managers
+    );
+
+    assert!(
+        placements("software-development", "Media and desktop")
+            .contains(&"wayland-clipboard".to_owned())
+    );
+    assert_eq!(
+        placements("operations-devops", "Desktop integration"),
+        vec!["wayland-clipboard"]
+    );
+
+    assert_eq!(placements("general", "Network"), vec!["dig"]);
+    assert_eq!(
+        placements("software-development", "Infrastructure automation"),
+        vec!["terraform", "ansible-playbook", "ansible-lint"]
+    );
+    assert_eq!(
+        placements("operations-devops", "Containers and orchestration"),
+        vec!["openshift-cli", "kubectl", "helm"]
+    );
+    assert_eq!(
+        placements("software-development", "Cloud platforms"),
+        vec!["aws-cli", "hcloud"]
+    );
+    assert_eq!(
+        placements("software-development", "Code quality"),
+        vec!["black"]
+    );
 }

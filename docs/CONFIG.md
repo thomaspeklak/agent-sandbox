@@ -89,7 +89,9 @@ sign_key = "~/.ssh/ags-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
 container_boot_dirs = ["/home/dev/.ssh"]
 passthrough_env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
-extra_dnf_packages = ["bash", "git", "python3", "ripgrep"]
+extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
+# Written by `ags tools` when verified downloaded tools are selected:
+# tool_download_lock = "tool-downloads.<sha256>.lock.json"
 ```
 
 ### Fields
@@ -113,12 +115,20 @@ extra_dnf_packages = ["bash", "git", "python3", "ripgrep"]
 - `passthrough_env` (string array, optional)
   - Host env vars to pass into container if set and not already resolved from secrets.
 - `extra_dnf_packages` (string array, optional)
-  - DNF packages installed explicitly in the sandbox image by automatic builds and `ags update-image`.
-  - When omitted, AGS uses the canonical default set: the previously bundled packages plus sandbox-native `ansible-lint`.
-  - Set it to `[]` to request no runtime packages. This may make AGS features unusable; for example, normal launches require Bash, browser mode requires `socat`, `--tmux` requires tmux, and several shims require Python.
+  - Advanced representation of the optional tools installed by automatic builds and `ags update-image`.
+  - AGS installs its runtime, common Unix utilities, and fixed development headers as a non-selectable baseline outside this list.
+  - When omitted, AGS uses the packages owned by catalog tools marked `default: true`.
+  - Set it to `[]` to build the fixed baseline without optional tools. Browser mode still requires selecting `socat`, and `--tmux` requires selecting tmux.
   - Repo-local overlays replace the complete base list rather than appending to it.
-  - Package names cannot be empty, start with `-`, contain whitespace, or contain control characters.
+  - Package names use ASCII letters, digits, `+`, `-`, `.`, and `_`, and must start with a letter or digit.
   - Use `ags tools --packages <catalog.json>` to edit the list interactively, then run `ags update-image`.
+- `tool_download_lock` (path, optional, managed by `ags tools`)
+  - Points to the generated, content-addressed JSON lock for selected tools that are not available as Fedora packages.
+  - AGS stores this as a relative path and resolves it from the base or repo-local config layer that declared it, so repo overlays remain portable with their checkout.
+  - Each locked tool includes a pinned version, archive format, exact executable member, and architecture-specific HTTPS URL and SHA-256 digest.
+  - Config loading fails closed if the lock is missing, malformed, uses an unsafe path or URL, lacks `x86_64` or `aarch64`, or contains an invalid checksum.
+  - Both automatic image builds and `ags update-image` verify the selected artifact before installing only its declared executable.
+  - Do not hand-edit this file; update source metadata in the tool catalog and save through `ags tools`.
 
 ---
 
@@ -240,7 +250,7 @@ This keeps dcg core protections on (implicit) and adds common AGS-adjacent packs
 
 Declares a tool binary mount, optional directories, optional secrets.
 
-`[[tool]]` remains the low-level mechanism for mounting a specific host binary into the sandbox. It is independent of `ags tools`, which now edits sandbox image packages through `[sandbox].extra_dnf_packages` and does not generate `[[tool]]` entries.
+`[[tool]]` remains the low-level mechanism for mounting a specific host binary into the sandbox. It is independent of `ags tools`, which edits sandbox image components through `[sandbox].extra_dnf_packages` and the generated verified-tool lock without generating `[[tool]]` entries.
 
 ```toml
 [[tool]]
