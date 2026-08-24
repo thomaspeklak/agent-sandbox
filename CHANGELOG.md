@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.20.0] — 2026-08-24
+
+### Features
+
+- first draft of tools package manager (#7) (7139a9f)
+
 ## [v0.19.0] — 2026-08-20
 
 ### Features
