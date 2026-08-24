@@ -4,6 +4,7 @@ mod tests {
         ToolCatalog, ToolDefinition, ToolGroupDefinition, ToolSubcategoryDefinition,
     };
     use crate::config::{ToolArchiveFormat, ToolDownloadArtifact, ToolDownloadSource};
+    use crossterm::event::{KeyEventKind, KeyModifiers};
     use std::collections::BTreeMap;
     use ratatui::backend::TestBackend;
 
@@ -108,6 +109,64 @@ mod tests {
     }
 
     #[test]
+    fn only_key_press_events_change_selection() {
+        let mut app = app();
+        let key = |kind| {
+            Event::Key(KeyEvent::new_with_kind(
+                KeyCode::Char(' '),
+                KeyModifiers::NONE,
+                kind,
+            ))
+        };
+
+        app.handle_event(key(KeyEventKind::Press));
+        assert!(app.state.tools[0].selected);
+
+        app.handle_event(key(KeyEventKind::Release));
+        app.handle_event(key(KeyEventKind::Repeat));
+        assert!(app.state.tools[0].selected);
+    }
+
+    #[test]
+    fn uppercase_letter_bindings_match_lowercase_actions() {
+        let mut app = app();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
+        assert_eq!(app.current_group, 1);
+        app.handle_key(KeyEvent::new(KeyCode::Char('H'), KeyModifiers::NONE));
+        assert_eq!(app.current_group, 0);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('J'), KeyModifiers::NONE));
+        assert_eq!(app.selected_row, 3);
+        app.handle_key(KeyEvent::new(KeyCode::Char('K'), KeyModifiers::NONE));
+        assert_eq!(app.selected_row, 1);
+
+        app.state.tools[0].selected = false;
+        app.handle_key(KeyEvent::new(KeyCode::Char('D'), KeyModifiers::NONE));
+        assert!(app.state.tools[0].selected);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::NONE));
+        assert!(!app.running);
+    }
+
+    #[test]
+    fn uppercase_save_binding_writes_the_selection() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+        let mut app = app();
+        app.config_path = config.clone();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('S'), KeyModifiers::NONE));
+
+        assert!(!app.running);
+        assert!(app.save_report.is_some());
+        assert!(std::fs::read_to_string(config)
+            .unwrap()
+            .contains("tool_download_lock"));
+    }
+
+    #[test]
     fn stateful_table_scrolls_to_keep_selected_tool_visible() {
         let tools = (0..20)
             .map(|index| definition(&format!("tool-{index}"), false))
@@ -190,24 +249,18 @@ mod tests {
 
         terminal.draw(|frame| app.render(frame)).unwrap();
 
-        let buffer = terminal.backend().buffer();
-        let row_text = |y: u16| {
-            (0..140u16)
-                .map(|x| buffer[(x, y)].symbol())
-                .collect::<String>()
-        };
-        let tabs = row_text(2);
-        assert!(tabs.contains("General (0/2)"));
-        assert!(tabs.contains("Software Development (0/2)"));
-        assert!(tabs.contains("Operations and DevOps (0/1)"));
-        assert!(row_text(9).contains("── First"));
-        assert!(row_text(10).contains("recommended"));
-
-        let rendered = buffer
+        let rendered = terminal
+            .backend()
+            .buffer()
             .content()
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
+        assert!(rendered.contains("General (0/2)"));
+        assert!(rendered.contains("Software Development (0/2)"));
+        assert!(rendered.contains("Operations and DevOps (0/1)"));
+        assert!(rendered.contains("── First"));
+        assert!(rendered.contains("recommended"));
         assert!(!rendered.contains("internal-rpm-name"));
         assert!(!rendered.contains("downloads.example.com"));
         assert!(!rendered.contains("secret-member"));

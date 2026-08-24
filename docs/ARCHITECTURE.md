@@ -78,5 +78,5 @@
 - Principle of least privilege for mounts and env.
 - Reproducible defaults via embedded assets.
 - Config-driven behavior with validation before launch.
-- External tools use pinned architecture-specific HTTPS artifacts and are installed only after SHA-256 verification.
+- Downloaded non-RPM tools use pinned architecture-specific HTTPS artifacts and are installed only after SHA-256 verification; DNF-provided tools are installed from configured Fedora packages.
 - Agent state persisted on host volumes.

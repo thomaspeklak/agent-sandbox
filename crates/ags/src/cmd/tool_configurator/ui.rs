@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
@@ -89,9 +89,7 @@ impl App {
             self.normalize_selection();
             terminal.draw(|frame| self.render(frame))?;
 
-            if let Event::Key(key) = event::read()? {
-                self.handle_key(key);
-            }
+            self.handle_event(event::read()?);
         }
         Ok(())
     }
@@ -131,17 +129,28 @@ impl App {
         }
     }
 
+    fn handle_event(&mut self, event: Event) {
+        match event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key(key),
+            _ => {}
+        }
+    }
+
     fn handle_key(&mut self, key: KeyEvent) {
         if self.show_help {
             self.show_help = false;
             return;
         }
 
-        match key.code {
+        let code = match key.code {
+            KeyCode::Char(character) => KeyCode::Char(character.to_ascii_lowercase()),
+            code => code,
+        };
+        match code {
             KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
             KeyCode::Char('s') => self.save_and_quit(),
-            KeyCode::Char('d') | KeyCode::Char('D') => self.restore_defaults(),
+            KeyCode::Char('d') => self.restore_defaults(),
             KeyCode::Char(' ') => self.toggle_current_tool(),
             KeyCode::Right | KeyCode::Char('l') => self.move_group(1),
             KeyCode::Left | KeyCode::Char('h') => self.move_group(-1),

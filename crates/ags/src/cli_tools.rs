@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::cli::CliError;
+use super::{CliError, required_value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolConfigOptions {
@@ -20,26 +20,22 @@ where
             return Err(CliError::HelpRequested);
         }
         if arg == "--packages" {
-            let value = iter.next().ok_or(CliError::MissingToolPackagesValue)?;
+            let value = required_value(iter.next(), CliError::MissingToolPackagesValue)?;
             packages_path = Some(PathBuf::from(value));
             continue;
         }
         if let Some(value) = arg.strip_prefix("--packages=") {
-            if value.is_empty() {
-                return Err(CliError::MissingToolPackagesValue);
-            }
+            let value = required_value(Some(value), CliError::MissingToolPackagesValue)?;
             packages_path = Some(PathBuf::from(value));
             continue;
         }
         if arg == "--config" {
-            let value = iter.next().ok_or(CliError::MissingConfigValue)?;
+            let value = required_value(iter.next(), CliError::MissingConfigValue)?;
             config_path = Some(PathBuf::from(value));
             continue;
         }
         if let Some(value) = arg.strip_prefix("--config=") {
-            if value.is_empty() {
-                return Err(CliError::MissingConfigValue);
-            }
+            let value = required_value(Some(value), CliError::MissingConfigValue)?;
             config_path = Some(PathBuf::from(value));
             continue;
         }

@@ -189,7 +189,9 @@ impl fmt::Display for CliError {
             Self::MissingConfigValue => f.write_str("missing value for --config"),
             Self::MissingToolPackagesValue => f.write_str("missing value for --packages"),
             Self::MissingToolPackagesPath => {
-                f.write_str("missing tool catalog JSON path (use `ags tools --packages <path>`)")
+                f.write_str(
+                    "missing tool catalog JSON path (use `ags tools <path>` or `ags tools --packages <path>`)",
+                )
             }
             Self::MissingEnvValue => f.write_str("missing value for --env (expected NAME=VALUE)"),
             Self::MissingOpSecretSetValue => f.write_str("missing value for --op-secret-set / -1"),
@@ -220,6 +222,12 @@ impl fmt::Display for CliError {
             ),
         }
     }
+}
+
+fn required_value<T: AsRef<str>>(value: Option<T>, error: CliError) -> Result<T, CliError> {
+    value
+        .filter(|value| !value.as_ref().is_empty())
+        .ok_or(error)
 }
 
 pub fn parse_args<I>(args: I) -> Result<Command, CliError>

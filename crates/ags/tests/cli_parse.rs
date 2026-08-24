@@ -228,15 +228,46 @@ fn parses_update_image_config_path() {
 }
 
 #[test]
+fn parses_update_image_config_path_as_separate_value() {
+    let cmd = parse_args(args(&["ags", "update-image", "--config", "/tmp/ags.toml"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::UpdateImage(UpdateImageOptions {
+            config_path: Some("/tmp/ags.toml".into()),
+            ..Default::default()
+        }))
+    );
+}
+
+#[test]
+fn update_image_rejects_missing_or_empty_config_values() {
+    for arguments in [
+        &["ags", "update-image", "--config"][..],
+        &["ags", "update-image", "--config", ""][..],
+        &["ags", "update-image", "--config="][..],
+    ] {
+        let error = parse_args(args(arguments)).expect_err("expected parse error");
+        assert_eq!(error, CliError::MissingConfigValue);
+    }
+}
+
+#[test]
 fn help_shows_update_image_but_not_deprecated_update_alias() {
     let help = help_text();
     assert!(help.contains("update-image"));
-    assert!(help.contains("tools"));
+    assert!(
+        help.contains(
+            "\ntools          Choose sandbox tools from a profession-guided JSON catalog\n"
+        )
+    );
     assert!(help.contains("--keep-existing Keep the previous image after a successful rebuild"));
     assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
     assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));
     assert!(help.contains("--wayland-compositor-passthrough"));
     assert!(help.contains("--env <NAME=VALUE>"));
+    assert!(help.contains(
+        "--shell <name> Shell to generate completion script for (fish|zsh|bash)\n\nTools flags:"
+    ));
     assert!(!help.contains("\n     \x20 update         Rebuild container image"));
 }
 
@@ -277,6 +308,44 @@ fn parses_tools_with_flags() {
 fn tools_requires_packages_path() {
     let error = parse_args(args(&["ags", "tools"])).expect_err("expected parse error");
     assert_eq!(error, CliError::MissingToolPackagesPath);
+    assert_eq!(
+        error.to_string(),
+        "missing tool catalog JSON path (use `ags tools <path>` or `ags tools --packages <path>`)"
+    );
+}
+
+#[test]
+fn tools_rejects_missing_or_empty_packages_values() {
+    for arguments in [
+        &["ags", "tools", "--packages"][..],
+        &["ags", "tools", "--packages", ""][..],
+        &["ags", "tools", "--packages="][..],
+    ] {
+        let error = parse_args(args(arguments)).expect_err("expected parse error");
+        assert_eq!(error, CliError::MissingToolPackagesValue);
+    }
+}
+
+#[test]
+fn tools_rejects_missing_or_empty_config_values() {
+    for arguments in [
+        &["ags", "tools", "packages.json", "--config"][..],
+        &["ags", "tools", "packages.json", "--config", ""][..],
+        &["ags", "tools", "packages.json", "--config="][..],
+    ] {
+        let error = parse_args(args(arguments)).expect_err("expected parse error");
+        assert_eq!(error, CliError::MissingConfigValue);
+    }
+}
+
+#[test]
+fn tools_rejects_extra_positional_and_unknown_flag() {
+    let error =
+        parse_args(args(&["ags", "tools", "a.json", "b.json"])).expect_err("expected parse error");
+    assert_eq!(error, CliError::UnexpectedPositional("b.json".to_owned()));
+
+    let error = parse_args(args(&["ags", "tools", "--nope"])).expect_err("expected parse error");
+    assert_eq!(error, CliError::UnexpectedFlag("--nope".to_owned()));
 }
 
 #[test]

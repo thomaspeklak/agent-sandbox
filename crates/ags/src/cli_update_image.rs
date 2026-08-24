@@ -1,4 +1,4 @@
-use super::{CliError, UpdateImageOptions};
+use super::{CliError, UpdateImageOptions, required_value};
 
 pub(super) fn parse_args<I>(mut iter: I) -> Result<UpdateImageOptions, CliError>
 where
@@ -16,13 +16,11 @@ where
             continue;
         }
         if arg == "--config" {
-            config_path = Some(iter.next().ok_or(CliError::MissingConfigValue)?.into());
+            config_path = Some(required_value(iter.next(), CliError::MissingConfigValue)?.into());
             continue;
         }
         if let Some(value) = arg.strip_prefix("--config=") {
-            if value.is_empty() {
-                return Err(CliError::MissingConfigValue);
-            }
+            let value = required_value(Some(value), CliError::MissingConfigValue)?;
             config_path = Some(value.into());
             continue;
         }

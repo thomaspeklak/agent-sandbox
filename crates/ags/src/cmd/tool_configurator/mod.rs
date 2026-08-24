@@ -22,14 +22,13 @@ pub fn run(
     let cleanup_path = overlay_path
         .filter(|path| *path != target_path)
         .or_else(|| (target_path != config_path).then_some(config_path));
+    let has_configured_selection = base_defines_selection || overlay_defines_selection;
     let mut app = ui::App::new(
         target_path,
         cleanup_path,
         packages_path,
-        (base_defines_selection || overlay_defines_selection)
-            .then_some(config.sandbox.extra_dnf_packages.as_slice()),
-        (base_defines_selection || overlay_defines_selection)
-            .then_some(config.sandbox.tool_downloads.as_slice()),
+        has_configured_selection.then_some(config.sandbox.extra_dnf_packages.as_slice()),
+        has_configured_selection.then_some(config.sandbox.tool_downloads.as_slice()),
     )?;
     let report = app.run()?;
 

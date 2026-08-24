@@ -78,6 +78,10 @@ const BASH: &str = r#"_ags_completion() {
         COMPREPLY=( $(compgen -f -- "$cur") )
         return 0
       fi
+      if [[ "$cur" != -* ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") $(compgen -W "--packages --config -h --help" -- "$cur") )
+        return 0
+      fi
       COMPREPLY=( $(compgen -W "--packages --config -h --help" -- "$cur") )
       return 0
       ;;
@@ -317,6 +321,7 @@ complete -c ags -n "__fish_seen_subcommand_from completions" -l shell -r -a "$__
 complete -c ags -n "__fish_seen_subcommand_from completions" -s h -l help -d "Show help"
 
 # tools
+complete -c ags -n "__fish_seen_subcommand_from tools" -F -d "Tool catalog JSON file"
 complete -c ags -n "__fish_seen_subcommand_from tools" -l packages -r -d "Tool catalog JSON file"
 complete -c ags -n "__fish_seen_subcommand_from tools" -l config -r -d "Config file to update"
 complete -c ags -n "__fish_seen_subcommand_from tools" -s h -l help -d "Show help"
@@ -348,6 +353,7 @@ mod tests {
         assert!(script.contains("--add-agent-mounts"));
         assert!(script.contains("--keep-existing"));
         assert!(script.contains("tools"));
+        assert!(script.contains("COMPREPLY=( $(compgen -f -- \"$cur\") $(compgen -W \"--packages --config -h --help\" -- \"$cur\") )"));
         assert!(script.contains("--add-dir"));
         assert!(script.contains("-d"));
         assert!(script.contains("--env"));
@@ -364,6 +370,7 @@ mod tests {
             script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
         );
         assert!(script.contains("--packages[Tool catalog JSON file]"));
+        assert!(script.contains("'1:catalog file:_files'"));
         assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
         assert!(script.contains("--env[Set a container environment variable (repeatable)]"));
         assert!(script.contains("--op-secret-set[Inject fields from a 1Password Secure Note]"));
@@ -384,6 +391,9 @@ mod tests {
             "-l keep-existing -d \"Keep the previous image after a successful rebuild\""
         ));
         assert!(script.contains("-a tools"));
+        assert!(script.contains(
+            "complete -c ags -n \"__fish_seen_subcommand_from tools\" -F -d \"Tool catalog JSON file\""
+        ));
         assert!(script.contains("-l packages -r"));
         assert!(script.contains("-l psp -d \"Enable podman-socket-proxy mode (policy-gated)\""));
         assert!(script.contains(

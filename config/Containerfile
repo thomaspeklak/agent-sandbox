@@ -216,9 +216,15 @@ RUN useradd -m -u 1000 -s /bin/bash dev && \
 COPY --from=tooling-builder /usr/local/rustup/ /usr/local/rustup/
 COPY --from=tooling-builder /usr/local/cargo/ /usr/local/cargo/
 COPY --from=tooling-builder /usr/local/lib/node_modules/pnpm/ /usr/local/lib/node_modules/pnpm/
-COPY --from=tooling-builder /usr/local/bin/pnpm /usr/local/bin/pnpm
 COPY --from=tooling-builder /usr/local/bin/br /usr/local/bin/br
 COPY --from=tooling-builder /usr/local/bin/dcg /usr/local/bin/dcg
+RUN set -eu; \
+    pnpm_bin="$(node -p "const pkg = require('/usr/local/lib/node_modules/pnpm/package.json'); typeof pkg.bin === 'string' ? pkg.bin : pkg.bin.pnpm")"; \
+    test -n "$pnpm_bin"; \
+    test -f "/usr/local/lib/node_modules/pnpm/$pnpm_bin"; \
+    ln -s "../lib/node_modules/pnpm/$pnpm_bin" /usr/local/bin/pnpm; \
+    test -L /usr/local/bin/pnpm; \
+    /usr/local/bin/pnpm --version
 
 # Glimpse sandbox shim: build artifacts stay in the builder stage; the final image keeps only the binary.
 COPY --from=glimpse-builder /out/glimpse-shim /opt/ags/glimpse-shim

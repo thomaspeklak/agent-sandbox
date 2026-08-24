@@ -1,4 +1,10 @@
-fn validate_catalog(catalog: &ToolCatalog) -> Result<(), ToolConfigError> {
+use std::collections::BTreeSet;
+
+use crate::config::BASE_DNF_PACKAGES;
+
+use super::{PROFESSIONS, ToolCatalog, ToolConfigError};
+
+pub(super) fn validate_catalog(catalog: &ToolCatalog) -> Result<(), ToolConfigError> {
     if catalog.tools.is_empty() {
         return Err(invalid("catalog must define at least one tool"));
     }

@@ -75,12 +75,36 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
 #[test]
 fn verified_download_loop_propagates_installer_failures() {
     let containerfile = include_str!("../../../config/Containerfile");
+    let download_block = containerfile
+        .split_once("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\"")
+        .and_then(|(_, remainder)| remainder.split_once("RUN useradd"))
+        .map(|(block, _)| block.split_whitespace().collect::<Vec<_>>().join(" "))
+        .expect("verified download RUN block");
 
-    assert!(containerfile.contains("RUN set -eu; \\"));
-    assert!(containerfile.contains("lock=\"$(mktemp)\"; entries=\"$(mktemp)\";"));
-    assert!(containerfile.contains("done < \"$entries\"; \\"));
-    assert!(!containerfile.contains("done < \"$entries\" &&"));
-    assert!(containerfile.contains("tar -xOzf \"$archive\" -- \"$member\""));
+    assert!(download_block.contains("RUN set -eu;"));
+    assert!(download_block.contains("while IFS= read -r tool; do"));
+    assert!(download_block.contains("install -D -m 0755 \"$binary\""));
+    assert!(download_block.contains("done < \"$entries\";"));
+    assert!(download_block.contains("tar -xOzf \"$archive\" -- \"$member\""));
+}
+
+#[test]
+fn final_image_recreates_and_executes_the_pnpm_launcher() {
+    let containerfile = include_str!("../../../config/Containerfile");
+
+    assert!(containerfile.contains(
+        "COPY --from=tooling-builder /usr/local/lib/node_modules/pnpm/ /usr/local/lib/node_modules/pnpm/"
+    ));
+    assert!(
+        !containerfile
+            .contains("COPY --from=tooling-builder /usr/local/bin/pnpm /usr/local/bin/pnpm")
+    );
+    assert!(containerfile.contains("require('/usr/local/lib/node_modules/pnpm/package.json')"));
+    assert!(
+        containerfile.contains("ln -s \"../lib/node_modules/pnpm/$pnpm_bin\" /usr/local/bin/pnpm")
+    );
+    assert!(containerfile.contains("test -L /usr/local/bin/pnpm"));
+    assert!(containerfile.contains("/usr/local/bin/pnpm --version"));
 }
 
 #[test]

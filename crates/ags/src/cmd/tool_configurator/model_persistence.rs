@@ -1,3 +1,21 @@
+use std::collections::BTreeSet;
+use std::fs;
+use std::io;
+use std::path::{Component, Path, PathBuf};
+
+use sha2::{Digest, Sha256};
+use toml_edit::{Array, DocumentMut, Item, Table};
+
+use crate::config::{
+    BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, validate_locked_tool_downloads,
+};
+
+use super::model_validation::validate_catalog;
+use super::{
+    LEGACY_MANAGED_BY_KEY, LEGACY_MANAGED_BY_VALUE, SaveReport, ToolCatalog, ToolConfigError,
+    ToolSelectionState,
+};
+
 pub fn load_package_file(path: &Path) -> Result<ToolCatalog, ToolConfigError> {
     let content = fs::read_to_string(path)?;
     let catalog = serde_json::from_str::<ToolCatalog>(&content)?;
@@ -11,8 +29,7 @@ pub fn config_file_defines_tool_selection(path: &Path) -> Result<bool, ToolConfi
         .parse::<DocumentMut>()
         .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
     Ok(doc.get("sandbox").is_some_and(|sandbox| {
-        sandbox.get("extra_dnf_packages").is_some()
-            || sandbox.get("tool_download_lock").is_some()
+        sandbox.get("extra_dnf_packages").is_some() || sandbox.get("tool_download_lock").is_some()
     }))
 }
 
@@ -25,6 +42,9 @@ pub fn write_selected_tools(
     let mut doc: DocumentMut = content
         .parse::<DocumentMut>()
         .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
+    let previous_lock_name = configured_lock_name(&doc);
+    let backup_path = config_path.with_extension("toml.bak");
+    let displaced_backup_lock_name = configured_lock_name_from_file(&backup_path);
 
     let mut report = apply_selection_to_document(&mut doc, state);
     let downloads = state.selected_downloads();
@@ -46,22 +66,105 @@ pub fn write_selected_tools(
     let lock_digest = format!("{:x}", Sha256::digest(lock_content.as_bytes()));
     let lock_name = format!("tool-downloads.{lock_digest}.lock.json");
     let lock_path = config_path.with_file_name(&lock_name);
-    doc["sandbox"]["tool_download_lock"] = toml_edit::value(lock_name);
+    doc["sandbox"]["tool_download_lock"] = toml_edit::value(lock_name.clone());
     backup_file(config_path)?;
     atomic_write(&lock_path, &lock_content)?;
     atomic_write(config_path, &doc.to_string())?;
+    if let Some(stale_lock_name) = displaced_backup_lock_name
+        .filter(|name| name != &lock_name && previous_lock_name.as_deref() != Some(name.as_str()))
+    {
+        match remove_managed_lock(config_path, &stale_lock_name) {
+            Ok(()) => {}
+            Err(error) => {
+                add_cleanup_warning(
+                    &mut report,
+                    format!(
+                        "saved tool selection, but could not remove stale tool download lock {stale_lock_name}: {error}"
+                    ),
+                );
+            }
+        }
+    }
     if let Some(path) = legacy_cleanup_path {
         match remove_legacy_managed_tools_from_file(path) {
             Ok(removed) => report.removed_legacy_tools += removed,
             Err(error) => {
-                report.cleanup_warning = Some(format!(
-                    "saved tool selection, but could not remove legacy tool mounts from {}: {error}",
-                    path.display()
-                ));
+                add_cleanup_warning(
+                    &mut report,
+                    format!(
+                        "saved tool selection, but could not remove legacy tool mounts from {}: {error}",
+                        path.display()
+                    ),
+                );
             }
         }
     }
     Ok(report)
+}
+
+fn configured_lock_name(doc: &DocumentMut) -> Option<String> {
+    doc.get("sandbox")
+        .and_then(|sandbox| sandbox.get("tool_download_lock"))
+        .and_then(Item::as_str)
+        .map(str::to_owned)
+}
+
+fn configured_lock_name_from_file(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    let doc = content.parse::<DocumentMut>().ok()?;
+    configured_lock_name(&doc)
+}
+
+fn managed_lock_path(config_path: &Path, lock_name: &str) -> Option<(PathBuf, String)> {
+    let mut components = Path::new(lock_name).components();
+    let Component::Normal(file_name) = components.next()? else {
+        return None;
+    };
+    if components.next().is_some() {
+        return None;
+    }
+    let file_name = file_name.to_str()?;
+    let digest = file_name
+        .strip_prefix("tool-downloads.")?
+        .strip_suffix(".lock.json")?;
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return None;
+    }
+    Some((config_path.with_file_name(file_name), digest.to_owned()))
+}
+
+fn remove_managed_lock(config_path: &Path, lock_name: &str) -> io::Result<()> {
+    let Some((lock_path, expected_digest)) = managed_lock_path(config_path, lock_name) else {
+        return Ok(());
+    };
+    let metadata = match fs::symlink_metadata(&lock_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    let content = fs::read(&lock_path)?;
+    let actual_digest = format!("{:x}", Sha256::digest(&content));
+    if actual_digest != expected_digest {
+        return Ok(());
+    }
+    fs::remove_file(lock_path)
+}
+
+fn add_cleanup_warning(report: &mut SaveReport, warning: String) {
+    match &mut report.cleanup_warning {
+        Some(existing) => {
+            existing.push_str("; ");
+            existing.push_str(&warning);
+        }
+        None => report.cleanup_warning = Some(warning),
+    }
 }
 
 pub fn configured_packages_from_document(doc: &DocumentMut) -> Vec<String> {

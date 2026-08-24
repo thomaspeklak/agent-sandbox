@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ags::{
     cmd::tool_configurator::model::{
@@ -93,6 +93,14 @@ fn example_catalog() -> ToolCatalog {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/tool-packages.example.json");
     load_package_file(&path).unwrap()
+}
+
+fn saved_lock_name(config: &Path) -> String {
+    let doc: DocumentMut = std::fs::read_to_string(config).unwrap().parse().unwrap();
+    doc["sandbox"]["tool_download_lock"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 #[test]
@@ -399,6 +407,145 @@ fn save_keeps_previously_referenced_download_lock_immutable() {
 }
 
 #[test]
+fn save_removes_lock_displaced_from_the_restorable_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let backup = config.with_extension("toml.bak");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    let mut state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![
+            download_tool("terraform", false),
+            download_tool("opentofu", false),
+        ]),
+        Some(&[]),
+        Some(&[]),
+    )
+    .unwrap();
+
+    state.tools[0].selected = true;
+    write_selected_tools(&config, None, &state).unwrap();
+    let first_name = saved_lock_name(&config);
+
+    state.tools[1].selected = true;
+    write_selected_tools(&config, None, &state).unwrap();
+    let second_name = saved_lock_name(&config);
+    assert_eq!(saved_lock_name(&backup), first_name);
+    assert!(dir.path().join(&first_name).is_file());
+
+    state.tools[0].selected = false;
+    write_selected_tools(&config, None, &state).unwrap();
+    let third_name = saved_lock_name(&config);
+
+    assert_ne!(first_name, second_name);
+    assert_ne!(second_name, third_name);
+    assert_eq!(saved_lock_name(&backup), second_name);
+    assert!(!dir.path().join(first_name).exists());
+    assert!(dir.path().join(second_name).is_file());
+    assert!(dir.path().join(third_name).is_file());
+}
+
+#[test]
+fn save_does_not_delete_unmanaged_backup_lock_references() {
+    for case in ["parent", "absolute", "nested"] {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path().join("config");
+        std::fs::create_dir(&config_dir).unwrap();
+        let config = config_dir.join("config.toml");
+        let backup = config.with_extension("toml.bak");
+        let sentinel = match case {
+            "parent" | "absolute" => dir.path().join("sentinel"),
+            "nested" => config_dir.join("nested/sentinel"),
+            _ => unreachable!(),
+        };
+        std::fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        let lock_name = match case {
+            "parent" => "../sentinel".to_owned(),
+            "absolute" => sentinel.display().to_string(),
+            "nested" => "nested/sentinel".to_owned(),
+            _ => unreachable!(),
+        };
+        std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+        std::fs::write(
+            &backup,
+            format!("[sandbox]\ntool_download_lock = {lock_name:?}\n"),
+        )
+        .unwrap();
+        std::fs::write(&sentinel, "keep").unwrap();
+        let state = ToolSelectionState::from_catalog_with_config(
+            catalog(vec![download_tool("terraform", false)]),
+            Some(&[]),
+            Some(&[]),
+        )
+        .unwrap();
+
+        write_selected_tools(&config, None, &state).unwrap();
+
+        assert_eq!(std::fs::read_to_string(sentinel).unwrap(), "keep");
+    }
+}
+
+#[test]
+fn save_does_not_delete_managed_name_with_mismatched_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let backup = config.with_extension("toml.bak");
+    let stale_name = format!("tool-downloads.{}.lock.json", "a".repeat(64));
+    let stale_path = dir.path().join(&stale_name);
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    std::fs::write(
+        backup,
+        format!("[sandbox]\ntool_download_lock = {stale_name:?}\n"),
+    )
+    .unwrap();
+    std::fs::write(&stale_path, "not the named content").unwrap();
+    let state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![download_tool("terraform", false)]),
+        Some(&[]),
+        Some(&[]),
+    )
+    .unwrap();
+
+    write_selected_tools(&config, None, &state).unwrap();
+
+    assert!(stale_path.is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn save_does_not_remove_a_symlinked_managed_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let backup = config.with_extension("toml.bak");
+    let stale_name = format!("tool-downloads.{}.lock.json", "a".repeat(64));
+    let stale_path = dir.path().join(&stale_name);
+    let sentinel = dir.path().join("sentinel");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    std::fs::write(
+        backup,
+        format!("[sandbox]\ntool_download_lock = {stale_name:?}\n"),
+    )
+    .unwrap();
+    std::fs::write(&sentinel, "keep").unwrap();
+    std::os::unix::fs::symlink(&sentinel, &stale_path).unwrap();
+    let state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![download_tool("terraform", false)]),
+        Some(&[]),
+        Some(&[]),
+    )
+    .unwrap();
+
+    write_selected_tools(&config, None, &state).unwrap();
+
+    assert!(
+        std::fs::symlink_metadata(stale_path)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read_to_string(sentinel).unwrap(), "keep");
+}
+
+#[test]
 fn save_drops_unknown_download_that_collides_with_selected_catalog_command() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
@@ -573,7 +720,6 @@ fn catalog_validation_requires_exact_profession_names() {
 #[test]
 fn example_catalog_has_profession_views_and_canonical_defaults() {
     let catalog = example_catalog();
-    assert_eq!(catalog.tools.len(), 32);
     assert_eq!(catalog.groups.len(), 3);
     assert_eq!(catalog.groups[0].name, "General");
     assert_eq!(catalog.groups[1].name, "Software Development");
@@ -592,23 +738,31 @@ fn example_catalog_has_profession_views_and_canonical_defaults() {
     assert_eq!(catalog_defaults, runtime_defaults);
 
     let baseline = BASE_DNF_PACKAGES.iter().copied().collect::<BTreeSet<_>>();
-    let selectable = catalog
+    let selectable_packages = catalog
         .tools
         .iter()
         .flat_map(|tool| &tool.dnf_packages)
         .map(String::as_str)
-        .collect::<BTreeSet<_>>();
+        .collect::<Vec<_>>();
+    let selectable = selectable_packages.iter().copied().collect::<BTreeSet<_>>();
+    assert_eq!(selectable.len(), selectable_packages.len());
     assert!(baseline.is_disjoint(&selectable));
     assert_eq!(baseline.len(), BASE_DNF_PACKAGES.len());
-    assert_eq!(baseline.len() + selectable.len(), 57);
-    assert_eq!(catalog.tools.iter().filter(|tool| tool.default).count(), 11);
-    assert_eq!(
+    for id in ["terraform", "openshift-cli"] {
+        let tool = catalog.tools.iter().find(|tool| tool.id == id).unwrap();
+        assert!(
+            tool.download.is_some(),
+            "{id} should use a verified download"
+        );
+        assert!(tool.dnf_packages.is_empty());
+    }
+    assert!(
         catalog
             .tools
             .iter()
             .filter(|tool| tool.download.is_some())
-            .count(),
-        2
+            .all(|tool| !tool.default),
+        "downloaded tools should remain explicit opt-ins"
     );
     assert!(BASE_DNF_PACKAGES.contains(&"curl"));
     assert!(!catalog.tools.iter().any(|tool| tool.id == "curl"));

@@ -1,17 +1,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
-use toml_edit::{Array, DocumentMut, Item, Table};
 
-use crate::config::{
-    BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, LockedToolDownload, ToolDownloadSource,
-    validate_locked_tool_downloads,
+use crate::config::{LockedToolDownload, ToolDownloadSource};
+
+#[path = "model_persistence.rs"]
+mod model_persistence;
+#[path = "model_validation.rs"]
+mod model_validation;
+
+pub use model_persistence::{
+    apply_selection_to_document, config_file_defines_tool_selection,
+    configured_packages_from_document, load_package_file, write_selected_tools,
 };
+use model_validation::validate_catalog;
 
 const LEGACY_MANAGED_BY_KEY: &str = "ags_managed_by";
 const LEGACY_MANAGED_BY_VALUE: &str = "tool-configurator";
@@ -363,5 +367,3 @@ pub struct SaveReport {
     pub removed_legacy_tools: usize,
     pub cleanup_warning: Option<String>,
 }
-include!("model_persistence.rs");
-include!("model_validation.rs");

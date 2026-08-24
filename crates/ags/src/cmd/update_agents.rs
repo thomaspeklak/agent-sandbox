@@ -142,11 +142,14 @@ fn build_install_script(pi_spec: &str, release_age: u32) -> String {
 mkdir -p "$HOME/.config/pnpm" /usr/local/pnpm && \
 printf 'minimum-release-age=%s\nignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' '{release_age}' > "$HOME/.config/pnpm/rc" && \
 export PNPM_HOME=/usr/local/pnpm NPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store NPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:$PATH && \
+PNPM_BIN=/usr/local/bin/pnpm && \
+if ! [ -x "$PNPM_BIN" ] || ! "$PNPM_BIN" --version >/dev/null; then \
+  echo "sandbox pnpm is unavailable; run 'ags update-image'" >&2; \
+  exit 1; \
+fi && \
 rm -f /usr/local/pnpm/pnpm /usr/local/pnpm/pn /usr/local/pnpm/pnpx /usr/local/pnpm/pnx /usr/local/pnpm/bin/pnpm /usr/local/pnpm/bin/pn /usr/local/pnpm/bin/pnpx /usr/local/pnpm/bin/pnx && \
 rm -f /home/dev/.npm-global/bin/pi /home/dev/.npm-global/bin/codex /home/dev/.npm-global/bin/gemini /home/dev/.npm-global/bin/opencode && \
 rm -rf /home/dev/.npm-global/lib/node_modules/@mariozechner/pi-coding-agent /home/dev/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent /home/dev/.npm-global/lib/node_modules/@openai/codex /home/dev/.npm-global/lib/node_modules/@google/gemini-cli /home/dev/.npm-global/lib/node_modules/opencode-ai && \
-PNPM_BIN=/usr/local/bin/pnpm && \
-[ -x "$PNPM_BIN" ] && \
 install_pnpm_agent() {{ \
   name="$1"; shift; \
   echo "[ags] updating $name..." >&2; \
@@ -249,6 +252,12 @@ mod tests {
         assert!(script.contains("install_pnpm_agent opencode opencode-ai"));
         assert!(script.contains("\"$PNPM_BIN\" add -g \"$@\" || return"));
         assert!(script.contains("PNPM_BIN=/usr/local/bin/pnpm"));
+        let preflight_pos = script
+            .find("\"$PNPM_BIN\" --version >/dev/null")
+            .expect("image pnpm should be executed before package updates");
+        assert!(preflight_pos < cleanup_pos);
+        assert!(preflight_pos < script.find("rm -f /usr/local/pnpm/pnpm").unwrap());
+        assert!(script.contains("run 'ags update-image'"));
         assert!(
             !script.contains("using existing installs"),
             "pnpm update failures must not be masked by an existing stale pi binary"

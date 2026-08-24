@@ -304,11 +304,12 @@ ags update-agents
 
 ---
 
-## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, or Pi loads from `.npm-global`
+## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, `/usr/local/dist/pnpm.mjs` is missing, or Pi loads from `.npm-global`
 
 Cause:
 
 - a pnpm self-update or install script wrote pnpm's own shims into the persistent agent runtime volume
+- an older sandbox image copied the pnpm launcher instead of preserving its package-relative symlink
 - old npm-global agent installs can shadow the pnpm-managed AGS agent shims
 - those shims can disagree with the store used by the globally installed agent CLIs
 

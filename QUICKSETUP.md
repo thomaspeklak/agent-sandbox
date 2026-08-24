@@ -10,7 +10,10 @@ Install these on the host first:
 
 - Rust and Cargo
 - Rootless Podman
-- Git
+- `git`
+- `ssh-keygen`
+- `ssh-add`
+- `bash`
 
 Ensure `~/.cargo/bin` is on `PATH` so the installed `ags` command is available.
 
@@ -77,6 +80,25 @@ git clone https://github.com/thomaspeklak/agent-sandbox.git && \
 
 Run the tool picker before `ags update-image` when you want to customize the
 sandbox tool selection.
+
+## Clean Source Verification
+
+To compile and install entirely from source, refresh the embedded assets, rebuild
+the sandbox image, and verify the image-provided pnpm launcher:
+
+```bash
+cargo clean && \
+  cargo install --locked --path crates/ags --force && \
+  ags install && \
+  ags setup && \
+  ags update-image && \
+  ags --agent shell -- -lc 'test -L /usr/local/bin/pnpm && /usr/local/bin/pnpm --version' && \
+  ags update-agents && \
+  ags doctor
+```
+
+Run this from the repository root. `ags install` is required so the rebuilt
+image uses the `Containerfile` embedded by the newly compiled AGS binary.
 
 ## Updating Later
 

@@ -88,6 +88,7 @@ Create-aliases flags:
 Completions flags:
 \
   --shell <name> Shell to generate completion script for (fish|zsh|bash)
+
 \
 Tools flags:
 \
