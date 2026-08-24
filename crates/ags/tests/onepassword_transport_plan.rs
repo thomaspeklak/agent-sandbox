@@ -207,7 +207,7 @@ fn bootstrap_wraps_direct_agent_and_closes_fds_for_browser_helper() {
     );
     assert!(
         plan.entrypoint
-            .contains("exec /run/ags/onepassword-bootstrap --fd-count 2 -- /usr/local/pnpm/pi")
+            .contains("exec /run/ags/onepassword-bootstrap --fd-count 2 -- /usr/local/pnpm/bin/pi")
     );
     assert!(
         plan.entrypoint
@@ -298,7 +298,7 @@ fn bootstrap_wraps_tmux_process_tree_in_root_stop_when_done_mode() {
     );
     assert!(
         plan.entrypoint
-            .contains("#!/usr/bin/env bash\nexec /usr/local/pnpm/pi")
+            .contains("#!/usr/bin/env bash\nexec /usr/local/pnpm/bin/pi")
     );
     assert!(
         !plan.entrypoint.contains("--user=root"),

@@ -596,7 +596,7 @@ fn boot_dirs_in_entrypoint() {
         plan.entrypoint
     );
     assert!(plan.entrypoint.contains("/home/dev/.ssh"));
-    assert!(plan.entrypoint.contains("exec /usr/local/pnpm/pi -e"));
+    assert!(plan.entrypoint.contains("exec /usr/local/pnpm/bin/pi -e"));
     assert!(
         !plan.entrypoint.contains("--no-extensions"),
         "pi should not disable extensions: {}",
@@ -690,7 +690,7 @@ fn tmux_stop_when_done_uses_exec() {
     .unwrap();
 
     assert!(
-        plan.entrypoint.contains("exec /usr/local/pnpm/pi -e"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/bin/pi -e"),
         "stop_when_done should exec the agent: {}",
         plan.entrypoint
     );
@@ -1141,7 +1141,7 @@ fn gemini_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Gemini);
 
     assert!(
-        plan.entrypoint.contains("exec /usr/local/pnpm/gemini"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/bin/gemini"),
         "gemini entrypoint: {}",
         plan.entrypoint
     );
@@ -1160,7 +1160,8 @@ fn opencode_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Opencode);
 
     assert!(
-        plan.entrypoint.contains("exec /usr/local/pnpm/opencode"),
+        plan.entrypoint
+            .contains("exec /usr/local/pnpm/bin/opencode"),
         "opencode entrypoint: {}",
         plan.entrypoint
     );

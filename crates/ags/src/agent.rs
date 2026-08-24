@@ -4,7 +4,7 @@ use crate::util::shell_quote;
 
 const HOST_SERVICE_PROMPT_HINT: &str =
     "Sandbox: use host.containers.internal (localhost is container-local).";
-const PNPM_AGENT_BIN_DIR: &str = "/usr/local/pnpm";
+const PNPM_AGENT_BIN_DIR: &str = "/usr/local/pnpm/bin";
 const OPENCODE_SANDBOX_INSTRUCTIONS_DIR: &str = "/tmp/ags-opencode";
 const OPENCODE_SANDBOX_INSTRUCTIONS_PATH: &str = "/tmp/ags-opencode/sandbox-instructions.md";
 
@@ -113,7 +113,7 @@ fn claude_profile(guard_enabled: bool, lockdown: bool) -> AgentProfile {
 
 fn codex_profile() -> AgentProfile {
     AgentProfile {
-        command: pnpm_agent_command("codex"),
+        command: "/usr/local/pnpm/codex".to_owned(),
         command_args: vec![
             "-c".to_owned(),
             format!(
