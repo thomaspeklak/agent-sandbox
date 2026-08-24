@@ -488,7 +488,7 @@ Use `config/config.example.toml` for full schema examples.
 - For untrusted or foreign repos, prefer `--lockdown` to minimize host exposure for that run.
 - In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update-image` if Bash commands are unexpectedly blocked.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
-- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`).
+- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`). AGS explicitly runs only `opencode-ai`'s required postinstall script after installation and verifies the resulting binary.
 - Non-RPM tools selected through `ags tools` use pinned HTTPS artifacts for both supported architectures. AGS validates their catalog metadata and verifies SHA-256 before extracting only the declared executable.
 - Rotate/revoke credentials quickly if compromise is suspected.
 - The clipboard bridge is narrower than raw Wayland passthrough. Host clipboard reads require approval by default and can be allowed for `[clipboard].approval_seconds`; disabling approval restores session-wide read access.

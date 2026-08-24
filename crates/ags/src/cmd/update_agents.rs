@@ -169,6 +169,9 @@ CODEX_HOME=/opt/codex-home CODEX_INSTALL_DIR=/usr/local/pnpm CODEX_NON_INTERACTI
 [ -x /usr/local/pnpm/codex ] && \
 install_pnpm_agent gemini @google/gemini-cli && \
 install_pnpm_agent opencode opencode-ai && \
+OPENCODE_ROOT="$("$PNPM_BIN" root -g)/opencode-ai" && \
+node "$OPENCODE_ROOT/postinstall.mjs" && \
+opencode --version >/dev/null && \
 CLAUDE_HOME=/opt/claude-home && \
 CLAUDE_BIN="$CLAUDE_HOME/.local/bin/claude" && \
 if [ -x "$CLAUDE_BIN" ]; then \
@@ -287,6 +290,29 @@ mod tests {
             !script.contains("pnpm self-update"),
             "update-agents should not install pnpm into the agent runtime volume"
         );
+    }
+
+    #[test]
+    fn opencode_postinstall_runs_before_runtime_validation() {
+        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
+
+        let install_pos = script
+            .find("install_pnpm_agent opencode opencode-ai")
+            .expect("OpenCode should be installed by pnpm");
+        let root_pos = script
+            .find("OPENCODE_ROOT=\"$(\"$PNPM_BIN\" root -g)/opencode-ai\"")
+            .expect("the global OpenCode package directory should be resolved dynamically");
+        let postinstall_pos = script
+            .find("node \"$OPENCODE_ROOT/postinstall.mjs\"")
+            .expect("OpenCode's required postinstall script should run explicitly");
+        let validation_pos = script
+            .find("opencode --version >/dev/null")
+            .expect("the installed OpenCode binary should be executed");
+
+        assert!(script.contains("ignore-scripts=true"));
+        assert!(install_pos < root_pos);
+        assert!(root_pos < postinstall_pos);
+        assert!(postinstall_pos < validation_pos);
     }
 
     #[test]

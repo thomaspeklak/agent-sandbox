@@ -223,7 +223,7 @@ Settings come from `[update]` in config.
 
 Security hardening and runtime hygiene:
 
-- pnpm installs run with `ignore-scripts=true`.
+- pnpm installs run with `ignore-scripts=true`; AGS explicitly runs only `opencode-ai`'s required postinstall script and then verifies `opencode --version`.
 - Codex releases are stored in a dedicated persistent `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
 - pnpm uses a stable store under `/usr/local/pnpm/.store`.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.
