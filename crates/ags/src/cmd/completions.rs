@@ -70,12 +70,25 @@ const BASH: &str = r#"_ags_completion() {
         COMPREPLY=( $(compgen -f -- "$cur") )
         return 0
       fi
+      if [[ "$cur" == --config=* ]]; then
+        local value="${cur#--config=}"
+        COMPREPLY=( $(compgen -f -- "$value") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--config=}" )
+        return 0
+      fi
       COMPREPLY=( $(compgen -W "--keep-existing --config -h --help" -- "$cur") )
       return 0
       ;;
     tools)
       if [[ "$prev" == "--packages" || "$prev" == "--config" ]]; then
         COMPREPLY=( $(compgen -f -- "$cur") )
+        return 0
+      fi
+      if [[ "$cur" == --packages=* || "$cur" == --config=* ]]; then
+        local prefix="${cur%%=*}="
+        local value="${cur#*=}"
+        COMPREPLY=( $(compgen -f -- "$value") )
+        COMPREPLY=( "${COMPREPLY[@]/#/$prefix}" )
         return 0
       fi
       if [[ "$cur" != -* ]]; then
@@ -359,6 +372,21 @@ mod tests {
         assert!(script.contains("--env"));
         assert!(script.contains("--op-secret-set"));
         assert!(script.contains("-1"));
+    }
+
+    #[test]
+    fn bash_completion_handles_equals_form_file_options() {
+        let script = render(Shell::Bash);
+
+        assert!(script.contains("if [[ \"$cur\" == --config=* ]]; then"));
+        assert!(script.contains("local value=\"${cur#--config=}\""));
+        assert!(script.contains("COMPREPLY=( \"${COMPREPLY[@]/#/--config=}\" )"));
+        assert!(
+            script.contains("if [[ \"$cur\" == --packages=* || \"$cur\" == --config=* ]]; then")
+        );
+        assert!(script.contains("local prefix=\"${cur%%=*}=\""));
+        assert!(script.contains("local value=\"${cur#*=}\""));
+        assert!(script.contains("COMPREPLY=( \"${COMPREPLY[@]/#/$prefix}\" )"));
     }
 
     #[test]

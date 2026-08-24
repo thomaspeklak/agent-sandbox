@@ -81,24 +81,42 @@ git clone https://github.com/thomaspeklak/agent-sandbox.git && \
 Run the tool picker before `ags update-image` when you want to customize the
 sandbox tool selection.
 
-## Clean Source Verification
+## Clean, Build, and Install Locally
 
-To compile and install entirely from source, refresh the embedded assets, rebuild
-the sandbox image, and verify the image-provided pnpm launcher:
+Run these commands from the repository root to remove previous build artifacts,
+verify a release build, install AGS into Cargo's binary directory, and refresh
+the assets embedded in the installed binary:
 
 ```bash
-cargo clean && \
-  cargo install --locked --path crates/ags --force && \
-  ags install && \
-  ags setup && \
-  ags update-image && \
-  ags --agent shell -- -lc 'test -L /usr/local/bin/pnpm && /usr/local/bin/pnpm --version' && \
-  ags update-agents && \
-  ags doctor
+cargo clean
+cargo build --locked --release -p ags
+CARGO_TARGET_DIR=target cargo install --locked --path crates/ags --force
+ags install
 ```
 
-Run this from the repository root. `ags install` is required so the rebuilt
-image uses the `Containerfile` embedded by the newly compiled AGS binary.
+`CARGO_TARGET_DIR=target` lets `cargo install` reuse the release artifacts from
+the explicit build. Cargo normally installs the `ags` binary in
+`~/.cargo/bin`; ensure that directory is on `PATH`. Run `ags install` after each
+source installation so later image builds use the matching embedded
+`Containerfile` and configuration assets.
+
+Confirm that the local installation is available:
+
+```bash
+command -v ags
+ags --help
+ags doctor
+```
+
+On a new machine, run `ags setup` before rebuilding the sandbox image. Then
+verify the image-provided pnpm launcher and refresh the installed agents:
+
+```bash
+ags update-image
+ags --agent shell -- -lc 'test -L /usr/local/bin/pnpm && /usr/local/bin/pnpm --version'
+ags update-agents
+ags doctor
+```
 
 ## Updating Later
 
