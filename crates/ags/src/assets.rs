@@ -4,6 +4,7 @@ use std::path::Path;
 
 pub const CONTAINERFILE: &str = include_str!("../../../config/Containerfile");
 pub const TMUX_CONF: &str = include_str!("../../../config/tmux.conf");
+pub const UV_TOML: &str = include_str!("../../../config/uv.toml");
 pub const GUARD_TS: &str = include_str!("../../../agent/extensions/guard.ts");
 pub const GUARD_SH: &str = include_str!("../../../agent/hooks/guard.sh");
 pub const GUARD_SKILL_MD: &str = include_str!("../../../agent/hooks/skills/guard/SKILL.md");
@@ -50,11 +51,17 @@ pub fn ensure_tmux_conf(path: &Path) -> io::Result<()> {
     write_asset_at(path, TMUX_CONF)
 }
 
+/// Write the image-wide uv policy alongside the configured Containerfile.
+pub fn ensure_uv_config(path: &Path) -> io::Result<()> {
+    write_asset_at(path, UV_TOML)
+}
+
 /// Materialize all files needed for `podman build` from the configured
 /// Containerfile directory.
 pub fn ensure_image_build_context(containerfile: &Path) -> io::Result<()> {
     ensure_containerfile(containerfile)?;
     ensure_tmux_conf(&containerfile.with_file_name("tmux.conf"))?;
+    ensure_uv_config(&containerfile.with_file_name("uv.toml"))?;
     if let Some(context_dir) = containerfile.parent() {
         ensure_glimpse_shim(context_dir)?;
     }

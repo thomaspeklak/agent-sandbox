@@ -47,7 +47,7 @@ const BASH: &str = r#"_ags_completion() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
   fi
 
-  local commands="setup doctor update-image update-agents install uninstall create-aliases completions"
+  local commands="setup doctor update-image update-agents install uninstall create-aliases completions tools"
   local agents="pi claude codex gemini opencode shell"
   local shells="fish zsh bash"
   local modes="wrappers aliases both"
@@ -66,7 +66,36 @@ const BASH: &str = r#"_ags_completion() {
 
   case "${COMP_WORDS[1]}" in
     update-image)
-      COMPREPLY=( $(compgen -W "--keep-existing -h --help" -- "$cur") )
+      if [[ "$prev" == "--config" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+        return 0
+      fi
+      if [[ "$cur" == --config=* ]]; then
+        local value="${cur#--config=}"
+        COMPREPLY=( $(compgen -f -- "$value") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--config=}" )
+        return 0
+      fi
+      COMPREPLY=( $(compgen -W "--keep-existing --config -h --help" -- "$cur") )
+      return 0
+      ;;
+    tools)
+      if [[ "$prev" == "--packages" || "$prev" == "--config" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+        return 0
+      fi
+      if [[ "$cur" == --packages=* || "$cur" == --config=* ]]; then
+        local prefix="${cur%%=*}="
+        local value="${cur#*=}"
+        COMPREPLY=( $(compgen -f -- "$value") )
+        COMPREPLY=( "${COMPREPLY[@]/#/$prefix}" )
+        return 0
+      fi
+      if [[ "$cur" != -* ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") $(compgen -W "--packages --config -h --help" -- "$cur") )
+        return 0
+      fi
+      COMPREPLY=( $(compgen -W "--packages --config -h --help" -- "$cur") )
       return 0
       ;;
     setup|doctor|update-agents|uninstall)
@@ -170,14 +199,14 @@ complete -F _ags_completion ags
 const ZSH: &str = r#"#compdef ags
 
 local -a commands agents shells modes
-commands=(setup doctor update-image update-agents install uninstall create-aliases completions)
+commands=(setup doctor update-image update-agents install uninstall create-aliases completions tools)
 agents=(pi claude codex gemini opencode shell)
 shells=(fish zsh bash)
 modes=(wrappers aliases both)
 
 if (( CURRENT == 2 )); then
   _alternative \
-    'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions)' \
+    'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions tools)' \
     'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help)'
   return
 fi
@@ -186,6 +215,7 @@ case "$words[2]" in
   update-image)
     _arguments \
       '--keep-existing[Keep the previous image after a successful rebuild]' \
+      '--config[Config file to build from]:config file:_files' \
       '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
@@ -215,6 +245,14 @@ case "$words[2]" in
       '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
+  tools)
+    _arguments \
+      '--packages[Tool catalog JSON file]:catalog file:_files' \
+      '--config[Config file to update]:config file:_files' \
+      '1:catalog file:_files' \
+      '(-h --help)'{-h,--help}'[Show help]'
+    return
+    ;;
 esac
 
 _arguments -S \
@@ -241,7 +279,7 @@ _arguments -S \
 
 const FISH: &str = r#"complete -c ags -f
 
-set -l __ags_subcommands setup doctor update-image update-agents install uninstall create-aliases completions
+set -l __ags_subcommands setup doctor update-image update-agents install uninstall create-aliases completions tools
 set -l __ags_agents pi claude codex gemini opencode shell
 set -l __ags_shells fish zsh bash
 set -l __ags_modes wrappers aliases both
@@ -255,6 +293,7 @@ complete -c ags -n "__fish_use_subcommand" -a install -d "Install assets/config 
 complete -c ags -n "__fish_use_subcommand" -a uninstall -d "Reserved no-op"
 complete -c ags -n "__fish_use_subcommand" -a create-aliases -d "Create wrappers and/or aliases"
 complete -c ags -n "__fish_use_subcommand" -a completions -d "Print completion script"
+complete -c ags -n "__fish_use_subcommand" -a tools -d "Choose sandbox tools by profession"
 
 complete -c ags -n "__fish_use_subcommand" -l agent -r -a "$__ags_agents" -d "Agent to run"
 complete -c ags -n "__fish_use_subcommand" -l browser -d "Enable browser sidecar"
@@ -275,6 +314,7 @@ complete -c ags -n "__fish_use_subcommand" -s h -l help -d "Show help"
 
 # update-image
 complete -c ags -n "__fish_seen_subcommand_from update-image" -l keep-existing -d "Keep the previous image after a successful rebuild"
+complete -c ags -n "__fish_seen_subcommand_from update-image" -l config -r -d "Config file to build from"
 complete -c ags -n "__fish_seen_subcommand_from update-image" -s h -l help -d "Show help"
 
 # install
@@ -292,6 +332,12 @@ complete -c ags -n "__fish_seen_subcommand_from create-aliases" -s h -l help -d 
 # completions
 complete -c ags -n "__fish_seen_subcommand_from completions" -l shell -r -a "$__ags_shells" -d "Shell to generate for"
 complete -c ags -n "__fish_seen_subcommand_from completions" -s h -l help -d "Show help"
+
+# tools
+complete -c ags -n "__fish_seen_subcommand_from tools" -F -d "Tool catalog JSON file"
+complete -c ags -n "__fish_seen_subcommand_from tools" -l packages -r -d "Tool catalog JSON file"
+complete -c ags -n "__fish_seen_subcommand_from tools" -l config -r -d "Config file to update"
+complete -c ags -n "__fish_seen_subcommand_from tools" -s h -l help -d "Show help"
 
 # simple subcommands
 for __ags_cmd in setup doctor update-agents uninstall
@@ -319,11 +365,28 @@ mod tests {
         assert!(script.contains("completions"));
         assert!(script.contains("--add-agent-mounts"));
         assert!(script.contains("--keep-existing"));
+        assert!(script.contains("tools"));
+        assert!(script.contains("COMPREPLY=( $(compgen -f -- \"$cur\") $(compgen -W \"--packages --config -h --help\" -- \"$cur\") )"));
         assert!(script.contains("--add-dir"));
         assert!(script.contains("-d"));
         assert!(script.contains("--env"));
         assert!(script.contains("--op-secret-set"));
         assert!(script.contains("-1"));
+    }
+
+    #[test]
+    fn bash_completion_handles_equals_form_file_options() {
+        let script = render(Shell::Bash);
+
+        assert!(script.contains("if [[ \"$cur\" == --config=* ]]; then"));
+        assert!(script.contains("local value=\"${cur#--config=}\""));
+        assert!(script.contains("COMPREPLY=( \"${COMPREPLY[@]/#/--config=}\" )"));
+        assert!(
+            script.contains("if [[ \"$cur\" == --packages=* || \"$cur\" == --config=* ]]; then")
+        );
+        assert!(script.contains("local prefix=\"${cur%%=*}=\""));
+        assert!(script.contains("local value=\"${cur#*=}\""));
+        assert!(script.contains("COMPREPLY=( \"${COMPREPLY[@]/#/$prefix}\" )"));
     }
 
     #[test]
@@ -334,6 +397,8 @@ mod tests {
         assert!(
             script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
         );
+        assert!(script.contains("--packages[Tool catalog JSON file]"));
+        assert!(script.contains("'1:catalog file:_files'"));
         assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
         assert!(script.contains("--env[Set a container environment variable (repeatable)]"));
         assert!(script.contains("--op-secret-set[Inject fields from a 1Password Secure Note]"));
@@ -353,6 +418,11 @@ mod tests {
         assert!(script.contains(
             "-l keep-existing -d \"Keep the previous image after a successful rebuild\""
         ));
+        assert!(script.contains("-a tools"));
+        assert!(script.contains(
+            "complete -c ags -n \"__fish_seen_subcommand_from tools\" -F -d \"Tool catalog JSON file\""
+        ));
+        assert!(script.contains("-l packages -r"));
         assert!(script.contains("-l psp -d \"Enable podman-socket-proxy mode (policy-gated)\""));
         assert!(script.contains(
             "-l psp-keep -d \"Keep PSP-managed containers on exit (debug; requires --psp)\""

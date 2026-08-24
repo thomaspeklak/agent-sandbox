@@ -3,6 +3,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use super::defaults::DEFAULT_PI_SPEC;
+use super::tool_download::LockedToolDownload;
 
 /// Validated, path-resolved configuration ready for use by the launch pipeline.
 #[derive(Debug, Clone)]
@@ -32,6 +33,9 @@ pub struct ValidatedSandbox {
     pub bootstrap_files: Vec<String>,
     pub container_boot_dirs: Vec<String>,
     pub passthrough_env: Vec<String>,
+    pub extra_dnf_packages: Vec<String>,
+    pub tool_download_lock: Option<PathBuf>,
+    pub tool_downloads: Vec<LockedToolDownload>,
 }
 
 impl ValidatedConfig {

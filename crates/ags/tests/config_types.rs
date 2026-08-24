@@ -15,6 +15,11 @@ sign_key = "/tmp/sign"
 "#;
     let raw: ags::config::RawConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(raw.sandbox.image, "localhost/agent-sandbox:latest");
+    assert!(raw.sandbox.tool_download_lock.is_empty());
+    assert_eq!(
+        raw.sandbox.extra_dnf_packages,
+        ags::config::DEFAULT_EXTRA_DNF_PACKAGES
+    );
     assert!(raw.mount.is_empty());
     assert!(raw.tool.is_empty());
     assert!(raw.secret.is_empty());
@@ -26,6 +31,94 @@ sign_key = "/tmp/sign"
     assert!(!raw.clipboard.approve_writes);
     assert!(!raw.desktop_passthrough.wayland);
     assert_eq!(raw.update.minimum_release_age, 1440);
+}
+
+#[test]
+fn generated_config_and_containerfile_use_canonical_package_defaults() {
+    let raw: ags::config::RawConfig = toml::from_str(ags::config::DEFAULT_CONFIG).unwrap();
+    assert_eq!(
+        raw.sandbox.extra_dnf_packages,
+        ags::config::DEFAULT_EXTRA_DNF_PACKAGES
+    );
+
+    let containerfile = include_str!("../../../config/Containerfile");
+    let argument = containerfile
+        .lines()
+        .find_map(|line| line.strip_prefix("ARG EXTRA_DNF_PACKAGES=\""))
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap();
+    assert_eq!(
+        argument.split_whitespace().collect::<Vec<_>>(),
+        ags::config::DEFAULT_EXTRA_DNF_PACKAGES
+    );
+
+    let baseline = containerfile
+        .lines()
+        .find_map(|line| line.strip_prefix("RUN BASE_DNF_PACKAGES=\""))
+        .and_then(|value| value.split('"').next())
+        .unwrap();
+    assert_eq!(
+        baseline.split_whitespace().collect::<Vec<_>>(),
+        ags::config::BASE_DNF_PACKAGES
+    );
+    assert!(containerfile.contains("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\""));
+    assert!(containerfile.contains("sha256sum -c -"));
+
+    let example: ags::config::RawConfig =
+        toml::from_str(include_str!("../../../config/config.example.toml")).unwrap();
+    assert_eq!(
+        example.sandbox.extra_dnf_packages,
+        ags::config::DEFAULT_EXTRA_DNF_PACKAGES
+    );
+}
+
+#[test]
+fn verified_download_loop_propagates_installer_failures() {
+    let containerfile = include_str!("../../../config/Containerfile");
+    let download_block = containerfile
+        .split_once("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\"")
+        .and_then(|(_, remainder)| remainder.split_once("RUN useradd"))
+        .map(|(block, _)| block.split_whitespace().collect::<Vec<_>>().join(" "))
+        .expect("verified download RUN block");
+
+    assert!(download_block.contains("RUN set -eu;"));
+    assert!(download_block.contains("while IFS= read -r tool; do"));
+    assert!(download_block.contains("install -D -m 0755 \"$binary\""));
+    assert!(download_block.contains("done < \"$entries\";"));
+    assert!(download_block.contains("tar -xOzf \"$archive\" -- \"$member\""));
+}
+
+#[test]
+fn final_image_recreates_and_executes_the_pnpm_launcher() {
+    let containerfile = include_str!("../../../config/Containerfile");
+
+    assert!(containerfile.contains(
+        "COPY --from=tooling-builder /usr/local/lib/node_modules/pnpm/ /usr/local/lib/node_modules/pnpm/"
+    ));
+    assert!(
+        !containerfile
+            .contains("COPY --from=tooling-builder /usr/local/bin/pnpm /usr/local/bin/pnpm")
+    );
+    assert!(containerfile.contains("require('/usr/local/lib/node_modules/pnpm/package.json')"));
+    assert!(
+        containerfile.contains("ln -s \"../lib/node_modules/pnpm/$pnpm_bin\" /usr/local/bin/pnpm")
+    );
+    assert!(containerfile.contains("test -L /usr/local/bin/pnpm"));
+    assert!(containerfile.contains("/usr/local/bin/pnpm --version"));
+}
+
+#[test]
+fn image_uses_conservative_system_wide_uv_policy() {
+    let containerfile = include_str!("../../../config/Containerfile");
+    let policy = include_str!("../../../config/uv.toml");
+
+    assert!(containerfile.contains("COPY uv.toml /etc/uv/uv.toml"));
+    assert!(policy.contains("exclude-newer = \"1 week\""));
+    assert!(policy.contains("index-strategy = \"first-index\""));
+    assert!(policy.contains("verify-hashes = true"));
+    assert!(!policy.contains("require-hashes"));
+    assert!(!policy.contains("no-build"));
+    assert!(!policy.contains("malware-check"));
 }
 
 #[test]

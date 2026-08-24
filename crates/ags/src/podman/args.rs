@@ -1,6 +1,38 @@
 use std::path::Path;
 
+use base64::Engine;
+
+use crate::config::LockedToolDownload;
 use crate::plan::LaunchPlan;
+
+pub(crate) fn encode_tool_downloads(downloads: &[LockedToolDownload]) -> String {
+    let json = serde_json::to_vec(downloads).expect("tool download lock must serialize");
+    base64::engine::general_purpose::STANDARD.encode(json)
+}
+
+pub(crate) fn build_image_args(
+    image: &str,
+    containerfile: &Path,
+    context_dir: &Path,
+    build_args: &[(&str, &str)],
+    pull: bool,
+) -> Vec<String> {
+    let mut args = vec![
+        "build".to_owned(),
+        "-t".to_owned(),
+        image.to_owned(),
+        "-f".to_owned(),
+        containerfile.display().to_string(),
+    ];
+    for (name, value) in build_args {
+        args.extend(["--build-arg".to_owned(), format!("{name}={value}")]);
+    }
+    if pull {
+        args.push("--pull".to_owned());
+    }
+    args.push(context_dir.display().to_string());
+    args
+}
 
 /// Build the complete `podman run` argument list from a launch plan.
 ///

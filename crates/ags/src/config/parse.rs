@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use toml::Value;
 
+use crate::config::LockedToolDownload;
 use crate::config::error::ConfigError;
 use crate::config::raw::{
     RawAgentMount, RawBrowser, RawClipboard, RawConfig, RawHostUi, RawMount, RawSecret, RawTool,
@@ -32,14 +33,22 @@ pub fn parse_and_validate_with_overlay(
     overlay_path: Option<&Path>,
 ) -> Result<ValidatedConfig, ConfigError> {
     let mut merged = read_toml_value(base_path)?;
+    let mut tool_download_lock_config_path = base_path;
 
     if let Some(overlay_path) = overlay_path {
         let overlay = read_toml_value(overlay_path)?;
         reject_overlay_command_secrets(&overlay, overlay_path)?;
+        if overlay
+            .get("sandbox")
+            .and_then(Value::as_table)
+            .is_some_and(|sandbox| sandbox.contains_key("tool_download_lock"))
+        {
+            tool_download_lock_config_path = overlay_path;
+        }
         merge_toml_value(&mut merged, overlay, &[]);
     }
 
-    parse_toml_value(merged, base_path)
+    parse_toml_value(merged, base_path, tool_download_lock_config_path)
 }
 
 /// Parse and validate config from a TOML string (useful for testing).
@@ -48,7 +57,7 @@ pub fn parse_toml_str(content: &str, config_path: &Path) -> Result<ValidatedConf
         path: config_path.to_owned(),
         source: e,
     })?;
-    parse_toml_value(value, config_path)
+    parse_toml_value(value, config_path, config_path)
 }
 
 fn read_toml_value(path: &Path) -> Result<Value, ConfigError> {
@@ -62,50 +71,16 @@ fn read_toml_value(path: &Path) -> Result<Value, ConfigError> {
     })
 }
 
-fn parse_toml_value(value: Value, config_path: &Path) -> Result<ValidatedConfig, ConfigError> {
+fn parse_toml_value(
+    value: Value,
+    config_path: &Path,
+    tool_download_lock_config_path: &Path,
+) -> Result<ValidatedConfig, ConfigError> {
     let raw: RawConfig = value.try_into().map_err(|e| ConfigError::Toml {
         path: config_path.to_owned(),
         source: e,
     })?;
-    validate(raw, config_path)
-}
-
-fn merge_toml_value(base: &mut Value, overlay: Value, path: &[&str]) {
-    match (base, overlay) {
-        (Value::Table(base_table), Value::Table(overlay_table)) => {
-            for (key, overlay_value) in overlay_table {
-                if is_additive_array_key(path, &key) {
-                    match (base_table.get_mut(&key), overlay_value) {
-                        (Some(Value::Array(base_array)), Value::Array(mut overlay_array)) => {
-                            base_array.append(&mut overlay_array);
-                        }
-                        (_, overlay_value) => {
-                            base_table.insert(key, overlay_value);
-                        }
-                    }
-                    continue;
-                }
-
-                match base_table.get_mut(&key) {
-                    Some(base_value) => {
-                        let mut child_path = path.to_vec();
-                        child_path.push(key.as_str());
-                        merge_toml_value(base_value, overlay_value, &child_path);
-                    }
-                    None => {
-                        base_table.insert(key, overlay_value);
-                    }
-                }
-            }
-        }
-        (base_slot, overlay_value) => {
-            *base_slot = overlay_value;
-        }
-    }
-}
-
-fn is_additive_array_key(path: &[&str], key: &str) -> bool {
-    path.is_empty() && super::ADDITIVE_ARRAY_KEYS.contains(&key)
+    validate(raw, config_path, tool_download_lock_config_path)
 }
 
 fn reject_overlay_command_secrets(overlay: &Value, overlay_path: &Path) -> Result<(), ConfigError> {
@@ -153,8 +128,12 @@ fn reject_overlay_command_secrets(overlay: &Value, overlay_path: &Path) -> Resul
     Ok(())
 }
 
-fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, ConfigError> {
-    let sandbox = validate_sandbox(&raw.sandbox)?;
+fn validate(
+    raw: RawConfig,
+    config_path: &Path,
+    tool_download_lock_config_path: &Path,
+) -> Result<ValidatedConfig, ConfigError> {
+    let sandbox = validate_sandbox(&raw.sandbox, tool_download_lock_config_path)?;
 
     let mut mounts = Vec::new();
     for (idx, m) in raw.mount.iter().enumerate() {
@@ -207,21 +186,16 @@ fn validate(raw: RawConfig, config_path: &Path) -> Result<ValidatedConfig, Confi
     })
 }
 
-fn validate_sandbox(raw: &crate::config::raw::RawSandbox) -> Result<ValidatedSandbox, ConfigError> {
-    Ok(ValidatedSandbox {
-        image: require_non_empty(&raw.image, "[sandbox].image")?.to_owned(),
-        containerfile: expand_path(&raw.containerfile, "[sandbox].containerfile")?,
-        cache_dir: expand_path(&raw.cache_dir, "[sandbox].cache_dir")?,
-        gitconfig_path: expand_path(&raw.gitconfig_path, "[sandbox].gitconfig_path")?,
-        auth_key: expand_path(&raw.auth_key, "[sandbox].auth_key")?,
-        sign_key: expand_path(&raw.sign_key, "[sandbox].sign_key")?,
-        bootstrap_files: validate_string_list(&raw.bootstrap_files, "[sandbox].bootstrap_files")?,
-        container_boot_dirs: validate_string_list(
-            &raw.container_boot_dirs,
-            "[sandbox].container_boot_dirs",
-        )?,
-        passthrough_env: validate_string_list(&raw.passthrough_env, "[sandbox].passthrough_env")?,
-    })
+fn validate_dnf_packages(list: &[String], ctx: &str) -> Result<Vec<String>, ConfigError> {
+    let packages = validate_string_list(list, ctx)?;
+    for (index, package) in packages.iter().enumerate() {
+        if !crate::config::is_valid_dnf_package_name(package) {
+            return Err(ConfigError::Validation(format!(
+                "{ctx}[{index}] must be a package name, not an option or shell expression"
+            )));
+        }
+    }
+    Ok(packages)
 }
 
 fn validate_mount(raw: &RawMount, ctx: &str) -> Result<ValidatedMount, ConfigError> {
@@ -497,4 +471,5 @@ fn validate_host_ui(raw: &RawHostUi) -> Result<HostUiConfig, ConfigError> {
 
 // --- helpers ---
 
+include!("parse_merge.rs");
 include!("parse_expand.rs");

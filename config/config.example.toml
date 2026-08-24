@@ -11,6 +11,11 @@ sign_key = "~/.ssh/ags-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
 container_boot_dirs = ["/home/dev/.ssh", "/home/dev/.config/example-tool"]
 passthrough_env = ["EXAMPLE_API_KEY"]
+extra_dnf_packages = [
+  "git", "gh", "openssh-clients", "fd-find", "ripgrep", "rsync", "tmux",
+  "kitty-terminfo", "socat", "make", "pkgconf-pkg-config", "sccache",
+]
+# `ags tools` adds tool_download_lock here when verified downloads are selected.
 
 # Required agent config mounts (explicit and inspectable)
 [[agent_mount]]

@@ -19,62 +19,23 @@ RUN cd /src/glimpse-shim && \
     /tmp/cargo/bin/cargo build --release && \
     install -D -m 0755 target/release/glimpse-shim /out/glimpse-shim
 
-FROM registry.fedoraproject.org/fedora:44
+FROM registry.fedoraproject.org/fedora:44 AS tooling-builder
 
-# Stable base layer: core tools used in nearly every sandbox run.
+# Build-only dependencies for artifacts copied into the configurable final image.
 RUN dnf -y install \
-      bash \
       ca-certificates \
-      coreutils \
       curl \
-      dbus-devel \
-      diffutils \
-      fd-find \
-      file \
-      findutils \
       gcc \
-      gcc-c++ \
-      gh \
-      git \
-      grep \
       jq \
-      kitty-terminfo \
-      less \
-      make \
       nodejs24-bin \
       nodejs24-npm-bin \
-      openssh-clients \
-      patch \
-      pkgconf-pkg-config \
-      procps-ng \
-      python3 \
-      ripgrep \
-      rsync \
-      sccache \
-      sed \
-      socat \
       tar \
-      tree \
-      tmux \
-      unzip \
-      util-linux \
-      wget \
-      which \
-      wl-clipboard \
-      xz \
-      zip && \
+      xz && \
     dnf clean all
 
-RUN useradd -m -u 1000 -s /bin/bash dev && \
-    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/ags && \
-    printf 'ignore-scripts=true\n' > /etc/npmrc && \
-    printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
-    printf 'ignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' > /home/dev/.config/pnpm/rc && \
+RUN printf 'ignore-scripts=true\n' > /etc/npmrc && \
     npm install --global --prefix /usr/local --ignore-scripts pnpm@latest && \
-    /usr/local/bin/pnpm --version && \
-    chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home
-
-COPY --chown=dev:dev tmux.conf /home/dev/.tmux.conf
+    /usr/local/bin/pnpm --version
 
 ARG RUST_TOOLCHAIN=stable
 RUN mkdir -p /usr/local/rustup /usr/local/cargo && \
@@ -187,17 +148,87 @@ RUN set -eu && \
     rm -f /tmp/dcg /tmp/dcg-releases.json /tmp/dcg-*.tar.xz /tmp/dcg-*.tar.xz.sha256 && \
     dcg --version
 
-# Glimpse sandbox shim: build artifacts stay in the builder stage; the final image keeps only the binary.
-COPY --from=glimpse-builder /out/glimpse-shim /opt/ags/glimpse-shim
+FROM registry.fedoraproject.org/fedora:44
 
-# Extended tooling layer: project-specific and heavier dev dependencies.
-# Keep this near the end so package list tweaks rebuild quickly.
-# Override with: --build-arg EXTRA_DNF_PACKAGES="..."
-ARG EXTRA_DNF_PACKAGES="golang ImageMagick java-devel postgresql python3-pip ruby sqlite-devel zig"
+COPY uv.toml /etc/uv/uv.toml
+
+# Stable AGS runtime and standard utility baseline. These packages are not user
+# choices: the image and its documented workflows may rely on them being present.
+RUN BASE_DNF_PACKAGES="bash ca-certificates coreutils curl dbus-devel diffutils file findutils gcc grep jq less nodejs24-bin patch procps-ng python3 sed sqlite-devel tar tree unzip util-linux wget which xz zip" && \
+    dnf -y install $BASE_DNF_PACKAGES && \
+    dnf clean all
+
+# Purposeful user-selectable tools. Keep this near the end so tool selection
+# changes reuse the stable baseline and builder stages above.
+ARG EXTRA_DNF_PACKAGES="git gh openssh-clients fd-find ripgrep rsync tmux kitty-terminfo socat make pkgconf-pkg-config sccache"
 RUN if [ -n "$EXTRA_DNF_PACKAGES" ]; then \
       dnf -y install $EXTRA_DNF_PACKAGES; \
     fi && \
     dnf clean all
+
+# Optional tools unavailable in Fedora are supplied as pinned, architecture-aware
+# vendor archives. AGS validates this lock before encoding it as a build argument.
+ARG EXTRA_TOOL_DOWNLOADS_B64="W10="
+RUN set -eu; \
+    lock="$(mktemp)"; entries="$(mktemp)"; \
+    printf '%s' "$EXTRA_TOOL_DOWNLOADS_B64" | base64 -d > "$lock"; \
+    jq -c 'if type == "array" then .[] else error("tool download lock must be an array") end' \
+      "$lock" > "$entries"; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64) arch="x86_64" ;; \
+      aarch64|arm64) arch="aarch64" ;; \
+      *) echo "unsupported architecture for downloaded tools: $arch" >&2; exit 1 ;; \
+    esac; \
+    while IFS= read -r tool; do \
+      id="$(printf '%s' "$tool" | jq -er '.id | strings | select(test("^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))')"; \
+      version="$(printf '%s' "$tool" | jq -er '.download.version | strings | select(length > 0)')"; \
+      format="$(printf '%s' "$tool" | jq -er '.download.archive | select(. == "zip" or . == "tar.gz")')"; \
+      member="$(printf '%s' "$tool" | jq -er '.download.member | strings | select(length > 0 and startswith("/") == false and startswith("-") == false and test("(^|/)\\.\\.?(/|$)|[*?\\[\\]]") == false)')"; \
+      install_as="$(printf '%s' "$tool" | jq -er '.download.install_as | strings | select(test("^[a-z][a-z0-9._-]*$"))')"; \
+      artifact="$(printf '%s' "$tool" | jq -ec --arg arch "$arch" '.download.artifacts[$arch] // error("missing architecture")')"; \
+      url="$(printf '%s' "$artifact" | jq -er '.url | strings | select(startswith("https://"))')"; \
+      sha256="$(printf '%s' "$artifact" | jq -er '.sha256 | strings | select(test("^[A-Fa-f0-9]{64}$"))')"; \
+      work="$(mktemp -d)"; archive="$work/archive"; binary="$work/binary"; \
+      echo "Installing $id $version for $arch"; \
+      curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 300 \
+        --retry 2 --retry-delay 1 "$url" -o "$archive"; \
+      printf '%s  %s\n' "$sha256" "$archive" | sha256sum -c -; \
+      case "$format" in \
+        zip) unzip -p "$archive" "$member" > "$binary" ;; \
+        tar.gz) tar -xOzf "$archive" -- "$member" > "$binary" ;; \
+      esac; \
+      test -s "$binary"; \
+      install -D -m 0755 "$binary" "/usr/local/bin/$install_as"; \
+      rm -rf "$work"; \
+    done < "$entries"; \
+    rm -f "$lock" "$entries"
+
+RUN useradd -m -u 1000 -s /bin/bash dev && \
+    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/ags && \
+    printf 'ignore-scripts=true\n' > /etc/npmrc && \
+    printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
+    printf 'ignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' > /home/dev/.config/pnpm/rc && \
+    printf '#!/bin/sh\nif command -v sccache >/dev/null 2>&1; then exec sccache "$@"; fi\nexec "$@"\n' > /opt/ags/rustc-wrapper && \
+    chmod 0755 /opt/ags/rustc-wrapper && \
+    chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home
+
+COPY --from=tooling-builder /usr/local/rustup/ /usr/local/rustup/
+COPY --from=tooling-builder /usr/local/cargo/ /usr/local/cargo/
+COPY --from=tooling-builder /usr/local/lib/node_modules/pnpm/ /usr/local/lib/node_modules/pnpm/
+COPY --from=tooling-builder /usr/local/bin/br /usr/local/bin/br
+COPY --from=tooling-builder /usr/local/bin/dcg /usr/local/bin/dcg
+RUN set -eu; \
+    pnpm_bin="$(node -p "const pkg = require('/usr/local/lib/node_modules/pnpm/package.json'); typeof pkg.bin === 'string' ? pkg.bin : pkg.bin.pnpm")"; \
+    test -n "$pnpm_bin"; \
+    test -f "/usr/local/lib/node_modules/pnpm/$pnpm_bin"; \
+    ln -s "../lib/node_modules/pnpm/$pnpm_bin" /usr/local/bin/pnpm; \
+    test -L /usr/local/bin/pnpm; \
+    /usr/local/bin/pnpm --version
+
+# Glimpse sandbox shim: build artifacts stay in the builder stage; the final image keeps only the binary.
+COPY --from=glimpse-builder /out/glimpse-shim /opt/ags/glimpse-shim
+COPY --chown=dev:dev tmux.conf /home/dev/.tmux.conf
 
 USER dev
 WORKDIR /workspace
@@ -206,6 +237,6 @@ ENV HOME=/home/dev
 ENV PNPM_HOME=/usr/local/pnpm
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/home/dev/.cargo
-ENV RUSTC_WRAPPER=sccache
+ENV RUSTC_WRAPPER=/opt/ags/rustc-wrapper
 ENV NPM_CONFIG_PREFIX=/home/dev/.npm-global
 ENV PATH=/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin

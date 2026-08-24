@@ -36,6 +36,9 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
             bootstrap_files: vec![],
             container_boot_dirs: vec![],
             passthrough_env: vec![],
+            extra_dnf_packages: vec![],
+            tool_download_lock: None,
+            tool_downloads: vec![],
         },
         mounts: vec![ValidatedMount {
             host: pi_root,
@@ -97,6 +100,18 @@ fn doctor_self_heals_missing_tmux_conf() {
     let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
     let _result = doctor::run(&config);
     assert!(tmux_conf.exists());
+}
+
+#[test]
+fn doctor_self_heals_missing_uv_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = minimal_config(tmp.path());
+    let uv_config = config.sandbox.containerfile.with_file_name("uv.toml");
+    assert!(!uv_config.exists());
+
+    let _result = doctor::run(&config);
+
+    assert_eq!(fs::read_to_string(uv_config).unwrap(), ags::assets::UV_TOML);
 }
 
 #[test]

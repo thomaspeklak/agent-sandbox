@@ -304,11 +304,12 @@ ags update-agents
 
 ---
 
-## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, or Pi loads from `.npm-global`
+## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, `/usr/local/dist/pnpm.mjs` is missing, or Pi loads from `.npm-global`
 
 Cause:
 
 - a pnpm self-update or install script wrote pnpm's own shims into the persistent agent runtime volume
+- an older sandbox image copied the pnpm launcher instead of preserving its package-relative symlink
 - old npm-global agent installs can shadow the pnpm-managed AGS agent shims
 - those shims can disagree with the store used by the globally installed agent CLIs
 
@@ -319,7 +320,7 @@ ags update-image
 ags update-agents
 ```
 
-AGS keeps agent CLI launchers in `/usr/local/pnpm`, but runtime `pnpm` should come from the sandbox image (`/usr/local/bin/pnpm`) so stale persistent shims do not shadow it. Codex itself uses its official standalone installer and a dedicated persistent `codex-install` directory. `update-agents` also removes old pnpm/npm-global Codex installs and old npm-global agent shims from the sandbox cache.
+With pnpm 11, Pi, Gemini, and OpenCode launchers are in `/usr/local/pnpm/bin`; AGS invokes them there directly. Codex uses its official standalone installer and remains at `/usr/local/pnpm/codex`. Runtime `pnpm` comes from the sandbox image at `/usr/local/bin/pnpm`, so stale persistent shims cannot shadow it. `update-agents` also removes old pnpm/npm-global Codex installs and old npm-global agent shims from the sandbox cache.
 
 ---
 

@@ -295,8 +295,6 @@ impl App {
     /// Invalidate all cached section content. Call after any edit, save, undo,
     /// target toggle, or view mode change.
     fn invalidate_cache(&mut self) {
-        for slot in &mut self.content_cache {
-            *slot = None;
-        }
+        self.content_cache.fill(None);
     }
 }

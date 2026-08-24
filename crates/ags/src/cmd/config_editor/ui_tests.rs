@@ -7,7 +7,19 @@ use tui_input::Input;
 
 use super::{App, Focus, SECTIONS, SectionContent, apply_scalar_value};
 use crate::cmd::config_editor::model::{ConfigEditorState, ViewMode};
-use crate::cmd::config_editor::schema::ScalarFieldKind;
+use crate::cmd::config_editor::schema::{ScalarFieldKind, scalar_field};
+use crate::config::DEFAULT_EXTRA_DNF_PACKAGES;
+
+#[test]
+fn sandbox_package_editor_default_matches_runtime_default() {
+    let schema = scalar_field("sandbox", "extra_dnf_packages").unwrap();
+    let editor_packages = schema
+        .default_input
+        .split(',')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    assert_eq!(editor_packages, DEFAULT_EXTRA_DNF_PACKAGES);
+}
 
 #[test]
 fn resolve_local_target_path_disables_repo_local_outside_git_repo() {

@@ -1,0 +1,1 @@
+- [x] `ags update-agents` installs `opencode-ai` with lifecycle scripts disabled but does not run its required postinstall script, leaving the `opencode` failure stub in place.

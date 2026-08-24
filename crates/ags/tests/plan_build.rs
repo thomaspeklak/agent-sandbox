@@ -86,6 +86,25 @@ fn minimal_config_toml() -> String {
     fs::create_dir_all(base.join("codex")).unwrap();
     fs::create_dir_all(base.join("gemini")).unwrap();
     fs::create_dir_all(base.join("opencode")).unwrap();
+    let tool_download_lock = base.join("tool-downloads.lock.json");
+    fs::write(
+        &tool_download_lock,
+        serde_json::to_vec(&serde_json::json!([{
+            "id": "terraform",
+            "download": {
+                "version": "1.0.0",
+                "archive": "zip",
+                "member": "terraform",
+                "install_as": "terraform",
+                "artifacts": {
+                    "x86_64": {"url": "https://example.com/x.zip", "sha256": "a".repeat(64)},
+                    "aarch64": {"url": "https://example.com/a.zip", "sha256": "b".repeat(64)}
+                }
+            }
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
 
     format!(
         r#"
@@ -98,6 +117,8 @@ auth_key = "{base}/auth"
 sign_key = "{base}/sign"
 container_boot_dirs = ["/home/dev/.ssh", "/home/dev/.cache/kno"]
 passthrough_env = ["ANTHROPIC_API_KEY"]
+extra_dnf_packages = ["ansible-lint", "shellcheck"]
+tool_download_lock = "{tool_download_lock}"
 
 [[agent_mount]]
 host = "{base}/.claude.json"
@@ -125,6 +146,7 @@ host = "{base}/gemini"
 container = "/home/dev/.gemini"
 "#,
         containerfile = containerfile.display(),
+        tool_download_lock = tool_download_lock.display(),
         base = base.display(),
     )
 }
@@ -145,6 +167,9 @@ fn minimal_plan_has_correct_image() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
     assert_eq!(plan.image, "localhost/agent-sandbox:latest");
+    assert_eq!(plan.extra_dnf_packages, vec!["ansible-lint", "shellcheck"]);
+    assert_eq!(plan.tool_downloads.len(), 1);
+    assert_eq!(plan.tool_downloads[0].id, "terraform");
 }
 
 #[test]
@@ -571,7 +596,7 @@ fn boot_dirs_in_entrypoint() {
         plan.entrypoint
     );
     assert!(plan.entrypoint.contains("/home/dev/.ssh"));
-    assert!(plan.entrypoint.contains("exec /usr/local/pnpm/pi -e"));
+    assert!(plan.entrypoint.contains("exec /usr/local/pnpm/bin/pi -e"));
     assert!(
         !plan.entrypoint.contains("--no-extensions"),
         "pi should not disable extensions: {}",
@@ -665,7 +690,7 @@ fn tmux_stop_when_done_uses_exec() {
     .unwrap();
 
     assert!(
-        plan.entrypoint.contains("exec /usr/local/pnpm/pi -e"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/bin/pi -e"),
         "stop_when_done should exec the agent: {}",
         plan.entrypoint
     );
@@ -1116,7 +1141,7 @@ fn gemini_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Gemini);
 
     assert!(
-        plan.entrypoint.contains("exec /usr/local/pnpm/gemini"),
+        plan.entrypoint.contains("exec /usr/local/pnpm/bin/gemini"),
         "gemini entrypoint: {}",
         plan.entrypoint
     );
@@ -1135,7 +1160,8 @@ fn opencode_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Opencode);
 
     assert!(
-        plan.entrypoint.contains("exec /usr/local/pnpm/opencode"),
+        plan.entrypoint
+            .contains("exec /usr/local/pnpm/bin/opencode"),
         "opencode entrypoint: {}",
         plan.entrypoint
     );

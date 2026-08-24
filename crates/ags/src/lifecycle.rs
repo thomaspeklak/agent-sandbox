@@ -335,7 +335,12 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
                 opts.agent.as_str()
             );
         } else {
-            if let Err(e) = crate::podman::ensure_image(&plan.image, &plan.containerfile) {
+            if let Err(e) = crate::podman::ensure_image(
+                &plan.image,
+                &plan.containerfile,
+                &plan.extra_dnf_packages,
+                &plan.tool_downloads,
+            ) {
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;
             }
@@ -380,21 +385,7 @@ pub fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, Exit
         eprintln!("Created default config: {}", config_path.display());
     }
 
-    let repo_local_config =
-        std::env::current_dir().ok().and_then(
-            |cwd| match crate::trust::resolve_repo_local_overlay(
-                &cwd,
-                &config_path,
-                &crate::trust::default_trust_store_path(),
-                &StdioRepoConfigPrompter,
-            ) {
-                Ok(path) => path,
-                Err(err) => {
-                    eprintln!("warning: could not load repo trust state: {err}");
-                    None
-                }
-            },
-        );
+    let repo_local_config = resolve_repo_local_config(&config_path);
 
     config::parse_and_validate_with_overlay(&config_path, repo_local_config.as_deref()).map_err(
         |e| {
@@ -402,4 +393,21 @@ pub fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, Exit
             ExitCode::from(2)
         },
     )
+}
+
+pub fn resolve_repo_local_config(config_path: &Path) -> Option<PathBuf> {
+    std::env::current_dir().ok().and_then(|cwd| {
+        match crate::trust::resolve_repo_local_overlay(
+            &cwd,
+            config_path,
+            &crate::trust::default_trust_store_path(),
+            &StdioRepoConfigPrompter,
+        ) {
+            Ok(path) => path,
+            Err(err) => {
+                eprintln!("warning: could not load repo trust state: {err}");
+                None
+            }
+        }
+    })
 }

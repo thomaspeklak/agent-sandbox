@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use ags::config::{
-    DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource, ValidatedConfig,
-    parse_and_validate_with_overlay, parse_toml_str,
+    DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource,
+    ValidatedConfig, parse_and_validate_with_overlay, parse_toml_str,
 };
 use tempfile::tempdir;
 
@@ -34,6 +34,9 @@ fn parse_err(extra: &str) -> String {
 fn minimal_config_parses() {
     let cfg = parse_minimal("");
     assert_eq!(cfg.sandbox.image, "localhost/agent-sandbox:latest");
+    assert_eq!(cfg.sandbox.extra_dnf_packages, DEFAULT_EXTRA_DNF_PACKAGES);
+    assert!(cfg.sandbox.tool_download_lock.is_none());
+    assert!(cfg.sandbox.tool_downloads.is_empty());
     assert!(cfg.mounts.is_empty());
     assert!(cfg.tools.is_empty());
     assert!(cfg.secrets.is_empty());
@@ -46,6 +49,148 @@ fn minimal_config_parses() {
     assert!(!cfg.desktop_passthrough.wayland);
     assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
+}
+
+#[test]
+fn sandbox_dnf_packages_can_be_explicitly_empty() {
+    let cfg = parse_minimal("extra_dnf_packages = []");
+    assert!(cfg.sandbox.extra_dnf_packages.is_empty());
+}
+
+#[test]
+fn sandbox_dnf_packages_reject_options_and_shell_expressions() {
+    for package in ["--setopt=tsflags=nodocs", "two packages", "python3*"] {
+        let err = parse_err(&format!(
+            "extra_dnf_packages = [{}]",
+            toml::Value::String(package.to_owned())
+        ));
+        assert!(
+            err.contains("must be a package name, not an option or shell expression"),
+            "got: {err}"
+        );
+    }
+}
+
+#[test]
+fn sandbox_loads_and_validates_tool_download_lock() {
+    let dir = tempdir().unwrap();
+    let lock = dir.path().join("tool-downloads.lock.json");
+    std::fs::write(
+        &lock,
+        format!(
+            r#"[
+  {{
+    "id": "terraform",
+    "download": {{
+      "version": "1.0.0",
+      "archive": "zip",
+      "member": "terraform",
+      "install_as": "terraform",
+      "artifacts": {{
+        "x86_64": {{"url": "https://example.com/terraform-amd64.zip", "sha256": "{}"}},
+        "aarch64": {{"url": "https://example.com/terraform-arm64.zip", "sha256": "{}"}}
+      }}
+    }}
+  }}
+]"#,
+            "a".repeat(64),
+            "b".repeat(64)
+        ),
+    )
+    .unwrap();
+
+    let cfg = parse_minimal(&format!(
+        "tool_download_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert_eq!(
+        cfg.sandbox.tool_download_lock.as_deref(),
+        Some(lock.as_path())
+    );
+    assert_eq!(cfg.sandbox.tool_downloads.len(), 1);
+    assert_eq!(cfg.sandbox.tool_downloads[0].id, "terraform");
+}
+
+#[test]
+fn sandbox_resolves_relative_tool_download_lock_from_its_config_directory() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let lock = dir.path().join("tool-downloads.content.lock.json");
+    std::fs::write(
+        &lock,
+        format!(
+            r#"[{{"id":"tool","download":{{"version":"1","archive":"zip","member":"tool","install_as":"tool","artifacts":{{"x86_64":{{"url":"https://example.com/tool.zip","sha256":"{}"}},"aarch64":{{"url":"https://example.com/tool.zip","sha256":"{}"}}}}}}}}]"#,
+            "a".repeat(64),
+            "b".repeat(64)
+        ),
+    )
+    .unwrap();
+    let toml = format!(
+        "{}\ntool_download_lock = \"tool-downloads.content.lock.json\"",
+        minimal_sandbox_toml()
+    );
+
+    let cfg = parse_toml_str(&toml, &config).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.tool_download_lock.as_deref(),
+        Some(lock.as_path())
+    );
+}
+
+#[test]
+fn overlay_resolves_relative_tool_download_lock_from_overlay_directory() {
+    let dir = tempdir().unwrap();
+    let base_dir = dir.path().join("user-config");
+    let overlay_dir = dir.path().join("project/.ags");
+    std::fs::create_dir_all(&base_dir).unwrap();
+    std::fs::create_dir_all(&overlay_dir).unwrap();
+    let base = base_dir.join("config.toml");
+    let overlay = overlay_dir.join("config.toml");
+    let lock = overlay_dir.join("tool-downloads.content.lock.json");
+    std::fs::write(&base, minimal_sandbox_toml()).unwrap();
+    std::fs::write(
+        &lock,
+        format!(
+            r#"[{{"id":"tool","download":{{"version":"1","archive":"zip","member":"tool","install_as":"tool","artifacts":{{"x86_64":{{"url":"https://example.com/tool.zip","sha256":"{}"}},"aarch64":{{"url":"https://example.com/tool.zip","sha256":"{}"}}}}}}}}]"#,
+            "a".repeat(64),
+            "b".repeat(64)
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        &overlay,
+        "[sandbox]\ntool_download_lock = \"tool-downloads.content.lock.json\"\n",
+    )
+    .unwrap();
+
+    let cfg = parse_and_validate_with_overlay(&base, Some(&overlay)).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.tool_download_lock.as_deref(),
+        Some(lock.as_path())
+    );
+}
+
+#[test]
+fn sandbox_rejects_incomplete_tool_download_lock() {
+    let dir = tempdir().unwrap();
+    let lock = dir.path().join("tool-downloads.lock.json");
+    std::fs::write(
+        &lock,
+        format!(
+            r#"[{{"id":"tool","download":{{"version":"1","archive":"zip","member":"tool","install_as":"tool","artifacts":{{"x86_64":{{"url":"https://example.com/tool.zip","sha256":"{}"}}}}}}}}]"#,
+            "a".repeat(64)
+        ),
+    )
+    .unwrap();
+
+    let error = parse_err(&format!(
+        "tool_download_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+    assert!(error.contains("must define exactly 'x86_64' and 'aarch64'"));
 }
 
 #[test]
@@ -674,6 +819,7 @@ gitconfig_path = "/tmp/gitconfig"
 auth_key = "/tmp/auth"
 sign_key = "/tmp/sign"
 passthrough_env = ["BASE_TOKEN"]
+extra_dnf_packages = ["base-package"]
 
 [[mount]]
 host = "/base"
@@ -696,6 +842,7 @@ auto_allow_domains = ["base.example"]
 [sandbox]
 image = "repo:latest"
 passthrough_env = ["REPO_TOKEN"]
+extra_dnf_packages = ["repo-package"]
 
 [[mount]]
 host = "/repo"
@@ -715,6 +862,7 @@ auto_allow_domains = ["repo.example"]
 
     assert_eq!(cfg.sandbox.image, "repo:latest");
     assert_eq!(cfg.sandbox.passthrough_env, vec!["REPO_TOKEN"]);
+    assert_eq!(cfg.sandbox.extra_dnf_packages, vec!["repo-package"]);
     assert_eq!(cfg.update.pi_spec, "@repo/pi");
     assert_eq!(cfg.update.minimum_release_age, 1440);
     assert_eq!(cfg.auth_proxy.auto_allow_domains, vec!["repo.example"]);

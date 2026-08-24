@@ -21,8 +21,41 @@ Subcommands:
 - `uninstall`
 - `create-aliases`
 - `completions`
+- `tools`
 
 Use `ags --help` for built-in help text.
+
+---
+
+## `ags tools`
+
+Profession-guided sandbox tool chooser.
+
+Typical usage:
+
+```bash
+ags tools --packages config/tool-packages.example.json
+ags tools config/tool-packages.example.json --config ~/.config/ags/config.toml
+```
+
+What it does:
+
+- Reads a JSON catalog with canonical `tools` and ordered profession `groups`.
+- Shows horizontal General, Software Development, and Operations and DevOps tabs.
+- Groups each profession's tools under area dividers such as Languages, Source control, Network, and Administration.
+- Keeps one selection state when a tool appears in several professions or areas.
+- Loads the selected base config plus its trusted repo-local overlay and preselects options from the effective DNF package list and verified-tool lock.
+- Treats omitted tool-selection fields as the catalog default tool set.
+- Marks catalog defaults in the list; press `d` to restore those recommendations.
+- Saves selected DNF packages and a content-addressed `tool-downloads.<sha256>.lock.json` beside the config layer that owns tool selection, then creates a config backup.
+- Preserves configured package names that are not represented in the catalog, except fixed AGS baseline packages that no longer belong in the extra list.
+- Preserves unknown locked download tools until a catalog explicitly manages their IDs or a selected catalog tool owns the same installed command.
+- Removes obsolete `[[tool]]` entries created by older versions of this configurator while preserving user-authored tool mounts.
+- Prints the number of image components added and removed, then prompts you to run `ags update-image`.
+
+The catalog defines each purposeful executable tool once with a stable `id`, display `name`, purpose-focused `description`, required `default` flag, and exactly one installation provider. DNF tools own one or more internal `dnf_packages`. Downloaded tools declare a pinned version, archive format, executable member, destination command, and HTTPS URL plus SHA-256 for both `x86_64` and `aarch64`. Its three profession groups contain ordered subcategories that reference tool IDs. A tool may be referenced several times, but each package or downloaded command belongs to one canonical tool. Multi-package tools, such as tmux with its terminal metadata dependency, are selected only when all owned packages are configured.
+
+`ags tools` only edits configuration and its generated download lock. It does not invoke a host package manager, download artifacts, inspect host `PATH`, mount host binaries, or modify user-authored `[[tool]]` and `[[secret]]` entries. Downloads occur only while building the sandbox image, use HTTPS, and must pass the pinned SHA-256 check. The only `[[tool]]` entries the picker removes are obsolete entries marked as owned by an older version of the configurator. Libraries, headers, certificate bundles, AGS runtimes, and standard utilities such as curl are not presented as tools. Deselecting a tool prevents AGS from requesting its optional image component explicitly; another selected component may still provide the same executable as a dependency.
 
 ---
 
@@ -146,6 +179,7 @@ Rebuilds sandbox image from configured `Containerfile` and refreshes bundled san
 ```bash
 ags update-image
 ags update-image --keep-existing
+ags update-image --config /path/to/config.toml
 ```
 
 - Resolves the newest stable release that provides the required archive and checksum for the image architecture
@@ -154,6 +188,7 @@ ags update-image --keep-existing
 - Removes the previously tagged sandbox image after the new build succeeds, unless a container still references it
 - Referenced previous images are retained with a warning listing the blocking container IDs
 - `--keep-existing` keeps the previous image for manual rollback/debugging
+- `--config` selects the base config file used for the build; a trusted repo-local overlay still takes precedence
 - Does **not** update agent CLIs installed in persistent volumes
 
 `ags update` remains as a deprecated alias for `ags update-image`.
@@ -188,7 +223,7 @@ Settings come from `[update]` in config.
 
 Security hardening and runtime hygiene:
 
-- pnpm installs run with `ignore-scripts=true`.
+- pnpm installs run with `ignore-scripts=true`; AGS explicitly runs only `opencode-ai`'s required postinstall script and then verifies `opencode --version`.
 - Codex releases are stored in a dedicated persistent `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
 - pnpm uses a stable store under `/usr/local/pnpm/.store`.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.

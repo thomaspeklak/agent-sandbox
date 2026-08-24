@@ -72,6 +72,18 @@ const SANDBOX_FIELDS: &[ScalarFieldSchema] = &[
         required: false,
         default_input: "ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, AI_GATEWAY_API_KEY, OPENCODE_API_KEY",
     },
+    ScalarFieldSchema {
+        key: "extra_dnf_packages",
+        kind: ScalarFieldKind::StringList,
+        required: false,
+        default_input: "git, gh, openssh-clients, fd-find, ripgrep, rsync, tmux, kitty-terminfo, socat, make, pkgconf-pkg-config, sccache",
+    },
+    ScalarFieldSchema {
+        key: "tool_download_lock",
+        kind: ScalarFieldKind::Text,
+        required: false,
+        default_input: "",
+    },
 ];
 
 const BROWSER_FIELDS: &[ScalarFieldSchema] = &[

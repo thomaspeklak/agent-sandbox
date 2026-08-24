@@ -2,6 +2,48 @@ use std::path::{Path, PathBuf};
 
 pub const DEFAULT_PI_SPEC: &str = "@earendil-works/pi-coding-agent";
 pub const LEGACY_PI_SPECS: &[&str] = &["@mariozechner/pi-coding-agent"];
+pub const BASE_DNF_PACKAGES: &[&str] = &[
+    "bash",
+    "ca-certificates",
+    "coreutils",
+    "curl",
+    "dbus-devel",
+    "diffutils",
+    "file",
+    "findutils",
+    "gcc",
+    "grep",
+    "jq",
+    "less",
+    "nodejs24-bin",
+    "patch",
+    "procps-ng",
+    "python3",
+    "sed",
+    "sqlite-devel",
+    "tar",
+    "tree",
+    "unzip",
+    "util-linux",
+    "wget",
+    "which",
+    "xz",
+    "zip",
+];
+pub const DEFAULT_EXTRA_DNF_PACKAGES: &[&str] = &[
+    "git",
+    "gh",
+    "openssh-clients",
+    "fd-find",
+    "ripgrep",
+    "rsync",
+    "tmux",
+    "kitty-terminfo",
+    "socat",
+    "make",
+    "pkgconf-pkg-config",
+    "sccache",
+];
 
 pub fn create_default_config(path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
@@ -34,6 +76,20 @@ passthrough_env = [
   "OPENROUTER_API_KEY",
   "AI_GATEWAY_API_KEY",
   "OPENCODE_API_KEY",
+]
+extra_dnf_packages = [
+  "git",
+  "gh",
+  "openssh-clients",
+  "fd-find",
+  "ripgrep",
+  "rsync",
+  "tmux",
+  "kitty-terminfo",
+  "socat",
+  "make",
+  "pkgconf-pkg-config",
+  "sccache",
 ]
 
 [[mount]]

@@ -2,6 +2,8 @@
 mod help;
 #[path = "cli_subcommands.rs"]
 mod subcommands;
+#[path = "cli_tools.rs"]
+mod tools;
 #[path = "cli_update_image.rs"]
 mod update_image;
 
@@ -9,6 +11,8 @@ use crate::run_defaults;
 use help::HELP_TEXT;
 use std::fmt;
 use std::path::PathBuf;
+
+pub use tools::ToolConfigOptions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
@@ -131,9 +135,10 @@ pub struct CompletionsOptions {
     pub shell: Shell,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UpdateImageOptions {
     pub keep_existing: bool,
+    pub config_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,6 +153,7 @@ pub enum SubCommand {
     CreateAliases(CreateAliasesOptions),
     Completions(CompletionsOptions),
     Config,
+    Tools(ToolConfigOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,6 +162,8 @@ pub enum CliError {
     MissingAgent,
     MissingAgentValue,
     MissingConfigValue,
+    MissingToolPackagesValue,
+    MissingToolPackagesPath,
     MissingEnvValue,
     MissingOpSecretSetValue,
     MissingShellValue,
@@ -179,6 +187,12 @@ impl fmt::Display for CliError {
             ),
             Self::MissingAgentValue => f.write_str("missing value for --agent"),
             Self::MissingConfigValue => f.write_str("missing value for --config"),
+            Self::MissingToolPackagesValue => f.write_str("missing value for --packages"),
+            Self::MissingToolPackagesPath => {
+                f.write_str(
+                    "missing tool catalog JSON path (use `ags tools <path>` or `ags tools --packages <path>`)",
+                )
+            }
             Self::MissingEnvValue => f.write_str("missing value for --env (expected NAME=VALUE)"),
             Self::MissingOpSecretSetValue => f.write_str("missing value for --op-secret-set / -1"),
             Self::MissingShellValue => f.write_str("missing value for --shell"),
@@ -208,6 +222,12 @@ impl fmt::Display for CliError {
             ),
         }
     }
+}
+
+fn required_value<T: AsRef<str>>(value: Option<T>, error: CliError) -> Result<T, CliError> {
+    value
+        .filter(|value| !value.as_ref().is_empty())
+        .ok_or(error)
 }
 
 pub fn parse_args<I>(args: I) -> Result<Command, CliError>
@@ -251,6 +271,10 @@ where
             return Ok(Command::Sub(SubCommand::Completions(opts)));
         }
         "config" => return Ok(Command::Sub(SubCommand::Config)),
+        "tools" => {
+            let opts = tools::parse_tools_args(iter)?;
+            return Ok(Command::Sub(SubCommand::Tools(opts)));
+        }
         _ => {}
     }
 

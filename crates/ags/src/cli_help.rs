@@ -19,6 +19,8 @@ Commands:
   create-aliases Create managed wrapper scripts and/or shell aliases
 \
   completions    Print shell completion script to stdout
+\
+  tools          Choose sandbox tools from a profession-guided JSON catalog
 
 \
 Run flags:
@@ -61,6 +63,8 @@ Run flags:
 Update-image flags:
 \
   --keep-existing Keep the previous image after a successful rebuild
+\
+  --config <path> Config file to build from (default: ~/.config/ags/config.toml)
 
 \
 Install flags:
@@ -84,4 +88,11 @@ Create-aliases flags:
 Completions flags:
 \
   --shell <name> Shell to generate completion script for (fish|zsh|bash)
+
+\
+Tools flags:
+\
+  --packages <path> Tool catalog JSON file (or pass as first positional argument)
+\
+  --config <path>   Config file to update (default: ~/.config/ags/config.toml)
 ";
