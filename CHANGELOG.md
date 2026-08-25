@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.20.1] — 2026-08-25
+
+### Bug Fixes
+
+- Fix pnpm global OpenCode path resolution (#17) (9e8e748)
+
 ## [v0.20.0] — 2026-08-24
 
 ### Features
