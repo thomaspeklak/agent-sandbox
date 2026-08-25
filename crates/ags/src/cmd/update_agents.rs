@@ -169,7 +169,15 @@ CODEX_HOME=/opt/codex-home CODEX_INSTALL_DIR=/usr/local/pnpm CODEX_NON_INTERACTI
 [ -x /usr/local/pnpm/codex ] && \
 install_pnpm_agent gemini @google/gemini-cli && \
 install_pnpm_agent opencode opencode-ai && \
-OPENCODE_ROOT="$("$PNPM_BIN" root -g)/opencode-ai" && \
+OPENCODE_LIST="$("$PNPM_BIN" list -g opencode-ai --depth=0 --parseable)" && \
+OPENCODE_PATHS="$(printf '%s\n' "$OPENCODE_LIST" | grep '/node_modules/opencode-ai$' || true)" && \
+OPENCODE_PATH_COUNT="$(printf '%s\n' "$OPENCODE_PATHS" | grep -c . || true)" && \
+if [ "$OPENCODE_PATH_COUNT" -ne 1 ]; then \
+  echo "expected exactly one global opencode-ai package path, found $OPENCODE_PATH_COUNT" >&2; \
+  exit 1; \
+fi && \
+OPENCODE_ROOT="$OPENCODE_PATHS" && \
+[ -f "$OPENCODE_ROOT/postinstall.mjs" ] && \
 node "$OPENCODE_ROOT/postinstall.mjs" && \
 opencode --version >/dev/null && \
 CLAUDE_HOME=/opt/claude-home && \
@@ -293,15 +301,27 @@ mod tests {
     }
 
     #[test]
-    fn opencode_postinstall_runs_before_runtime_validation() {
+    fn opencode_postinstall_resolves_isolated_global_package_before_runtime_validation() {
         let script = build_install_script(DEFAULT_PI_SPEC, 1440);
 
         let install_pos = script
             .find("install_pnpm_agent opencode opencode-ai")
             .expect("OpenCode should be installed by pnpm");
         let root_pos = script
-            .find("OPENCODE_ROOT=\"$(\"$PNPM_BIN\" root -g)/opencode-ai\"")
-            .expect("the global OpenCode package directory should be resolved dynamically");
+            .find("\"$PNPM_BIN\" list -g opencode-ai --depth=0 --parseable")
+            .expect("pnpm should report the isolated OpenCode package directory");
+        let count_pos = script
+            .find("OPENCODE_PATH_COUNT=")
+            .expect("matching OpenCode package directories should be counted");
+        let unique_path_pos = script
+            .find("[ \"$OPENCODE_PATH_COUNT\" -ne 1 ]")
+            .expect("OpenCode should require exactly one package directory");
+        let diagnostic_pos = script
+            .find("expected exactly one global opencode-ai package path")
+            .expect("invalid package path counts should produce a diagnostic");
+        let postinstall_check_pos = script
+            .find("[ -f \"$OPENCODE_ROOT/postinstall.mjs\" ]")
+            .expect("the resolved OpenCode postinstall script should exist");
         let postinstall_pos = script
             .find("node \"$OPENCODE_ROOT/postinstall.mjs\"")
             .expect("OpenCode's required postinstall script should run explicitly");
@@ -310,8 +330,15 @@ mod tests {
             .expect("the installed OpenCode binary should be executed");
 
         assert!(script.contains("ignore-scripts=true"));
+        assert!(script.contains("grep '/node_modules/opencode-ai$'"));
+        assert!(script.contains("grep -c . || true"));
+        assert!(!script.contains("\"$PNPM_BIN\" root -g"));
         assert!(install_pos < root_pos);
-        assert!(root_pos < postinstall_pos);
+        assert!(root_pos < count_pos);
+        assert!(count_pos < unique_path_pos);
+        assert!(unique_path_pos < diagnostic_pos);
+        assert!(diagnostic_pos < postinstall_check_pos);
+        assert!(postinstall_check_pos < postinstall_pos);
         assert!(postinstall_pos < validation_pos);
     }
 

@@ -1,1 +1,2 @@
 - [x] `ags update-agents` installs `opencode-ai` with lifecycle scripts disabled but does not run its required postinstall script, leaving the `opencode` failure stub in place.
+- [x] `ags update-agents` assumes `pnpm root -g` is a shared `node_modules` directory, but pnpm 11 installs global packages in isolated hash-linked directories.
