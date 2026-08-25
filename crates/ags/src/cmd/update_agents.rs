@@ -311,9 +311,7 @@ mod tests {
             .find("\"$PNPM_BIN\" list -g opencode-ai --depth=0 --parseable")
             .expect("pnpm should report the isolated OpenCode package directory");
         let count_pos = script
-            .find(
-                "OPENCODE_PATH_COUNT=\"$(printf '%s\n' \"$OPENCODE_PATHS\" | grep -c . || true)\"",
-            )
+            .find("OPENCODE_PATH_COUNT=")
             .expect("matching OpenCode package directories should be counted");
         let unique_path_pos = script
             .find("[ \"$OPENCODE_PATH_COUNT\" -ne 1 ]")
@@ -333,6 +331,7 @@ mod tests {
 
         assert!(script.contains("ignore-scripts=true"));
         assert!(script.contains("grep '/node_modules/opencode-ai$'"));
+        assert!(script.contains("grep -c . || true"));
         assert!(!script.contains("\"$PNPM_BIN\" root -g"));
         assert!(install_pos < root_pos);
         assert!(root_pos < count_pos);
