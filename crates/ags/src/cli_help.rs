@@ -10,7 +10,7 @@ Commands:
 \
   update-image   Rebuild container image and refresh bundled br/dcg
 \
-  update-agents  Install/update agents in persistent volumes
+  update-agents  Reconcile selected agents in persistent volumes
 \
   install        Install config/assets (optional self-link)
 \
@@ -20,7 +20,7 @@ Commands:
 \
   completions    Print shell completion script to stdout
 \
-  tools          Choose sandbox tools from a profession-guided JSON catalog
+  tools          Choose sandbox tools and agent CLIs
 
 \
 Run flags:
@@ -65,6 +65,11 @@ Update-image flags:
   --keep-existing Keep the previous image after a successful rebuild
 \
   --config <path> Config file to build from (default: ~/.config/ags/config.toml)
+
+\
+Update-agents flags:
+\
+  --config <path> Config file to reconcile from (default: ~/.config/ags/config.toml)
 
 \
 Install flags:

@@ -10,6 +10,9 @@ impl App {
 
         self.render_top_bar(frame, outer[0]);
         self.render_group_screen(frame, outer[1]);
+        if self.show_agents {
+            self.render_agent_overlay(frame, outer[1]);
+        }
         if self.show_help {
             self.render_help_overlay(frame, outer[1]);
         }
@@ -34,11 +37,21 @@ impl App {
                 self.packages_path.display().to_string(),
                 Style::default().fg(Color::Yellow),
             ),
-            Span::raw("    Selected: "),
+            Span::raw("    Tools: "),
             Span::styled(
                 self.state.selected_tool_count().to_string(),
                 Style::default().fg(Color::Green),
             ),
+            Span::raw("    Agents: "),
+            Span::styled(
+                format!(
+                    "{}/{}",
+                    self.state.selected_agent_count(),
+                    self.state.agents.len()
+                ),
+                Style::default().fg(Color::Green),
+            ),
+            Span::styled("    [a] Agent CLIs", Style::default().fg(Color::Cyan)),
         ])];
 
         if !self.state.groups.is_empty() {
@@ -233,18 +246,21 @@ impl App {
         let popup = centered_rect(74, 72, area);
         frame.render_widget(Clear, popup);
         let text = vec![
-            Line::from("Choose purposeful tools for the AGS sandbox image."),
+            Line::from("Choose image tools and persistent agent CLI runtimes for AGS."),
             Line::from(""),
             Line::from("Left/Right or h/l  Change profession view"),
             Line::from("Up/Down or j/k     Move through tools and areas"),
             Line::from("Space              Toggle the selected tool everywhere"),
+            Line::from("a                  Open/close the Agent CLIs panel"),
             Line::from("d                  Restore catalog defaults"),
             Line::from("s                  Save tool selection and quit"),
             Line::from("q or Esc           Quit without saving"),
             Line::from("?                  Show/close this help"),
             Line::from(""),
             Line::from("Area dividers are informational and are skipped by navigation."),
-            Line::from("Saving does not rebuild the image; run `ags update-image` afterwards."),
+            Line::from(
+                "Saving does not apply changes; run `ags update-image` and `ags update-agents`.",
+            ),
         ];
         frame.render_widget(
             Paragraph::new(text)
@@ -264,12 +280,61 @@ impl App {
         let (text, style) = match &self.status_message {
             Some((message, kind)) => (message.clone(), status_style(*kind)),
             None => (
-                "h/l profession  j/k tool  Space toggle  d defaults  s save  q quit  ? help"
-                    .to_owned(),
+                if self.show_agents {
+                    "j/k agent  Space toggle  a/Esc close  d defaults  s save  q quit  ? help"
+                        .to_owned()
+                } else {
+                    "h/l profession  j/k tool  Space toggle  a agents  d defaults  s save  q quit  ? help"
+                        .to_owned()
+                },
                 Style::default().fg(Color::DarkGray),
             ),
         };
         frame.render_widget(Paragraph::new(text).style(style), area);
+    }
+
+    fn render_agent_overlay(&self, frame: &mut Frame, area: Rect) {
+        let popup = centered_rect(82, 78, area);
+        frame.render_widget(Clear, popup);
+        let rows = self
+            .state
+            .agents
+            .iter()
+            .enumerate()
+            .map(|(index, agent)| {
+                let checkbox = if agent.selected { "[x]" } else { "[ ]" };
+                let style = if index == self.selected_agent {
+                    Style::default().fg(Color::Black).bg(Color::White)
+                } else if agent.selected {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::Yellow)
+                };
+                Row::new(vec![
+                    checkbox.to_owned(),
+                    agent.agent.display_name().to_owned(),
+                    agent.agent.description().to_owned(),
+                ])
+                .style(style)
+            })
+            .collect::<Vec<_>>();
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(4),
+                Constraint::Length(16),
+                Constraint::Min(28),
+            ],
+        )
+        .header(Row::new(vec!["", "Agent CLI", "Purpose"]).style(Style::default().bold()))
+        .block(
+            Block::bordered()
+                .title(" Agent CLIs (persistent runtime volumes, not the base image) ")
+                .title_alignment(Alignment::Center)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
+        frame.render_widget(table, popup);
     }
 }
 

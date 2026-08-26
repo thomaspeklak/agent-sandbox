@@ -39,12 +39,22 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         Ok(c) => c,
         Err(code) => return code,
     };
+    if !config.sandbox.is_agent_enabled(opts.agent) {
+        eprintln!(
+            "error: agent '{}' is disabled by [sandbox].enabled_agents; enable it with `ags tools` and run `ags update-agents`",
+            opts.agent
+        );
+        return ExitCode::from(2);
+    }
 
     // 2. Ensure embedded assets are on disk
     if let Err(e) = crate::assets::ensure_image_build_context(&config.sandbox.containerfile) {
         eprintln!("warning: could not prepare image build context: {e}");
     }
-    if !opts.lockdown && matches!(opts.agent, Agent::Pi | Agent::Shell) {
+    if !opts.lockdown
+        && matches!(opts.agent, Agent::Pi | Agent::Shell)
+        && config.sandbox.is_agent_enabled(Agent::Pi)
+    {
         if let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") {
             let pi_agent_dir = pi_host.join("agent");
             if let Err(e) = crate::assets::ensure_guard_extension(&pi_agent_dir) {

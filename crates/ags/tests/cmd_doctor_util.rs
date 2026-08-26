@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use ags::cli::Agent;
 use ags::cmd::doctor;
 use ags::config::{
     AuthProxyConfig, BrowserConfig, ClipboardConfig, DesktopPassthroughConfig, HostUiConfig,
@@ -36,6 +37,7 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
             bootstrap_files: vec![],
             container_boot_dirs: vec![],
             passthrough_env: vec![],
+            enabled_agents: Agent::INSTALLABLE.to_vec(),
             extra_dnf_packages: vec![],
             tool_download_lock: None,
             tool_downloads: vec![],
@@ -126,6 +128,26 @@ fn doctor_self_heals_missing_guard_extension() {
     fs::remove_file(pi_agent.join("extensions/guard.ts")).unwrap();
     let _result = doctor::run(&config);
     assert!(pi_agent.join("extensions/guard.ts").exists());
+}
+
+#[test]
+fn doctor_does_not_recreate_assets_for_disabled_agents() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut config = minimal_config(tmp.path());
+    config.sandbox.enabled_agents.clear();
+    let pi_guard = config
+        .mount_host_for_container("/home/dev/.pi")
+        .unwrap()
+        .join("agent/extensions/guard.ts");
+    fs::remove_file(&pi_guard).unwrap();
+    let with_mount = doctor::summarize(&config);
+    config.mounts.clear();
+
+    let summary = doctor::summarize(&config);
+
+    assert!(!pi_guard.exists());
+    assert!(!config.sandbox.cache_dir.join("ags-hooks/guard.sh").exists());
+    assert_eq!(summary.fail_count, with_mount.fail_count);
 }
 
 #[cfg(unix)]

@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use ags::cli::Agent;
 use ags::config::{
     DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource,
     ValidatedConfig, parse_and_validate_with_overlay, parse_toml_str,
@@ -47,8 +48,36 @@ fn minimal_config_parses() {
     assert_eq!(cfg.clipboard.approval_seconds, 300);
     assert!(!cfg.clipboard.approve_writes);
     assert!(!cfg.desktop_passthrough.wayland);
+    assert_eq!(cfg.sandbox.enabled_agents, Agent::INSTALLABLE);
+    assert!(cfg.sandbox.is_agent_enabled(Agent::Shell));
     assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
+}
+
+#[test]
+fn sandbox_enabled_agents_can_be_subset_empty_and_canonicalized() {
+    let cfg = parse_minimal(r#"enabled_agents = ["opencode", "pi"]"#);
+    assert_eq!(cfg.sandbox.enabled_agents, vec![Agent::Pi, Agent::Opencode]);
+
+    let cfg = parse_minimal("enabled_agents = []");
+    assert!(cfg.sandbox.enabled_agents.is_empty());
+    assert!(cfg.sandbox.is_agent_enabled(Agent::Shell));
+    assert!(!cfg.sandbox.is_agent_enabled(Agent::Pi));
+}
+
+#[test]
+fn sandbox_enabled_agents_reject_invalid_duplicate_and_shell_entries() {
+    let invalid = parse_err(r#"enabled_agents = ["other"]"#);
+    assert!(invalid.contains("must be one of"), "got: {invalid}");
+
+    let duplicate = parse_err(r#"enabled_agents = ["pi", "pi"]"#);
+    assert!(
+        duplicate.contains("duplicate agent 'pi'"),
+        "got: {duplicate}"
+    );
+
+    let shell = parse_err(r#"enabled_agents = ["shell"]"#);
+    assert!(shell.contains("shell is always available"), "got: {shell}");
 }
 
 #[test]

@@ -29,7 +29,9 @@ pub fn config_file_defines_tool_selection(path: &Path) -> Result<bool, ToolConfi
         .parse::<DocumentMut>()
         .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
     Ok(doc.get("sandbox").is_some_and(|sandbox| {
-        sandbox.get("extra_dnf_packages").is_some() || sandbox.get("tool_download_lock").is_some()
+        sandbox.get("extra_dnf_packages").is_some()
+            || sandbox.get("tool_download_lock").is_some()
+            || sandbox.get("enabled_agents").is_some()
     }))
 }
 
@@ -219,10 +221,20 @@ pub fn apply_selection_to_document(
         .filter(|package| !baseline_packages.contains(package))
         .collect();
     let configured_set: BTreeSet<&str> = configured.iter().map(String::as_str).collect();
+    let previous_agents = state
+        .configured_agents
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let selected_agents = state.selected_agents();
+    let selected_agent_set = selected_agents.iter().copied().collect::<BTreeSet<_>>();
     let report = SaveReport {
         selected_tools: state.selected_tool_count(),
+        selected_agents: selected_agents.len(),
         added_components: configured_set.difference(&previous_set).count(),
         removed_components: previous_set.difference(&configured_set).count(),
+        added_agents: selected_agent_set.difference(&previous_agents).count(),
+        removed_agents: previous_agents.difference(&selected_agent_set).count(),
         removed_legacy_tools: remove_legacy_managed_tools(doc),
         cleanup_warning: None,
     };
@@ -232,6 +244,8 @@ pub fn apply_selection_to_document(
     }
     let array = Array::from_iter(configured.iter().map(String::as_str));
     doc["sandbox"]["extra_dnf_packages"] = Item::Value(toml_edit::Value::Array(array));
+    let agents = Array::from_iter(selected_agents.iter().map(|agent| agent.as_str()));
+    doc["sandbox"]["enabled_agents"] = Item::Value(toml_edit::Value::Array(agents));
     report
 }
 

@@ -98,13 +98,14 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
         | SubCommand::Doctor
         | SubCommand::UpdateImage(_)
         | SubCommand::UpdateDeprecated(_)
-        | SubCommand::UpdateAgents => {}
+        | SubCommand::UpdateAgents(_) => {}
     }
 
     let config_path = match &sub {
         SubCommand::UpdateImage(opts) | SubCommand::UpdateDeprecated(opts) => {
             opts.config_path.as_deref()
         }
+        SubCommand::UpdateAgents(opts) => opts.config_path.as_deref(),
         _ => None,
     };
     let config = match ags::lifecycle::load_config(config_path) {
@@ -126,7 +127,7 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
             eprintln!("warning: `ags update` is deprecated; use `ags update-image` instead.");
             run_update_image(&config, opts)
         }
-        SubCommand::UpdateAgents => try_sub(
+        SubCommand::UpdateAgents(_) => try_sub(
             "update-agents",
             ags::cmd::update_agents::run(
                 &config,

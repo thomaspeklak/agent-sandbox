@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::cli::Agent;
+
 use super::defaults::DEFAULT_PI_SPEC;
 use super::tool_download::LockedToolDownload;
 
@@ -33,9 +35,16 @@ pub struct ValidatedSandbox {
     pub bootstrap_files: Vec<String>,
     pub container_boot_dirs: Vec<String>,
     pub passthrough_env: Vec<String>,
+    pub enabled_agents: Vec<Agent>,
     pub extra_dnf_packages: Vec<String>,
     pub tool_download_lock: Option<PathBuf>,
     pub tool_downloads: Vec<LockedToolDownload>,
+}
+
+impl ValidatedSandbox {
+    pub fn is_agent_enabled(&self, agent: Agent) -> bool {
+        agent == Agent::Shell || self.enabled_agents.contains(&agent)
+    }
 }
 
 impl ValidatedConfig {
@@ -58,6 +67,22 @@ pub struct ValidatedMount {
     pub create: bool,
     pub optional: bool,
     pub source: String,
+}
+
+impl ValidatedMount {
+    pub fn agent_owner(&self) -> Option<Agent> {
+        if self.source != "agent_mount" {
+            return None;
+        }
+        match self.container.as_str() {
+            "/home/dev/.pi" => Some(Agent::Pi),
+            "/home/dev/.claude" | "/home/dev/.claude.json" => Some(Agent::Claude),
+            "/home/dev/.codex" => Some(Agent::Codex),
+            "/home/dev/.gemini" => Some(Agent::Gemini),
+            "/home/dev/.config/opencode" => Some(Agent::Opencode),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

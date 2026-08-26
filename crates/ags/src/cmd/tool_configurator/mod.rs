@@ -29,16 +29,20 @@ pub fn run(
         packages_path,
         has_configured_selection.then_some(config.sandbox.extra_dnf_packages.as_slice()),
         has_configured_selection.then_some(config.sandbox.tool_downloads.as_slice()),
+        config.sandbox.enabled_agents.as_slice(),
     )?;
     let report = app.run()?;
 
     if let Some(report) = report {
         println!(
-            "Configured {} tools in {} ({} image components added, {} removed, {} legacy host mounts removed).",
+            "Configured {} tools and {} agent CLIs in {} ({} image components added, {} removed; {} agents added, {} removed; {} legacy host mounts removed).",
             report.selected_tools,
+            report.selected_agents,
             target_path.display(),
             report.added_components,
             report.removed_components,
+            report.added_agents,
+            report.removed_agents,
             report.removed_legacy_tools
         );
         if let Some(warning) = report.cleanup_warning {
@@ -46,6 +50,10 @@ pub fn run(
         }
         println!(
             "Run `ags update-image --config {}` to apply the tool changes.",
+            crate::util::shell_quote(&config_path.display().to_string())
+        );
+        println!(
+            "Run `ags update-agents --config {}` to reconcile the selected agent CLIs.",
             crate::util::shell_quote(&config_path.display().to_string())
         );
     }

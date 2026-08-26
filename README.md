@@ -31,7 +31,7 @@ It is designed to keep your host clean while still giving agents controlled acce
 - First-run setup for SSH auth + signing keys
 - Persistent per-agent host volumes by default (lockdown uses ephemeral staged homes)
 - Configurable mounts, tool binaries, and secret sources
-- Profession-guided TUI for choosing purposeful tools in the sandbox image
+- Profession-guided TUI for choosing image tools and persistent agent CLIs
 - Optional hardened `--lockdown` runs for inspecting untrusted/foreign repos with reduced host exposure
 - Optional browser sidecar support for browser-enabled workflows
 - Narrow clipboard bridge for Pi Ctrl-V image paste and copy flows without compositor passthrough
@@ -67,7 +67,7 @@ Optional sandbox tool selection:
 ags tools --packages config/tool-packages.example.json
 ```
 
-This opens a profession-guided TUI with General, Software Development, and Operations and DevOps views. Tools are grouped by area, and shared tools keep one selection across every view. AGS keeps its runtime and standard utilities in a fixed image baseline; the picker updates optional Fedora packages and checksum-verified vendor downloads. Run `ags update-image` afterward to rebuild the image.
+This opens a profession-guided TUI with General, Software Development, and Operations and DevOps views. Tools are grouped by area, and shared tools keep one selection across every view. Press `a` for the separate Agent CLIs panel. Image tools are applied with `ags update-image`; agent CLIs live in persistent runtime volumes and are reconciled with `ags update-agents`.
 
 ---
 

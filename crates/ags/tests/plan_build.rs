@@ -240,6 +240,82 @@ fn cache_mounts_created() {
 }
 
 #[test]
+fn disabled_agent_runtime_and_home_mounts_are_excluded() {
+    let toml = minimal_config_toml().replace(
+        "extra_dnf_packages = [\"ansible-lint\", \"shellcheck\"]",
+        "enabled_agents = [\"pi\"]\nextra_dnf_packages = [\"ansible-lint\", \"shellcheck\"]",
+    );
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Pi);
+
+    for container in [
+        "/opt/codex-home",
+        "/opt/claude-home",
+        "/home/dev/.config/ags/hooks",
+        "/home/dev/.claude.json",
+        "/home/dev/.claude",
+        "/home/dev/.codex",
+        "/home/dev/.gemini",
+        "/home/dev/.config/opencode",
+    ] {
+        assert!(
+            !plan.mounts.iter().any(|mount| mount.container == container),
+            "disabled agent mount should be absent: {container}"
+        );
+    }
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|mount| mount.container == "/usr/local/pnpm")
+    );
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|mount| mount.container == "/home/dev/.pi")
+    );
+    assert!(
+        plan.mounts
+            .iter()
+            .any(|mount| mount.container == "/home/dev/.cargo")
+    );
+}
+
+#[test]
+fn shell_only_config_omits_all_agent_runtime_and_home_mounts() {
+    let toml = minimal_config_toml().replace(
+        "extra_dnf_packages = [\"ansible-lint\", \"shellcheck\"]",
+        "enabled_agents = []\nextra_dnf_packages = [\"ansible-lint\", \"shellcheck\"]",
+    );
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Shell);
+
+    for container in [
+        "/usr/local/pnpm",
+        "/opt/codex-home",
+        "/opt/claude-home",
+        "/home/dev/.config/ags/hooks",
+        "/home/dev/.pi",
+        "/home/dev/.claude.json",
+        "/home/dev/.claude",
+        "/home/dev/.codex",
+        "/home/dev/.gemini",
+        "/home/dev/.config/opencode",
+    ] {
+        assert!(
+            !plan.mounts.iter().any(|mount| mount.container == container),
+            "agent mount should be absent in shell-only mode: {container}"
+        );
+    }
+    assert!(
+        !plan
+            .env
+            .inline
+            .iter()
+            .any(|(name, _)| name == "PNPM_HOME" || name == "NPM_CONFIG_STORE_DIR")
+    );
+}
+
+#[test]
 fn clipboard_bridge_mounts_socket_and_shims_when_enabled() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();

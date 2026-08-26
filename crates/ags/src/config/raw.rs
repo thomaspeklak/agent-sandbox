@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use crate::cli::Agent;
+
 use super::defaults::{DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC};
 
 /// Top-level config as deserialized directly from TOML.
@@ -47,6 +49,8 @@ pub struct RawSandbox {
     pub container_boot_dirs: Vec<String>,
     #[serde(default)]
     pub passthrough_env: Vec<String>,
+    #[serde(default = "default_enabled_agents")]
+    pub enabled_agents: Vec<String>,
     #[serde(default = "default_extra_dnf_packages")]
     pub extra_dnf_packages: Vec<String>,
     #[serde(default)]
@@ -240,6 +244,13 @@ fn default_extra_dnf_packages() -> Vec<String> {
     DEFAULT_EXTRA_DNF_PACKAGES
         .iter()
         .map(|package| (*package).to_owned())
+        .collect()
+}
+
+fn default_enabled_agents() -> Vec<String> {
+    Agent::INSTALLABLE
+        .iter()
+        .map(|agent| agent.as_str().to_owned())
         .collect()
 }
 

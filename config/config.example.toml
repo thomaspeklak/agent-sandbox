@@ -11,6 +11,7 @@ sign_key = "~/.ssh/ags-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
 container_boot_dirs = ["/home/dev/.ssh", "/home/dev/.config/example-tool"]
 passthrough_env = ["EXAMPLE_API_KEY"]
+enabled_agents = ["pi", "claude", "codex", "gemini", "opencode"]
 extra_dnf_packages = [
   "git", "gh", "openssh-clients", "fd-find", "ripgrep", "rsync", "tmux",
   "kitty-terminfo", "socat", "make", "pkgconf-pkg-config", "sccache",

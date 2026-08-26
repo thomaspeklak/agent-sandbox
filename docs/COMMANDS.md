@@ -47,15 +47,19 @@ What it does:
 - Loads the selected base config plus its trusted repo-local overlay and preselects options from the effective DNF package list and verified-tool lock.
 - Treats omitted tool-selection fields as the catalog default tool set.
 - Marks catalog defaults in the list; press `d` to restore those recommendations.
+- Opens a built-in Agent CLIs panel with `a`; these selections are independent of the external tool catalog.
+- Stores selected agent IDs in `[sandbox].enabled_agents`; omitted configuration keeps all current agent CLIs enabled.
 - Saves selected DNF packages and a content-addressed `tool-downloads.<sha256>.lock.json` beside the config layer that owns tool selection, then creates a config backup.
 - Preserves configured package names that are not represented in the catalog, except fixed AGS baseline packages that no longer belong in the extra list.
 - Preserves unknown locked download tools until a catalog explicitly manages their IDs or a selected catalog tool owns the same installed command.
 - Removes obsolete `[[tool]]` entries created by older versions of this configurator while preserving user-authored tool mounts.
-- Prints the number of image components added and removed, then prompts you to run `ags update-image`.
+- Prints image-component and agent changes, then prompts you to run `ags update-image` and `ags update-agents`.
 
 The catalog defines each purposeful executable tool once with a stable `id`, display `name`, purpose-focused `description`, required `default` flag, and exactly one installation provider. DNF tools own one or more internal `dnf_packages`. Downloaded tools declare a pinned version, archive format, executable member, destination command, and HTTPS URL plus SHA-256 for both `x86_64` and `aarch64`. Its three profession groups contain ordered subcategories that reference tool IDs. A tool may be referenced several times, but each package or downloaded command belongs to one canonical tool. Multi-package tools, such as tmux with its terminal metadata dependency, are selected only when all owned packages are configured.
 
 `ags tools` only edits configuration and its generated download lock. It does not invoke a host package manager, download artifacts, inspect host `PATH`, mount host binaries, or modify user-authored `[[tool]]` and `[[secret]]` entries. Downloads occur only while building the sandbox image, use HTTPS, and must pass the pinned SHA-256 check. The only `[[tool]]` entries the picker removes are obsolete entries marked as owned by an older version of the configurator. Libraries, headers, certificate bundles, AGS runtimes, and standard utilities such as curl are not presented as tools. Deselecting a tool prevents AGS from requesting its optional image component explicitly; another selected component may still provide the same executable as a dependency.
+
+Agent CLIs are not installed in the base image. `ags update-agents` installs selected agents into persistent runtime volumes and removes deselected runtimes while preserving their host authentication and settings. Shell is always available and is not shown in the agent checklist.
 
 ---
 
@@ -105,6 +109,8 @@ ags --agent pi --env BROWSER_URL=http://127.0.0.1:9222
 - Incompatible with `--browser`, `--psp`, `--psp-keep`, `--root`, and `--wayland-compositor-passthrough`.
 - Container runs with rootless user namespace (`keep-id`), dropped capabilities, and `no-new-privileges`.
 - Agent host state normally comes from explicit `[[agent_mount]]` / `[[mount]]` entries; lockdown overrides that with staged per-run agent state.
+- Agent runtime and `[[agent_mount]]` resources for disabled agents are not mounted. Resources for all enabled agents retain the existing shared behavior.
+- Launching an agent absent from `[sandbox].enabled_agents` fails before Podman starts; enable it through `ags tools` and run `ags update-agents`.
 - Agent processes run inside the container: `localhost` is container-local. Use `host.containers.internal` for host machine ports/services.
 - Outside lockdown, runtime env vars are injected for discoverability: `AGS_HOST_SERVICES_HOST` and `AGS_HOST_SERVICES_HINT`.
 - `pi`/`claude`/`codex`/`opencode` runs inject a short host-service hint into prompt context, including in lockdown.
@@ -205,21 +211,22 @@ Use `ags update-agents` next if needed.
 
 ## `ags update-agents`
 
-Installs/updates agent CLIs in persistent volumes using a temporary container.
+Reconciles selected agent CLIs in persistent volumes using a temporary container.
 
 ```bash
 ags update-agents
+ags update-agents --config /path/to/config.toml
 ```
 
-### What it updates
+### What it reconciles
 
-- Pi package (`pi_spec`), removing the legacy Pi package first to avoid stale `pi` binaries
-- Codex standalone release (using the official `chatgpt.com/codex/install.sh` installer)
-- Gemini (`@google/gemini-cli`)
-- Opencode (`opencode-ai`)
-- Claude install/update in dedicated volume
+- Installs or updates enabled Pi, Codex, Gemini, OpenCode, and Claude runtimes.
+- Removes packages, launchers, and dedicated install files for disabled agents.
+- Preserves agent authentication and settings under the configured `[[agent_mount]]` host paths.
+- Prunes unused packages from the shared pnpm store after reconciliation.
 
-Settings come from `[update]` in config.
+The enabled set comes from `[sandbox].enabled_agents`; installer settings such as `pi_spec` come from `[update]`.
+Use `--config <path>` when the selection was saved to a non-default config.
 
 Security hardening and runtime hygiene:
 

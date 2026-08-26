@@ -120,7 +120,10 @@ fn add_infrastructure_mounts(
     });
 
     // Cache volumes
-    for (suffix, container_path, _) in CACHE_MOUNTS {
+    for (suffix, container_path, _, owners) in CACHE_MOUNTS {
+        if !cache_mount_enabled(config, owners) {
+            continue;
+        }
         mounts.push(PlanMount {
             host: cache_dir.join(suffix),
             container: container_path.to_string(),
@@ -130,13 +133,16 @@ fn add_infrastructure_mounts(
 }
 
 fn expand_config_mounts(
-    config_mounts: &[ValidatedMount],
+    config: &ValidatedConfig,
     browser_mode: bool,
     mounts: &mut Vec<PlanMount>,
     read_roots: &mut Vec<String>,
     write_roots: &mut Vec<String>,
 ) -> Result<(), PlanError> {
-    for m in config_mounts {
+    for m in &config.mounts {
+        if !agent_mount_enabled(config, m) {
+            continue;
+        }
         // Filter by when
         if m.when == MountWhen::Browser && !browser_mode {
             continue;
@@ -168,6 +174,12 @@ fn expand_config_mounts(
         }
     }
     Ok(())
+}
+
+fn agent_mount_enabled(config: &ValidatedConfig, mount: &ValidatedMount) -> bool {
+    mount
+        .agent_owner()
+        .is_none_or(|agent| config.sandbox.is_agent_enabled(agent))
 }
 
 fn add_plan_mounts(

@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use ags::{
+    cli::Agent,
     cmd::tool_configurator::model::{
         GroupRow, ToolCatalog, ToolDefinition, ToolGroupDefinition, ToolSelectionState,
         ToolSubcategoryDefinition, apply_selection_to_document, config_file_defines_tool_selection,
@@ -117,6 +118,38 @@ fn configured_packages_preselect_canonical_tools() {
     assert_eq!(state.selected_tool_count(), 1);
     assert!(state.tools[0].selected);
     assert!(!state.tools[1].selected);
+}
+
+#[test]
+fn enabled_agents_are_preselected_and_persisted_in_canonical_order() {
+    let mut state = ToolSelectionState::from_catalog_with_config_and_agents(
+        catalog(vec![tool("git", &["git"], true)]),
+        Some(&["git".to_owned()]),
+        Some(&[]),
+        &[Agent::Opencode, Agent::Pi],
+    )
+    .unwrap();
+
+    assert!(state.agents[0].selected);
+    assert!(!state.agents[1].selected);
+    assert!(state.agents[4].selected);
+    state.agents[0].selected = false;
+
+    let mut doc = "[sandbox]\nextra_dnf_packages = [\"git\"]\n"
+        .parse::<DocumentMut>()
+        .unwrap();
+    let report = apply_selection_to_document(&mut doc, &state);
+
+    assert_eq!(report.selected_agents, 1);
+    assert_eq!(report.added_agents, 0);
+    assert_eq!(report.removed_agents, 1);
+    assert_eq!(
+        doc["sandbox"]["enabled_agents"]
+            .as_array()
+            .unwrap()
+            .to_string(),
+        "[\"opencode\"]"
+    );
 }
 
 #[test]

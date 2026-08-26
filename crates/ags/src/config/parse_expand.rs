@@ -29,6 +29,7 @@ fn validate_sandbox(
             "[sandbox].container_boot_dirs",
         )?,
         passthrough_env: validate_string_list(&raw.passthrough_env, "[sandbox].passthrough_env")?,
+        enabled_agents: validate_enabled_agents(&raw.enabled_agents)?,
         extra_dnf_packages: validate_dnf_packages(
             &raw.extra_dnf_packages,
             "[sandbox].extra_dnf_packages",
@@ -36,6 +37,33 @@ fn validate_sandbox(
         tool_download_lock,
         tool_downloads,
     })
+}
+
+fn validate_enabled_agents(list: &[String]) -> Result<Vec<Agent>, ConfigError> {
+    let mut configured = Vec::new();
+    for (index, value) in list.iter().enumerate() {
+        let agent = Agent::from_id(value).ok_or_else(|| {
+            ConfigError::Validation(format!(
+                "[sandbox].enabled_agents[{index}] must be one of: pi, claude, codex, gemini, opencode"
+            ))
+        })?;
+        if agent == Agent::Shell {
+            return Err(ConfigError::Validation(format!(
+                "[sandbox].enabled_agents[{index}] must not be 'shell'; shell is always available"
+            )));
+        }
+        if configured.contains(&agent) {
+            return Err(ConfigError::Validation(format!(
+                "[sandbox].enabled_agents contains duplicate agent '{value}'"
+            )));
+        }
+        configured.push(agent);
+    }
+
+    Ok(Agent::INSTALLABLE
+        .into_iter()
+        .filter(|agent| configured.contains(agent))
+        .collect())
 }
 
 fn load_tool_download_lock(path: &Path) -> Result<Vec<LockedToolDownload>, ConfigError> {

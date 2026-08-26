@@ -1,4 +1,4 @@
-/// Shared agent mount definitions used by both the config editor TUI and
+/// Shared agent home mount definitions used by both the config editor TUI and
 /// the `ags install --add-agent-mounts` command.
 use crate::config::MountKind;
 

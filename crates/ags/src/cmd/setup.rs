@@ -3,6 +3,7 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::process::Command;
 
+use crate::cli::Agent;
 use crate::config::ValidatedConfig;
 
 /// Run the setup command: generate SSH keys, ensure Pi assets on mounted host path,
@@ -44,13 +45,19 @@ pub fn run(config: &ValidatedConfig) -> Result<(), SetupError> {
         );
     }
 
+    let start_agent = config
+        .sandbox
+        .enabled_agents
+        .first()
+        .copied()
+        .unwrap_or(Agent::Shell);
     println!(
         "\nSetup complete.\n\n\
          Next steps:\n\
          1) Add auth key as GitHub SSH key.\n\
          2) Add signing key as GitHub SSH signing key.\n\
          3) Run: ags doctor\n\
-         4) Start: ags --agent pi"
+         4) Start: ags --agent {start_agent}"
     );
     Ok(())
 }
@@ -79,6 +86,9 @@ impl From<io::Error> for SetupError {
 }
 
 fn ensure_pi_assets(config: &ValidatedConfig) -> Result<(), SetupError> {
+    if !config.sandbox.is_agent_enabled(Agent::Pi) {
+        return Ok(());
+    }
     let Some(pi_host) = config.mount_host_for_container("/home/dev/.pi") else {
         eprintln!(
             "warning: no mount found for /home/dev/.pi; cannot install Pi guard/settings assets"
@@ -100,6 +110,9 @@ fn ensure_pi_assets(config: &ValidatedConfig) -> Result<(), SetupError> {
 }
 
 fn ensure_claude_assets(config: &ValidatedConfig) {
+    if !config.sandbox.is_agent_enabled(Agent::Claude) {
+        return;
+    }
     let hooks_dir = config.sandbox.cache_dir.join("ags-hooks");
     if let Err(e) = crate::assets::ensure_claude_guard_hook(&hooks_dir) {
         eprintln!("warning: could not write Claude guard hook: {e}");
