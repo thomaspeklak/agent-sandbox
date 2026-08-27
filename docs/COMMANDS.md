@@ -216,14 +216,14 @@ ags update-agents
 - Pi package (`pi_spec`), removing the legacy Pi package first to avoid stale `pi` binaries
 - Codex standalone release (using the official `chatgpt.com/codex/install.sh` installer)
 - Gemini (`@google/gemini-cli`)
-- OpenCode (official GitHub Release binary via a pinned installer revision)
+- OpenCode: selects a mature stable `vMAJOR.MINOR.PATCH` GitHub Release, downloads the upstream installer from a pinned revision, verifies its SHA-256, installs that exact version in persistent storage, and exposes it as `/usr/local/pnpm/opencode`
 - Claude install/update in dedicated volume
 
 Settings come from `[update]` in config.
 
 Security hardening and runtime hygiene:
 
-- pnpm installs run with `ignore-scripts=true`. OpenCode does not use pnpm: AGS selects a mature stable GitHub Release, verifies the pinned installer source hash, installs its binary in persistent storage, and verifies `opencode --version`.
+- pnpm installs run with `ignore-scripts=true`. OpenCode does not use pnpm: after source-hash verification, AGS runs the upstream installer with `HOME=/usr/local/pnpm`, `--version <selected-tag>`, and `--no-modify-path`; it validates the installed binary before updating the `/usr/local/pnpm/opencode` symlink. The former `opencode-ai` package is removed only as migration cleanup.
 - `minimum_release_age` applies to pnpm package selection and to OpenCode, `br`, and `dcg` GitHub Release selection.
 - Codex releases are stored in a dedicated persistent `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
 - pnpm uses a stable store under `/usr/local/pnpm/.store`.
