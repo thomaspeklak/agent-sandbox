@@ -3,8 +3,12 @@ use std::fs;
 use std::process::Command;
 
 use crate::cli::Agent;
-use crate::config::{DEFAULT_PI_SPEC, LEGACY_PI_SPECS, ValidatedConfig};
+use crate::config::ValidatedConfig;
 use crate::util::shell_quote;
+
+#[path = "update_agents_script.rs"]
+mod script;
+use script::{build_install_script, resolve_pi_spec};
 
 /// Options for the update-agents command.
 #[derive(Default)]
@@ -96,11 +100,22 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
 
     println!("\nDone. Agent CLI volumes reconciled.");
     if let Some(agent) = enabled_agents.first() {
-        println!("Verify with: ags --agent {} -- --version", agent.as_str());
+        println!(
+            "Verify with: {}",
+            verification_command(*agent, &config.config_file)
+        );
     } else {
         println!("No agent CLIs are enabled; `ags --agent shell` remains available.");
     }
     Ok(())
+}
+
+fn verification_command(agent: Agent, config_file: &std::path::Path) -> String {
+    format!(
+        "ags --agent {} --config {} -- --version",
+        agent.as_str(),
+        shell_quote(&config_file.display().to_string())
+    )
 }
 
 fn agent_list(agents: &[Agent]) -> Option<String> {
@@ -142,154 +157,17 @@ fn build_podman_run_args(
     ]
 }
 
-fn resolve_pi_spec(spec: &str) -> &str {
-    if LEGACY_PI_SPECS.contains(&spec) {
-        DEFAULT_PI_SPEC
-    } else {
-        spec
-    }
-}
-
-fn pnpm_package_name(spec: &str) -> &str {
-    let version_at = if spec.starts_with('@') {
-        spec.find('/')
-            .and_then(|slash| spec[slash + 1..].find('@').map(|index| slash + index + 1))
-    } else {
-        spec.find('@')
-    };
-    version_at.map_or(spec, |index| &spec[..index])
-}
-
-fn legacy_pi_cleanup_script() -> String {
-    LEGACY_PI_SPECS
-        .iter()
-        .map(|spec| format!("remove_legacy_pnpm_agent {} pi\n", shell_quote(spec)))
-        .collect()
-}
-
-fn build_install_script(pi_spec: &str, release_age: u32, enabled_agents: &[Agent]) -> String {
-    let pi_package = shell_quote(pnpm_package_name(pi_spec));
-    let pi_spec = shell_quote(pi_spec);
-    let legacy_pi_cleanup = legacy_pi_cleanup_script();
-    let pi_action = if enabled_agents.contains(&Agent::Pi) {
-        format!("{legacy_pi_cleanup}install_pnpm_agent pi {pi_spec}")
-    } else {
-        format!("{legacy_pi_cleanup}remove_pnpm_agent {pi_package} pi")
-    };
-    let codex_action = if enabled_agents.contains(&Agent::Codex) {
-        r#"remove_legacy_pnpm_agent @openai/codex codex
-echo '[ags] updating codex...' >&2
-curl -fsSL https://chatgpt.com/codex/install.sh -o /tmp/codex-install.sh
-CODEX_HOME=/opt/codex-home CODEX_INSTALL_DIR=/usr/local/pnpm CODEX_NON_INTERACTIVE=true sh /tmp/codex-install.sh
-[ -x /usr/local/pnpm/codex ]"#
-    } else {
-        r#"remove_legacy_pnpm_agent @openai/codex codex
-echo '[ags] removing codex...' >&2
-rm -f /usr/local/pnpm/codex
-rm -rf /opt/codex-home/* /opt/codex-home/.[!.]* /opt/codex-home/..?*"#
-    };
-    let gemini_action = if enabled_agents.contains(&Agent::Gemini) {
-        "install_pnpm_agent gemini @google/gemini-cli"
-    } else {
-        "remove_pnpm_agent @google/gemini-cli gemini"
-    };
-    let opencode_action = if enabled_agents.contains(&Agent::Opencode) {
-        r#"install_pnpm_agent opencode opencode-ai
-OPENCODE_LIST="$("$PNPM_BIN" list -g opencode-ai --depth=0 --parseable)"
-OPENCODE_PATHS="$(printf '%s\n' "$OPENCODE_LIST" | grep '/node_modules/opencode-ai$' || true)"
-OPENCODE_PATH_COUNT="$(printf '%s\n' "$OPENCODE_PATHS" | grep -c . || true)"
-if [ "$OPENCODE_PATH_COUNT" -ne 1 ]; then
-  echo "expected exactly one global opencode-ai package path, found $OPENCODE_PATH_COUNT" >&2
-  exit 1
-fi
-OPENCODE_ROOT="$OPENCODE_PATHS"
-[ -f "$OPENCODE_ROOT/postinstall.mjs" ]
-node "$OPENCODE_ROOT/postinstall.mjs"
-opencode --version >/dev/null"#
-    } else {
-        "remove_pnpm_agent opencode-ai opencode"
-    };
-    let claude_action = if enabled_agents.contains(&Agent::Claude) {
-        r#"CLAUDE_HOME=/opt/claude-home
-CLAUDE_BIN="$CLAUDE_HOME/.local/bin/claude"
-if [ -x "$CLAUDE_BIN" ]; then
-  HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH" "$CLAUDE_BIN" update || {
-    echo 'claude update failed; reinstalling via install.sh' >&2
-    export HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH"
-    curl -fsSL https://claude.ai/install.sh | bash
-  }
-else
-  export HOME="$CLAUDE_HOME" PATH="$CLAUDE_HOME/.local/bin:$PATH"
-  curl -fsSL https://claude.ai/install.sh | bash
-fi
-[ -x "$CLAUDE_BIN" ]
-rm -f /usr/local/pnpm/claude
-printf '%s\n' '#!/usr/bin/env bash' 'export PATH=/opt/claude-home/.local/bin:$PATH' 'exec /opt/claude-home/.local/bin/claude "$@"' > /usr/local/pnpm/claude
-chmod +x /usr/local/pnpm/claude"#
-    } else {
-        r#"echo '[ags] removing claude...' >&2
-rm -f /usr/local/pnpm/claude
-rm -rf /opt/claude-home/* /opt/claude-home/.[!.]* /opt/claude-home/..?*"#
-    };
-
-    // Always use the pnpm packaged in the sandbox image. `pnpm self-update` writes
-    // pnpm's own shims into PNPM_HOME; those shims can shadow `/usr/local/bin/pnpm`
-    // and drift to a different store layout than the global agent installs.
-    format!(
-        r#"set -e
-mkdir -p "$HOME/.config/pnpm" /usr/local/pnpm /opt/codex-home /opt/claude-home
-printf 'minimum-release-age=%s\nignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' '{release_age}' > "$HOME/.config/pnpm/rc"
-export PNPM_HOME=/usr/local/pnpm NPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store NPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:$PATH
-PNPM_BIN=/usr/local/bin/pnpm
-if ! [ -x "$PNPM_BIN" ] || ! "$PNPM_BIN" --version >/dev/null; then
-  echo "sandbox pnpm is unavailable; run 'ags update-image'" >&2
-  exit 1
-fi
-rm -f /usr/local/pnpm/pnpm /usr/local/pnpm/pn /usr/local/pnpm/pnpx /usr/local/pnpm/pnx /usr/local/pnpm/bin/pnpm /usr/local/pnpm/bin/pn /usr/local/pnpm/bin/pnpx /usr/local/pnpm/bin/pnx
-rm -f /home/dev/.npm-global/bin/pi /home/dev/.npm-global/bin/codex /home/dev/.npm-global/bin/gemini /home/dev/.npm-global/bin/opencode
-rm -rf /home/dev/.npm-global/lib/node_modules/@mariozechner/pi-coding-agent /home/dev/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent /home/dev/.npm-global/lib/node_modules/@openai/codex /home/dev/.npm-global/lib/node_modules/@google/gemini-cli /home/dev/.npm-global/lib/node_modules/opencode-ai
-install_pnpm_agent() {{
-  name="$1"; shift
-  echo "[ags] updating $name..." >&2
-  "$PNPM_BIN" add -g "$@" || return
-  command -v "$name" >/dev/null 2>&1 || return
-}}
-remove_pnpm_agent() {{
-  package="$1"
-  name="$2"
-  echo "[ags] removing $package..." >&2
-  package_paths="$("$PNPM_BIN" list -g "$package" --depth=0 --parseable)" || return
-  if printf '%s\n' "$package_paths" | grep -Fq "/node_modules/${{package}}"; then
-    "$PNPM_BIN" remove -g "$package" >/dev/null || return
-  fi
-  rm -f "/usr/local/pnpm/$name" "/usr/local/pnpm/bin/$name" || return
-  package_paths="$("$PNPM_BIN" list -g "$package" --depth=0 --parseable)" || return
-  if printf '%s\n' "$package_paths" | grep -Fq "/node_modules/${{package}}" || [ -e "/usr/local/pnpm/$name" ] || [ -e "/usr/local/pnpm/bin/$name" ]; then
-    echo "failed to remove $package runtime" >&2
-    return 1
-  fi
-}}
-remove_legacy_pnpm_agent() {{
-  remove_pnpm_agent "$@" || echo "warning: could not fully clean obsolete package $1" >&2
-}}
-{pi_action}
-{codex_action}
-{gemini_action}
-{opencode_action}
-{claude_action}
-"$PNPM_BIN" store prune
-"#,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::process::Command;
 
     use crate::cli::Agent;
     use crate::config::{DEFAULT_PI_SPEC, LEGACY_PI_SPECS};
 
-    use super::{build_install_script, build_podman_run_args, pnpm_package_name, resolve_pi_spec};
+    use super::{
+        build_install_script, build_podman_run_args, resolve_pi_spec, verification_command,
+    };
 
     fn all_agents_script(pi_spec: &str, release_age: u32) -> String {
         build_install_script(pi_spec, release_age, &Agent::INSTALLABLE)
@@ -335,12 +213,18 @@ mod tests {
 
         let cleanup_pos = script
             .find("remove_legacy_pnpm_agent '@mariozechner/pi-coding-agent' pi")
-            .expect("legacy Pi package should be removed before install");
+            .expect("legacy Pi package should be removed after install");
         let install_pos = script
             .find("install_pnpm_agent pi '@earendil-works/pi-coding-agent'")
             .expect("current Pi package should be installed");
-        assert!(cleanup_pos < install_pos);
-        assert!(script.contains("remove_legacy_pnpm_agent @openai/codex codex"));
+        assert!(install_pos < cleanup_pos);
+        let codex_install_pos = script
+            .find("CODEX_NON_INTERACTIVE=true sh /tmp/codex-install.sh")
+            .expect("Codex should be installed");
+        let codex_cleanup_pos = script
+            .find("remove_legacy_pnpm_agent @openai/codex codex")
+            .expect("legacy Codex package should be removed");
+        assert!(codex_install_pos < codex_cleanup_pos);
         assert!(script.contains("https://chatgpt.com/codex/install.sh"));
         assert!(script.contains("CODEX_HOME=/opt/codex-home"));
         assert!(script.contains("CODEX_INSTALL_DIR=/usr/local/pnpm"));
@@ -439,7 +323,47 @@ mod tests {
         let script = all_agents_script("@scope/pkg; echo bad", 1440);
 
         assert!(script.contains("install_pnpm_agent pi '@scope/pkg; echo bad'"));
-        assert_eq!(pnpm_package_name("@scope/pkg@1.2.3"), "@scope/pkg");
+    }
+
+    #[test]
+    fn pi_removal_discovers_installed_dependency_keys() {
+        let script = build_install_script(DEFAULT_PI_SPEC, 1440, &[Agent::Codex]);
+
+        assert!(script.contains("remove_pnpm_agents_for_bin pi"));
+        assert!(script.contains("list -g --depth=0 --json"));
+        assert!(script.contains("Object.entries(root.dependencies || {})"));
+        assert!(script.contains("path.join(dependency.path, \"package.json\")"));
+        assert!(script.contains("Object.prototype.hasOwnProperty.call(manifest.bin, command)"));
+        assert!(!script.contains("remove_pnpm_agent '@earendil-works/pi-coding-agent' pi"));
+    }
+
+    #[test]
+    fn legacy_cleanup_preserves_launchers_not_owned_by_the_old_package() {
+        let script = all_agents_script(DEFAULT_PI_SPEC, 1440);
+
+        assert!(script.contains("[ \"$status\" -eq 3 ] && return 0"));
+        assert!(script.contains("backup_unowned_launcher \"$root_launcher\" \"$package_path\""));
+        assert!(script.contains("cp -a \"$launcher\" \"$backup\""));
+        assert!(script.contains("restore_preserved_launcher \"$root_launcher\""));
+    }
+
+    #[test]
+    fn generated_reconciliation_script_has_valid_bash_syntax() {
+        let script = all_agents_script(DEFAULT_PI_SPEC, 1440);
+        let status = Command::new("bash")
+            .args(["-n", "-c", &script])
+            .status()
+            .unwrap();
+
+        assert!(status.success());
+    }
+
+    #[test]
+    fn verification_command_keeps_and_quotes_the_active_config() {
+        assert_eq!(
+            verification_command(Agent::Pi, Path::new("/tmp/owner's config.toml")),
+            "ags --agent pi --config '/tmp/owner'\\''s config.toml' -- --version"
+        );
     }
 
     #[test]

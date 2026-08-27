@@ -12,6 +12,9 @@ use super::doctor_util::{
 #[path = "doctor_secrets.rs"]
 mod doctor_secrets;
 use doctor_secrets::check_secrets;
+#[path = "doctor_agent_runtimes.rs"]
+mod doctor_agent_runtimes;
+use doctor_agent_runtimes::check_agent_runtimes;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DoctorSummary {
@@ -188,30 +191,6 @@ fn check_integrations(ck: &mut Checker, config: &ValidatedConfig) {
                 .is_none_or(|agent| config.sandbox.is_agent_enabled(agent))
     }) {
         check_mount(ck, mount);
-    }
-}
-
-fn check_agent_runtimes(ck: &mut Checker, config: &ValidatedConfig) {
-    ck.section("Agent CLIs");
-    let cache = &config.sandbox.cache_dir;
-    for agent in &config.sandbox.enabled_agents {
-        let binary = match agent {
-            Agent::Pi => cache.join("pnpm-home/bin/pi"),
-            Agent::Claude => cache.join("claude-install/.local/bin/claude"),
-            Agent::Codex => cache.join("pnpm-home/codex"),
-            Agent::Gemini => cache.join("pnpm-home/bin/gemini"),
-            Agent::Opencode => cache.join("pnpm-home/bin/opencode"),
-            Agent::Shell => continue,
-        };
-        check_file_exists(
-            ck,
-            &binary,
-            &format!("{} runtime", agent.display_name()),
-            false,
-        );
-    }
-    if config.sandbox.enabled_agents.is_empty() {
-        ck.ok("no agent CLIs enabled; shell remains available");
     }
 }
 

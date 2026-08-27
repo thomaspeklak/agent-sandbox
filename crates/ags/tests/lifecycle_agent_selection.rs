@@ -3,7 +3,7 @@ use std::process::Command;
 #[test]
 fn disabled_agent_is_rejected_before_launch_side_effects() {
     let dir = tempfile::tempdir().unwrap();
-    let config = dir.path().join("config.toml");
+    let config = dir.path().join("owner's config.toml");
     let containerfile = dir.path().join("Containerfile");
     std::fs::write(
         &config,
@@ -35,6 +35,18 @@ enabled_agents = []
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("agent 'pi' is disabled"), "got: {stderr}");
+    assert!(
+        stderr.contains(&config.display().to_string()),
+        "got: {stderr}"
+    );
+    assert!(
+        stderr.contains(&format!(
+            "ags update-agents --config {}",
+            ags::util::shell_quote(&config.display().to_string())
+        )),
+        "got: {stderr}"
+    );
+    assert!(!stderr.contains("`ags tools`"), "got: {stderr}");
     assert!(!containerfile.exists());
 }
 

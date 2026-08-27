@@ -24,15 +24,21 @@ pub fn load_package_file(path: &Path) -> Result<ToolCatalog, ToolConfigError> {
 }
 
 pub fn config_file_defines_tool_selection(path: &Path) -> Result<bool, ToolConfigError> {
+    config_file_defines_any(path, &["extra_dnf_packages", "tool_download_lock"])
+}
+
+pub fn config_file_defines_agent_selection(path: &Path) -> Result<bool, ToolConfigError> {
+    config_file_defines_any(path, &["enabled_agents"])
+}
+
+fn config_file_defines_any(path: &Path, keys: &[&str]) -> Result<bool, ToolConfigError> {
     let content = fs::read_to_string(path)?;
     let doc = content
         .parse::<DocumentMut>()
         .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
-    Ok(doc.get("sandbox").is_some_and(|sandbox| {
-        sandbox.get("extra_dnf_packages").is_some()
-            || sandbox.get("tool_download_lock").is_some()
-            || sandbox.get("enabled_agents").is_some()
-    }))
+    Ok(doc
+        .get("sandbox")
+        .is_some_and(|sandbox| keys.iter().any(|key| sandbox.get(*key).is_some())))
 }
 
 pub fn write_selected_tools(

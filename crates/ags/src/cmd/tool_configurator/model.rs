@@ -13,8 +13,9 @@ mod model_persistence;
 mod model_validation;
 
 pub use model_persistence::{
-    apply_selection_to_document, config_file_defines_tool_selection,
-    configured_packages_from_document, load_package_file, write_selected_tools,
+    apply_selection_to_document, config_file_defines_agent_selection,
+    config_file_defines_tool_selection, configured_packages_from_document, load_package_file,
+    write_selected_tools,
 };
 use model_validation::validate_catalog;
 

@@ -40,9 +40,12 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         Err(code) => return code,
     };
     if !config.sandbox.is_agent_enabled(opts.agent) {
+        let config_path = config.config_file.display().to_string();
         eprintln!(
-            "error: agent '{}' is disabled by [sandbox].enabled_agents; enable it with `ags tools` and run `ags update-agents`",
-            opts.agent
+            "error: agent '{}' is disabled by [sandbox].enabled_agents in {} or the active trusted repository config; enable it there, then run `ags update-agents --config {}`",
+            opts.agent,
+            config.config_file.display(),
+            crate::util::shell_quote(&config_path),
         );
         return ExitCode::from(2);
     }
