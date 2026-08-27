@@ -89,6 +89,9 @@ fn rejects_legacy_and_non_release_tags() {
                 false,
                 &[]
             ),
+            release("v01.2.3", Some("2026-08-20T13:00:00Z"), false, false, &[]),
+            release("v1.02.3", Some("2026-08-20T13:00:00Z"), false, false, &[]),
+            release("v1.2.03", Some("2026-08-20T13:00:00Z"), false, false, &[]),
             release("v1.2.2", Some("2026-08-20T13:00:00Z"), false, false, &[]),
         ])],
     )

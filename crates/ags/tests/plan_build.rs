@@ -378,6 +378,10 @@ fn env_has_required_inline_vars() {
     );
     let path = find_plan_env(&plan, "PATH").expect("PATH should be set");
     assert!(
+        path.contains("/opt/opencode-home/.opencode/bin"),
+        "shell sessions should resolve the standalone OpenCode binary"
+    );
+    assert!(
         path.find(":/usr/bin:").unwrap() < path.find(":/usr/local/pnpm:").unwrap(),
         "system pnpm should take precedence over stale pnpm shims in PNPM_HOME"
     );

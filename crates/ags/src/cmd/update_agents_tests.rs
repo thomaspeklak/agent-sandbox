@@ -117,9 +117,9 @@ fn opencode_binary_installer_uses_an_immutable_verified_source_and_mature_versio
     let remove_old_package_pos = script
         .find("remove_pnpm_agent opencode-ai")
         .expect("the old package should be removed before binary installation");
-    let cleanup_pos = script
-        .find("rm -rf /opt/opencode-home/.opencode")
-        .expect("the dedicated OpenCode installation should be cleared before replacement");
+    let stage_pos = script
+        .find("OPENCODE_STAGE_HOME=/opt/opencode-home/.opencode-stage")
+        .expect("OpenCode should install into a separate staging directory");
     let download_pos = script
         .find(OPENCODE_INSTALLER_URL)
         .expect("the official installer should be pinned to an immutable commit");
@@ -127,11 +127,28 @@ fn opencode_binary_installer_uses_an_immutable_verified_source_and_mature_versio
         .find(OPENCODE_INSTALLER_SHA256)
         .expect("the downloaded installer should be verified");
     let install_pos = script
-        .find("HOME=/opt/opencode-home bash \"$OPENCODE_INSTALLER\" --version v1.2.3 --no-modify-path")
-        .expect("the pinned installer should receive the resolved version without modifying shell files");
-    let binary_check_pos = script
-        .find("[ -x /opt/opencode-home/.opencode/bin/opencode ]")
-        .expect("the persistent OpenCode binary should be checked");
+        .find("HOME=\"$OPENCODE_STAGE_HOME\" bash \"$OPENCODE_INSTALLER\" --version v1.2.3 --no-modify-path")
+        .expect("the pinned installer should receive the resolved version in staging without modifying shell files");
+    let stage_validation_pos = script
+        .find("\"$OPENCODE_STAGE_PATH/bin/opencode\" --version >/dev/null")
+        .expect("the staged OpenCode binary should be checked before activation");
+    let backup_pos = script
+        .find("mv \"$OPENCODE_ACTIVE_PATH\" \"$OPENCODE_BACKUP_PATH\"")
+        .expect("the active OpenCode install should be backed up only after staging validates");
+    let activation_pos = script
+        .find("mv \"$OPENCODE_STAGE_PATH\" \"$OPENCODE_ACTIVE_PATH\"")
+        .expect("the validated staging directory should replace the active install");
+    let legacy_cleanup_pos = script
+        .find("rm -f /usr/local/pnpm/opencode")
+        .expect("the prior OpenCode location should be removed after migration succeeds");
+    assert!(
+        !script.contains("rm -rf /opt/opencode-home/.opencode"),
+        "the active OpenCode install must survive until staging validates"
+    );
+    assert!(
+        script.contains("trap cleanup_opencode_stage EXIT") && script.contains("trap - EXIT"),
+        "failed staged updates should clean temporary artifacts and restore the active install"
+    );
     assert!(
         !script.contains("ln -s .opencode/bin/opencode"),
         "OpenCode should not be exposed through the pnpm runtime volume"
@@ -146,12 +163,15 @@ fn opencode_binary_installer_uses_an_immutable_verified_source_and_mature_versio
     assert!(!script.contains("install_pnpm_agent opencode"));
     assert!(!script.contains("postinstall.mjs"));
     assert!(!script.contains("list -g opencode-ai"));
-    assert!(remove_old_package_pos < cleanup_pos);
-    assert!(cleanup_pos < download_pos);
+    assert!(remove_old_package_pos < stage_pos);
+    assert!(stage_pos < download_pos);
     assert!(download_pos < checksum_pos);
     assert!(checksum_pos < install_pos);
-    assert!(install_pos < binary_check_pos);
-    assert!(binary_check_pos < validation_pos);
+    assert!(install_pos < stage_validation_pos);
+    assert!(stage_validation_pos < backup_pos);
+    assert!(backup_pos < activation_pos);
+    assert!(activation_pos < validation_pos);
+    assert!(validation_pos < legacy_cleanup_pos);
 }
 
 #[test]

@@ -194,15 +194,36 @@ CODEX_HOME=/opt/codex-home CODEX_INSTALL_DIR=/usr/local/pnpm CODEX_NON_INTERACTI
 [ -x /usr/local/pnpm/codex ] && \
 install_pnpm_agent gemini @google/gemini-cli && \
 echo '[ags] updating opencode...' >&2 && \
-rm -f /usr/local/pnpm/opencode && \
-rm -rf {opencode_install_home}/.opencode && \
+OPENCODE_STAGE_HOME={opencode_install_home}/.opencode-stage && \
+OPENCODE_STAGE_PATH="$OPENCODE_STAGE_HOME/.opencode" && \
+OPENCODE_ACTIVE_PATH={opencode_install_home}/.opencode && \
+OPENCODE_BACKUP_PATH={opencode_install_home}/.opencode.previous && \
 OPENCODE_INSTALLER=/tmp/ags-opencode-install.sh && \
+if ! [ -e "$OPENCODE_ACTIVE_PATH" ] && [ -e "$OPENCODE_BACKUP_PATH" ]; then mv "$OPENCODE_BACKUP_PATH" "$OPENCODE_ACTIVE_PATH"; else rm -rf "$OPENCODE_BACKUP_PATH"; fi && \
+rm -rf "$OPENCODE_STAGE_HOME" && \
+mkdir -p "$OPENCODE_STAGE_HOME" && \
+cleanup_opencode_stage() {{ \
+  rm -f "$OPENCODE_INSTALLER"; \
+  rm -rf "$OPENCODE_STAGE_HOME"; \
+  if [ -e "$OPENCODE_BACKUP_PATH" ]; then \
+    rm -rf "$OPENCODE_ACTIVE_PATH"; \
+    mv "$OPENCODE_BACKUP_PATH" "$OPENCODE_ACTIVE_PATH"; \
+  fi; \
+}} && \
+trap cleanup_opencode_stage EXIT && \
 curl --proto '=https' --tlsv1.2 -fsSL '{opencode_installer_url}' -o "$OPENCODE_INSTALLER" && \
 printf '{opencode_installer_sha256}  %s\n' "$OPENCODE_INSTALLER" | sha256sum -c - && \
-HOME={opencode_install_home} bash "$OPENCODE_INSTALLER" --version {opencode_version} --no-modify-path && \
+HOME="$OPENCODE_STAGE_HOME" bash "$OPENCODE_INSTALLER" --version {opencode_version} --no-modify-path && \
 rm -f "$OPENCODE_INSTALLER" && \
-[ -x {opencode_binary_path} ] && \
+[ -x "$OPENCODE_STAGE_PATH/bin/opencode" ] && \
+"$OPENCODE_STAGE_PATH/bin/opencode" --version >/dev/null && \
+if [ -e "$OPENCODE_ACTIVE_PATH" ]; then mv "$OPENCODE_ACTIVE_PATH" "$OPENCODE_BACKUP_PATH"; fi && \
+mv "$OPENCODE_STAGE_PATH" "$OPENCODE_ACTIVE_PATH" && \
 {opencode_binary_path} --version >/dev/null && \
+rm -f /usr/local/pnpm/opencode && \
+rm -rf /usr/local/pnpm/.opencode && \
+rm -rf "$OPENCODE_BACKUP_PATH" "$OPENCODE_STAGE_HOME" && \
+trap - EXIT && \
 CLAUDE_HOME=/opt/claude-home && \
 CLAUDE_BIN="$CLAUDE_HOME/.local/bin/claude" && \
 if [ -x "$CLAUDE_BIN" ]; then \

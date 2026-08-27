@@ -214,7 +214,9 @@ fn is_version_tag(tag: &str) -> bool {
     let mut parts = version.split('.');
     let valid_component = |part: Option<&str>| {
         part.is_some_and(|value| {
-            !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+            value == "0"
+                || (matches!(value.as_bytes().first(), Some(b'1'..=b'9'))
+                    && value.bytes().all(|byte| byte.is_ascii_digit()))
         })
     };
 
