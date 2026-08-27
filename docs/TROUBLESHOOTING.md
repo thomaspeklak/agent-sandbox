@@ -320,7 +320,7 @@ ags update-image
 ags update-agents
 ```
 
-With pnpm 11, Pi and Gemini launchers are in `/usr/local/pnpm`. OpenCode is a `/usr/local/pnpm/opencode` symlink to its persistent binary installation. Codex uses its official standalone installer and remains at `/usr/local/pnpm/codex`. Runtime `pnpm` comes from the sandbox image at `/usr/local/bin/pnpm`, so stale persistent shims cannot shadow it. `update-agents` also removes old pnpm/npm-global Codex installs, the legacy `opencode-ai` package, and old npm-global agent shims from the sandbox cache.
+With pnpm 11, Pi and Gemini launchers are in `/usr/local/pnpm/bin`. OpenCode is installed outside pnpm at `/opt/opencode-home/.opencode/bin/opencode` in its dedicated persistent `opencode-install` volume. Codex uses its official standalone installer and remains at `/usr/local/pnpm/codex`. Runtime `pnpm` comes from the sandbox image at `/usr/local/bin/pnpm`, so stale persistent shims cannot shadow it. `update-agents` also removes old pnpm/npm-global Codex installs, the legacy `opencode-ai` package, and old npm-global agent shims from the sandbox cache.
 
 ---
 

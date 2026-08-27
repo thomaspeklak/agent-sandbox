@@ -45,6 +45,10 @@ host = "{base}/codex"
 container = "/home/dev/.codex"
 
 [[agent_mount]]
+host = "{base}/opencode"
+container = "/home/dev/.config/opencode"
+
+[[agent_mount]]
 host = "{base}/claude"
 container = "/home/dev/.claude"
 
@@ -69,6 +73,7 @@ fn setup_base_dirs(base: &Path) {
     fs::create_dir_all(base.join("pi/history")).unwrap();
     fs::create_dir_all(base.join("pi/prompts")).unwrap();
     fs::create_dir_all(base.join("codex")).unwrap();
+    fs::create_dir_all(base.join("opencode")).unwrap();
     fs::create_dir_all(base.join("claude/agents")).unwrap();
     fs::create_dir_all(base.join("claude/sessions")).unwrap();
     write_file(&base.join("claude.json"), "{}\n");
@@ -84,6 +89,10 @@ fn setup_base_dirs(base: &Path) {
     write_file(&base.join("codex/config.toml"), "model='x'\n");
     write_file(&base.join("cache/pnpm-home/pi"), "#!/usr/bin/env bash\n");
     write_file(&base.join("cache/pnpm-home/codex"), "#!/usr/bin/env bash\n");
+    write_file(
+        &base.join("cache/opencode-install/.opencode/bin/opencode"),
+        "#!/usr/bin/env bash\n",
+    );
     write_file(
         &base.join("cache/claude-install/.local/bin/claude"),
         "#!/usr/bin/env bash\n",
@@ -291,6 +300,33 @@ fn prepare_stages_selected_agent_only_and_discards_history() {
     assert!(
         !staged_runtime.exists(),
         "staged lockdown runtime should be deleted"
+    );
+}
+
+#[test]
+fn prepare_stages_opencode_runtime_from_its_dedicated_volume() {
+    let temp = tempfile::tempdir().unwrap();
+    setup_base_dirs(temp.path());
+    let config = parse_toml_str(
+        &config_toml(temp.path(), false),
+        Path::new("/test/config.toml"),
+    )
+    .unwrap();
+
+    let session = prepare(Agent::Opencode, &config, true).expect("lockdown staging should succeed");
+    let staged_runtime = session
+        .extra_mounts
+        .iter()
+        .find(|m| m.container == "/opt/opencode-home")
+        .map(|m| m.host.clone())
+        .expect("staged OpenCode runtime");
+
+    assert!(staged_runtime.join(".opencode/bin/opencode").exists());
+    assert!(
+        !session
+            .extra_mounts
+            .iter()
+            .any(|m| m.container == "/usr/local/pnpm")
     );
 }
 

@@ -228,6 +228,7 @@ fn cache_mounts_created() {
     let cache_containers: Vec<&str> = vec![
         "/usr/local/pnpm",
         "/opt/claude-home",
+        "/opt/opencode-home",
         "/home/dev/.cargo",
         "/home/dev/go",
         "/home/dev/.cache/go-build",
@@ -1162,7 +1163,7 @@ fn opencode_agent_has_sandbox_mount() {
 
     assert!(
         plan.entrypoint
-            .contains("exec /usr/local/pnpm/bin/opencode"),
+            .contains("exec /opt/opencode-home/.opencode/bin/opencode"),
         "opencode entrypoint: {}",
         plan.entrypoint
     );

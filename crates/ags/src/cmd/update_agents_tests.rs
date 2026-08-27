@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::agent::OPENCODE_BINARY_PATH;
 use crate::config::{DEFAULT_PI_SPEC, LEGACY_PI_SPECS};
 
 use super::{
@@ -20,6 +21,7 @@ fn podman_run_args_disable_selinux_relabeling() {
         "localhost/agent-sandbox:latest",
         Path::new("/tmp/pnpm-home"),
         Path::new("/tmp/codex-home"),
+        Path::new("/tmp/opencode-home"),
         Path::new("/tmp/claude-home"),
         Path::new("/tmp/npm-global"),
         "echo ok",
@@ -33,6 +35,10 @@ fn podman_run_args_disable_selinux_relabeling() {
     assert!(
         args.windows(2)
             .any(|w| w[0] == "-v" && w[1] == "/tmp/codex-home:/opt/codex-home:rw")
+    );
+    assert!(
+        args.windows(2)
+            .any(|w| { w[0] == "-v" && w[1] == "/tmp/opencode-home:/opt/opencode-home:rw" })
     );
     assert!(
         args.windows(2)
@@ -112,8 +118,8 @@ fn opencode_binary_installer_uses_an_immutable_verified_source_and_mature_versio
         .find("remove_pnpm_agent opencode-ai")
         .expect("the old package should be removed before binary installation");
     let cleanup_pos = script
-        .find("rm -rf /usr/local/pnpm/.opencode")
-        .expect("the persistent OpenCode installation should be cleared before replacement");
+        .find("rm -rf /opt/opencode-home/.opencode")
+        .expect("the dedicated OpenCode installation should be cleared before replacement");
     let download_pos = script
         .find(OPENCODE_INSTALLER_URL)
         .expect("the official installer should be pinned to an immutable commit");
@@ -121,17 +127,18 @@ fn opencode_binary_installer_uses_an_immutable_verified_source_and_mature_versio
         .find(OPENCODE_INSTALLER_SHA256)
         .expect("the downloaded installer should be verified");
     let install_pos = script
-        .find("HOME=/usr/local/pnpm bash \"$OPENCODE_INSTALLER\" --version v1.2.3 --no-modify-path")
+        .find("HOME=/opt/opencode-home bash \"$OPENCODE_INSTALLER\" --version v1.2.3 --no-modify-path")
         .expect("the pinned installer should receive the resolved version without modifying shell files");
     let binary_check_pos = script
-        .find("[ -x /usr/local/pnpm/.opencode/bin/opencode ]")
+        .find("[ -x /opt/opencode-home/.opencode/bin/opencode ]")
         .expect("the persistent OpenCode binary should be checked");
-    let link_pos = script
-        .find("ln -s .opencode/bin/opencode /usr/local/pnpm/opencode")
-        .expect("the runtime PATH should receive the persistent OpenCode symlink");
+    assert!(
+        !script.contains("ln -s .opencode/bin/opencode"),
+        "OpenCode should not be exposed through the pnpm runtime volume"
+    );
     let validation_pos = script
-        .find("opencode --version >/dev/null")
-        .expect("the installed OpenCode binary should execute");
+        .find(&format!("{OPENCODE_BINARY_PATH} --version >/dev/null"))
+        .expect("the installed OpenCode runtime command should execute directly");
 
     assert!(script.contains("curl --proto '=https' --tlsv1.2 -fsSL"));
     assert!(script.contains("sha256sum -c -"));
@@ -144,8 +151,7 @@ fn opencode_binary_installer_uses_an_immutable_verified_source_and_mature_versio
     assert!(download_pos < checksum_pos);
     assert!(checksum_pos < install_pos);
     assert!(install_pos < binary_check_pos);
-    assert!(binary_check_pos < link_pos);
-    assert!(link_pos < validation_pos);
+    assert!(binary_check_pos < validation_pos);
 }
 
 #[test]

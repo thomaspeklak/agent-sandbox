@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::BROWSER_HOST_LOOPBACK;
-use crate::agent::{self, AgentProfile};
+use crate::agent::{self, AgentProfile, OPENCODE_INSTALL_HOME};
 use crate::auth_proxy::host::AuthProxyGuard;
 use crate::cli::Agent;
 use crate::clipboard::ClipboardGuard;
@@ -86,6 +86,7 @@ struct BuildEnvContext<'a> {
 const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
     ("pnpm-home", "/usr/local/pnpm", "PNPM_HOME"),
     ("codex-install", "/opt/codex-home", ""),
+    ("opencode-install", OPENCODE_INSTALL_HOME, ""),
     ("claude-install", "/opt/claude-home", ""),
     ("cargo-home", "/home/dev/.cargo", "CARGO_HOME"),
     ("go-path", "/home/dev/go", "GOPATH"),

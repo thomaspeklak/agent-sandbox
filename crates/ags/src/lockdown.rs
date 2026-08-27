@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
+use crate::agent::OPENCODE_INSTALL_HOME;
 use crate::assets;
 use crate::cli::{Agent, RunOptions};
 use crate::config::{MountMode, ValidatedConfig};
@@ -147,9 +148,13 @@ fn stage_agent_runtime(
     extra_mounts: &mut Vec<PlanMount>,
 ) -> Result<(), LockdownError> {
     match agent {
-        Agent::Pi | Agent::Gemini | Agent::Opencode => {
+        Agent::Pi | Agent::Gemini => {
             let src = config.sandbox.cache_dir.join("pnpm-home");
             stage_runtime_mount(&src, PNPM_RUNTIME_CONTAINER, stage_root, extra_mounts)?;
+        }
+        Agent::Opencode => {
+            let src = config.sandbox.cache_dir.join("opencode-install");
+            stage_runtime_mount(&src, OPENCODE_INSTALL_HOME, stage_root, extra_mounts)?;
         }
         Agent::Codex => {
             let pnpm_src = config.sandbox.cache_dir.join("pnpm-home");

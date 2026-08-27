@@ -152,13 +152,13 @@ RUN set -eu; \
     rm -f "$lock" "$entries"
 
 RUN useradd -m -u 1000 -s /bin/bash dev && \
-    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/ags && \
+    mkdir -p /workspace /home/dev/.local/bin /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/opencode-home /opt/ags && \
     printf 'ignore-scripts=true\n' > /etc/npmrc && \
     printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
     printf 'ignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' > /home/dev/.config/pnpm/rc && \
     printf '#!/bin/sh\nif command -v sccache >/dev/null 2>&1; then exec sccache "$@"; fi\nexec "$@"\n' > /opt/ags/rustc-wrapper && \
     chmod 0755 /opt/ags/rustc-wrapper && \
-    chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home
+    chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home /opt/opencode-home
 
 COPY --from=tooling-builder /usr/local/rustup/ /usr/local/rustup/
 COPY --from=tooling-builder /usr/local/cargo/ /usr/local/cargo/

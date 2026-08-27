@@ -2,6 +2,7 @@ use std::fmt;
 use std::fs;
 use std::process::Command;
 
+use crate::agent::{OPENCODE_BINARY_PATH, OPENCODE_INSTALL_HOME};
 use crate::config::{DEFAULT_PI_SPEC, LEGACY_PI_SPECS, ValidatedConfig};
 use crate::github_release::resolve_latest_mature_release;
 use crate::util::shell_quote;
@@ -47,10 +48,17 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
 
     let pnpm_home = cache_dir.join("pnpm-home");
     let codex_install = cache_dir.join("codex-install");
+    let opencode_install = cache_dir.join("opencode-install");
     let claude_install = cache_dir.join("claude-install");
     let npm_global = cache_dir.join("npm-global");
 
-    for dir in [&pnpm_home, &codex_install, &claude_install, &npm_global] {
+    for dir in [
+        &pnpm_home,
+        &codex_install,
+        &opencode_install,
+        &claude_install,
+        &npm_global,
+    ] {
         fs::create_dir_all(dir)
             .map_err(|e| UpdateAgentsError::HostDirCreate(format!("{}: {e}", dir.display())))?;
     }
@@ -79,6 +87,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
             image,
             &pnpm_home,
             &codex_install,
+            &opencode_install,
             &claude_install,
             &npm_global,
             &script,
@@ -101,6 +110,7 @@ fn build_podman_run_args(
     image: &str,
     pnpm_home: &std::path::Path,
     codex_install: &std::path::Path,
+    opencode_install: &std::path::Path,
     claude_install: &std::path::Path,
     npm_global: &std::path::Path,
     script: &str,
@@ -115,6 +125,8 @@ fn build_podman_run_args(
         format!("{}:/usr/local/pnpm:rw", pnpm_home.display()),
         "-v".to_owned(),
         format!("{}:/opt/codex-home:rw", codex_install.display()),
+        "-v".to_owned(),
+        format!("{}:{OPENCODE_INSTALL_HOME}:rw", opencode_install.display()),
         "-v".to_owned(),
         format!("{}:/opt/claude-home:rw", claude_install.display()),
         "-v".to_owned(),
@@ -151,7 +163,7 @@ fn build_install_script(pi_spec: &str, release_age: u32, opencode_version: &str)
     // and drift to a different store layout than the global agent installs.
     format!(
         r#"set -e && \
-mkdir -p "$HOME/.config/pnpm" /usr/local/pnpm && \
+mkdir -p "$HOME/.config/pnpm" /usr/local/pnpm {opencode_install_home} && \
 printf 'minimum-release-age=%s\nignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' '{release_age}' > "$HOME/.config/pnpm/rc" && \
 export PNPM_HOME=/usr/local/pnpm NPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store NPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:$PATH && \
 PNPM_BIN=/usr/local/bin/pnpm && \
@@ -183,15 +195,14 @@ CODEX_HOME=/opt/codex-home CODEX_INSTALL_DIR=/usr/local/pnpm CODEX_NON_INTERACTI
 install_pnpm_agent gemini @google/gemini-cli && \
 echo '[ags] updating opencode...' >&2 && \
 rm -f /usr/local/pnpm/opencode && \
-rm -rf /usr/local/pnpm/.opencode && \
+rm -rf {opencode_install_home}/.opencode && \
 OPENCODE_INSTALLER=/tmp/ags-opencode-install.sh && \
 curl --proto '=https' --tlsv1.2 -fsSL '{opencode_installer_url}' -o "$OPENCODE_INSTALLER" && \
 printf '{opencode_installer_sha256}  %s\n' "$OPENCODE_INSTALLER" | sha256sum -c - && \
-HOME=/usr/local/pnpm bash "$OPENCODE_INSTALLER" --version {opencode_version} --no-modify-path && \
+HOME={opencode_install_home} bash "$OPENCODE_INSTALLER" --version {opencode_version} --no-modify-path && \
 rm -f "$OPENCODE_INSTALLER" && \
-[ -x /usr/local/pnpm/.opencode/bin/opencode ] && \
-ln -s .opencode/bin/opencode /usr/local/pnpm/opencode && \
-opencode --version >/dev/null && \
+[ -x {opencode_binary_path} ] && \
+{opencode_binary_path} --version >/dev/null && \
 CLAUDE_HOME=/opt/claude-home && \
 CLAUDE_BIN="$CLAUDE_HOME/.local/bin/claude" && \
 if [ -x "$CLAUDE_BIN" ]; then \
@@ -211,6 +222,8 @@ chmod +x /usr/local/pnpm/claude"#,
         legacy_pi_cleanup = legacy_pi_cleanup,
         pi_spec = pi_spec,
         opencode_version = opencode_version,
+        opencode_install_home = OPENCODE_INSTALL_HOME,
+        opencode_binary_path = OPENCODE_BINARY_PATH,
         opencode_installer_url = OPENCODE_INSTALLER_URL,
         opencode_installer_sha256 = OPENCODE_INSTALLER_SHA256,
     )
