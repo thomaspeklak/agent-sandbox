@@ -3,7 +3,14 @@ use std::fs;
 use std::process::Command;
 
 use crate::config::{DEFAULT_PI_SPEC, LEGACY_PI_SPECS, ValidatedConfig};
+use crate::github_release::resolve_latest_mature_release;
 use crate::util::shell_quote;
+
+const OPENCODE_REPO: &str = "anomalyco/opencode";
+// Keep the immutable source revision and content hash together when deliberately updating it.
+const OPENCODE_INSTALLER_URL: &str = "https://raw.githubusercontent.com/anomalyco/opencode/5f5ea53afb2630227ead917f1a0ddf784c33150c/install";
+const OPENCODE_INSTALLER_SHA256: &str =
+    "fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e";
 
 /// Options for the update-agents command.
 #[derive(Default)]
@@ -15,6 +22,7 @@ pub struct UpdateAgentsOptions {
 #[derive(Debug)]
 pub enum UpdateAgentsError {
     HostDirCreate(String),
+    ReleaseResolveFailed(String),
     InstallFailed(String),
 }
 
@@ -22,6 +30,9 @@ impl fmt::Display for UpdateAgentsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::HostDirCreate(msg) => write!(f, "failed to create host directory: {msg}"),
+            Self::ReleaseResolveFailed(msg) => {
+                write!(f, "failed to resolve mature OpenCode release: {msg}")
+            }
             Self::InstallFailed(msg) => write!(f, "agent install failed: {msg}"),
         }
     }
@@ -39,7 +50,6 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     let claude_install = cache_dir.join("claude-install");
     let npm_global = cache_dir.join("npm-global");
 
-    // 1. Ensure host dirs exist
     for dir in [&pnpm_home, &codex_install, &claude_install, &npm_global] {
         fs::create_dir_all(dir)
             .map_err(|e| UpdateAgentsError::HostDirCreate(format!("{}: {e}", dir.display())))?;
@@ -50,18 +60,19 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     let release_age = opts
         .minimum_release_age
         .unwrap_or(config.update.minimum_release_age);
+    let opencode_release = resolve_latest_mature_release(OPENCODE_REPO, release_age, &[])
+        .map_err(|error| UpdateAgentsError::ReleaseResolveFailed(error.to_string()))?;
 
-    // 2. Build the install script
-    let script = build_install_script(pi_spec, release_age);
+    let script = build_install_script(pi_spec, release_age, &opencode_release.tag_name);
 
-    // 3. Run throwaway container
     println!("Installing/updating agents in volumes...");
     if pi_spec == configured_pi_spec {
         println!("  PI spec: {pi_spec}");
     } else {
         println!("  PI spec: {pi_spec} (migrated from legacy {configured_pi_spec})");
     }
-    println!("  pnpm minimum-release-age: {release_age}");
+    println!("  minimum release age: {release_age} minutes");
+    println!("  OpenCode release: {}", opencode_release.tag_name);
 
     let status = Command::new("podman")
         .args(build_podman_run_args(
@@ -130,8 +141,9 @@ fn legacy_pi_cleanup_script() -> String {
         .collect()
 }
 
-fn build_install_script(pi_spec: &str, release_age: u32) -> String {
+fn build_install_script(pi_spec: &str, release_age: u32, opencode_version: &str) -> String {
     let pi_spec = shell_quote(pi_spec);
+    let opencode_version = shell_quote(opencode_version);
     let legacy_pi_cleanup = legacy_pi_cleanup_script();
 
     // Always use the pnpm packaged in the sandbox image. `pnpm self-update` writes
@@ -158,27 +170,27 @@ install_pnpm_agent() {{ \
 }} && \
 remove_pnpm_agent() {{ \
   package="$1"; \
-  echo "[ags] removing legacy $package..." >&2; \
+  echo "[ags] removing old $package..." >&2; \
   "$PNPM_BIN" remove -g "$package" >/dev/null 2>&1 || true; \
 }} && \
-{legacy_pi_cleanup}install_pnpm_agent pi {pi_spec} && \
+{legacy_pi_cleanup}remove_pnpm_agent opencode-ai && \
+install_pnpm_agent pi {pi_spec} && \
 remove_pnpm_agent @openai/codex && \
 echo '[ags] updating codex...' >&2 && \
 curl -fsSL https://chatgpt.com/codex/install.sh -o /tmp/codex-install.sh && \
 CODEX_HOME=/opt/codex-home CODEX_INSTALL_DIR=/usr/local/pnpm CODEX_NON_INTERACTIVE=true sh /tmp/codex-install.sh && \
 [ -x /usr/local/pnpm/codex ] && \
 install_pnpm_agent gemini @google/gemini-cli && \
-install_pnpm_agent opencode opencode-ai && \
-OPENCODE_LIST="$("$PNPM_BIN" list -g opencode-ai --depth=0 --parseable)" && \
-OPENCODE_PATHS="$(printf '%s\n' "$OPENCODE_LIST" | grep '/node_modules/opencode-ai$' || true)" && \
-OPENCODE_PATH_COUNT="$(printf '%s\n' "$OPENCODE_PATHS" | grep -c . || true)" && \
-if [ "$OPENCODE_PATH_COUNT" -ne 1 ]; then \
-  echo "expected exactly one global opencode-ai package path, found $OPENCODE_PATH_COUNT" >&2; \
-  exit 1; \
-fi && \
-OPENCODE_ROOT="$OPENCODE_PATHS" && \
-[ -f "$OPENCODE_ROOT/postinstall.mjs" ] && \
-node "$OPENCODE_ROOT/postinstall.mjs" && \
+echo '[ags] updating opencode...' >&2 && \
+rm -f /usr/local/pnpm/opencode && \
+rm -rf /usr/local/pnpm/.opencode && \
+OPENCODE_INSTALLER=/tmp/ags-opencode-install.sh && \
+curl --proto '=https' --tlsv1.2 -fsSL '{opencode_installer_url}' -o "$OPENCODE_INSTALLER" && \
+printf '{opencode_installer_sha256}  %s\n' "$OPENCODE_INSTALLER" | sha256sum -c - && \
+HOME=/usr/local/pnpm bash "$OPENCODE_INSTALLER" --version {opencode_version} --no-modify-path && \
+rm -f "$OPENCODE_INSTALLER" && \
+[ -x /usr/local/pnpm/.opencode/bin/opencode ] && \
+ln -s .opencode/bin/opencode /usr/local/pnpm/opencode && \
 opencode --version >/dev/null && \
 CLAUDE_HOME=/opt/claude-home && \
 CLAUDE_BIN="$CLAUDE_HOME/.local/bin/claude" && \
@@ -198,190 +210,12 @@ chmod +x /usr/local/pnpm/claude"#,
         release_age = release_age,
         legacy_pi_cleanup = legacy_pi_cleanup,
         pi_spec = pi_spec,
+        opencode_version = opencode_version,
+        opencode_installer_url = OPENCODE_INSTALLER_URL,
+        opencode_installer_sha256 = OPENCODE_INSTALLER_SHA256,
     )
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use crate::config::{DEFAULT_PI_SPEC, LEGACY_PI_SPECS};
-
-    use super::{build_install_script, build_podman_run_args, resolve_pi_spec};
-
-    #[test]
-    fn podman_run_args_disable_selinux_relabeling() {
-        let args = build_podman_run_args(
-            "localhost/agent-sandbox:latest",
-            Path::new("/tmp/pnpm-home"),
-            Path::new("/tmp/codex-home"),
-            Path::new("/tmp/claude-home"),
-            Path::new("/tmp/npm-global"),
-            "echo ok",
-        );
-
-        assert!(args.contains(&"--security-opt=label=disable".to_owned()));
-        assert!(
-            args.windows(2)
-                .any(|w| w[0] == "-v" && w[1] == "/tmp/pnpm-home:/usr/local/pnpm:rw")
-        );
-        assert!(
-            args.windows(2)
-                .any(|w| w[0] == "-v" && w[1] == "/tmp/codex-home:/opt/codex-home:rw")
-        );
-        assert!(
-            args.windows(2)
-                .any(|w| w[0] == "-v" && w[1] == "/tmp/claude-home:/opt/claude-home:rw")
-        );
-        assert!(
-            args.windows(2)
-                .any(|w| w[0] == "-v" && w[1] == "/tmp/npm-global:/home/dev/.npm-global:rw")
-        );
-        assert!(
-            !args.iter().any(|arg| arg.contains(":rw,z")),
-            "update-agents should not relabel mounted cache dirs"
-        );
-    }
-
-    #[test]
-    fn pnpm_agent_updates_do_not_fall_back_to_stale_pi() {
-        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
-
-        let cleanup_pos = script
-            .find("remove_pnpm_agent '@mariozechner/pi-coding-agent'")
-            .expect("legacy Pi package should be removed before install");
-        let install_pos = script
-            .find("install_pnpm_agent pi '@earendil-works/pi-coding-agent'")
-            .expect("current Pi package should be installed");
-        assert!(cleanup_pos < install_pos);
-        assert!(script.contains("remove_pnpm_agent @openai/codex"));
-        assert!(script.contains("https://chatgpt.com/codex/install.sh"));
-        assert!(script.contains("CODEX_HOME=/opt/codex-home"));
-        assert!(script.contains("CODEX_INSTALL_DIR=/usr/local/pnpm"));
-        assert!(script.contains("CODEX_NON_INTERACTIVE=true"));
-        assert!(script.contains("install_pnpm_agent gemini @google/gemini-cli"));
-        assert!(script.contains("install_pnpm_agent opencode opencode-ai"));
-        assert!(script.contains("\"$PNPM_BIN\" add -g \"$@\" || return"));
-        assert!(script.contains("PNPM_BIN=/usr/local/bin/pnpm"));
-        let preflight_pos = script
-            .find("\"$PNPM_BIN\" --version >/dev/null")
-            .expect("image pnpm should be executed before package updates");
-        assert!(preflight_pos < cleanup_pos);
-        assert!(preflight_pos < script.find("rm -f /usr/local/pnpm/pnpm").unwrap());
-        assert!(script.contains("run 'ags update-image'"));
-        assert!(
-            !script.contains("using existing installs"),
-            "pnpm update failures must not be masked by an existing stale pi binary"
-        );
-    }
-
-    #[test]
-    fn pnpm_update_uses_stable_store_and_ignores_stale_self_update_shims() {
-        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
-
-        assert!(script.contains("store-dir=/usr/local/pnpm/.store"));
-        assert!(script.contains("global-bin-dir=/usr/local/pnpm"));
-        assert!(script.contains("NPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store"));
-        assert!(script.contains("NPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm"));
-        assert!(script.contains("rm -f /usr/local/pnpm/pnpm"));
-        assert!(script.contains("/usr/local/pnpm/bin/pnpm"));
-        assert!(script.contains("rm -f /home/dev/.npm-global/bin/pi"));
-        assert!(
-            script.contains("/home/dev/.npm-global/lib/node_modules/@mariozechner/pi-coding-agent"),
-            "legacy npm-global Pi package should be cleaned up"
-        );
-        assert!(
-            script.contains("install_pnpm_agent pi '@earendil-works/pi-coding-agent'"),
-            "current Pi package should still be installed"
-        );
-        assert!(
-            !script.contains("pnpm self-update"),
-            "update-agents should not install pnpm into the agent runtime volume"
-        );
-    }
-
-    #[test]
-    fn opencode_postinstall_resolves_isolated_global_package_before_runtime_validation() {
-        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
-
-        let install_pos = script
-            .find("install_pnpm_agent opencode opencode-ai")
-            .expect("OpenCode should be installed by pnpm");
-        let root_pos = script
-            .find("\"$PNPM_BIN\" list -g opencode-ai --depth=0 --parseable")
-            .expect("pnpm should report the isolated OpenCode package directory");
-        let count_pos = script
-            .find("OPENCODE_PATH_COUNT=")
-            .expect("matching OpenCode package directories should be counted");
-        let unique_path_pos = script
-            .find("[ \"$OPENCODE_PATH_COUNT\" -ne 1 ]")
-            .expect("OpenCode should require exactly one package directory");
-        let diagnostic_pos = script
-            .find("expected exactly one global opencode-ai package path")
-            .expect("invalid package path counts should produce a diagnostic");
-        let postinstall_check_pos = script
-            .find("[ -f \"$OPENCODE_ROOT/postinstall.mjs\" ]")
-            .expect("the resolved OpenCode postinstall script should exist");
-        let postinstall_pos = script
-            .find("node \"$OPENCODE_ROOT/postinstall.mjs\"")
-            .expect("OpenCode's required postinstall script should run explicitly");
-        let validation_pos = script
-            .find("opencode --version >/dev/null")
-            .expect("the installed OpenCode binary should be executed");
-
-        assert!(script.contains("ignore-scripts=true"));
-        assert!(script.contains("grep '/node_modules/opencode-ai$'"));
-        assert!(script.contains("grep -c . || true"));
-        assert!(!script.contains("\"$PNPM_BIN\" root -g"));
-        assert!(install_pos < root_pos);
-        assert!(root_pos < count_pos);
-        assert!(count_pos < unique_path_pos);
-        assert!(unique_path_pos < diagnostic_pos);
-        assert!(diagnostic_pos < postinstall_check_pos);
-        assert!(postinstall_check_pos < postinstall_pos);
-        assert!(postinstall_pos < validation_pos);
-    }
-
-    #[test]
-    fn legacy_pi_spec_resolves_to_current_default() {
-        assert_eq!(resolve_pi_spec(LEGACY_PI_SPECS[0]), DEFAULT_PI_SPEC);
-        assert_eq!(resolve_pi_spec("@custom/pi"), "@custom/pi");
-    }
-
-    #[test]
-    fn pi_spec_is_shell_quoted_in_install_script() {
-        let script = build_install_script("@scope/pkg; echo bad", 1440);
-
-        assert!(script.contains("install_pnpm_agent pi '@scope/pkg; echo bad'"));
-    }
-
-    #[test]
-    fn claude_update_still_uses_persistent_install_home() {
-        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
-
-        assert!(
-            script.contains(
-                "HOME=\"$CLAUDE_HOME\" PATH=\"$CLAUDE_HOME/.local/bin:$PATH\" \"$CLAUDE_BIN\" update"
-            ),
-            "claude update should run with persistent CLAUDE_HOME"
-        );
-    }
-
-    #[test]
-    fn claude_wrapper_does_not_override_runtime_home() {
-        let script = build_install_script(DEFAULT_PI_SPEC, 1440);
-
-        assert!(
-            script.contains("exec /opt/claude-home/.local/bin/claude \"$@\""),
-            "wrapper should execute claude from persistent install path"
-        );
-        assert!(
-            script.contains("export PATH=/opt/claude-home/.local/bin:$PATH"),
-            "wrapper should keep claude bin on PATH"
-        );
-        assert!(
-            !script.contains("export HOME=/opt/claude-home"),
-            "wrapper must not override HOME at runtime"
-        );
-    }
-}
+#[path = "update_agents_tests.rs"]
+mod tests;

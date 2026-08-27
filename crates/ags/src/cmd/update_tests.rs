@@ -14,9 +14,9 @@ mod tests {
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
-            BundledToolVersions {
-                br: "v1.0.0",
-                dcg: "v3.0.0",
+            &BundledToolVersions {
+                br: "v1.0.0".to_owned(),
+                dcg: "v3.0.0".to_owned(),
             },
             &["ansible-lint".to_owned(), "shellcheck".to_owned()],
             &[],
@@ -38,9 +38,9 @@ mod tests {
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
-            BundledToolVersions {
-                br: "v1.0.0",
-                dcg: "v3.0.0",
+            &BundledToolVersions {
+                br: "v1.0.0".to_owned(),
+                dcg: "v3.0.0".to_owned(),
             },
             &[],
             &[],

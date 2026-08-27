@@ -169,4 +169,4 @@ wayland = false
 
 [update]
 pi_spec = "@earendil-works/pi-coding-agent"
-minimum_release_age = 1440
+minimum_release_age = 1440  # minutes

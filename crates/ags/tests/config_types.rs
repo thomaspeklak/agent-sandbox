@@ -62,6 +62,15 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
         ags::config::BASE_DNF_PACKAGES
     );
     assert!(containerfile.contains("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\""));
+    assert!(containerfile.contains("ARG BR_VERSION\nARG DCG_VERSION"));
+    assert!(!containerfile.contains("ARG BR_VERSION=latest"));
+    assert!(!containerfile.contains("ARG DCG_VERSION=latest"));
+    assert!(
+        containerfile.contains("BR_VERSION must be an explicit vMAJOR.MINOR.PATCH release tag")
+    );
+    assert!(
+        containerfile.contains("DCG_VERSION must be an explicit vMAJOR.MINOR.PATCH release tag")
+    );
     assert!(containerfile.contains("sha256sum -c -"));
 
     let example: ags::config::RawConfig =

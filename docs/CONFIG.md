@@ -490,12 +490,12 @@ wayland = false
 
 ## `[update]`
 
-Controls `ags update-agents` behavior.
+Controls agent and bundled-image update behavior.
 
 ```toml
 [update]
 pi_spec = "@earendil-works/pi-coding-agent"
-minimum_release_age = 1440
+minimum_release_age = 1440 # minutes
 ```
 
 ### Fields
@@ -503,8 +503,9 @@ minimum_release_age = 1440
 - `pi_spec` (string, default `@earendil-works/pi-coding-agent`)
   - Package spec used for Pi install/update.
   - Older configs with the exact legacy value `@mariozechner/pi-coding-agent` should be updated; `ags update-agents` treats that value as the current default during migration.
-- `minimum_release_age` (u32, default `1440`)
-  - Written to pnpm config (`minimum-release-age`) inside update container.
+- `minimum_release_age` (u32 minutes, default `1440`)
+  - Minimum maturity period for release selection, measured from its published time.
+  - Written to pnpm config (`minimum-release-age`) for Pi and Gemini packages. It also selects mature stable GitHub releases for OpenCode, `br`, and `dcg`, including automatic first-image builds.
 
 ---
 

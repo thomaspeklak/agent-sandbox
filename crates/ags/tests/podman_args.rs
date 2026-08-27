@@ -10,6 +10,7 @@ fn minimal_plan() -> LaunchPlan {
         containerfile: PathBuf::from("/tmp/Containerfile"),
         extra_dnf_packages: vec![],
         tool_downloads: vec![],
+        minimum_release_age: 1_440,
         container_name: "ags-project-abcd".to_owned(),
         workdir: WorkdirMapping {
             host: PathBuf::from("/home/user/project"),

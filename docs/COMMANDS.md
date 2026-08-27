@@ -182,8 +182,8 @@ ags update-image --keep-existing
 ags update-image --config /path/to/config.toml
 ```
 
-- Resolves the newest stable release that provides the required archive and checksum for the image architecture
-- Skips incomplete or platform-specific newer releases with a warning instead of failing on a missing asset
+- Resolves the newest stable `vMAJOR.MINOR.PATCH` release old enough for `[update].minimum_release_age` that provides the required archive and checksum for the image architecture
+- Skips malformed, immature, incomplete, or platform-specific newer releases with a warning instead of failing on a missing asset
 - Verifies release checksums during image build and refuses releases without a checksum asset
 - Removes the previously tagged sandbox image after the new build succeeds, unless a container still references it
 - Referenced previous images are retained with a warning listing the blocking container IDs
@@ -216,14 +216,15 @@ ags update-agents
 - Pi package (`pi_spec`), removing the legacy Pi package first to avoid stale `pi` binaries
 - Codex standalone release (using the official `chatgpt.com/codex/install.sh` installer)
 - Gemini (`@google/gemini-cli`)
-- Opencode (`opencode-ai`)
+- OpenCode (official GitHub Release binary via a pinned installer revision)
 - Claude install/update in dedicated volume
 
 Settings come from `[update]` in config.
 
 Security hardening and runtime hygiene:
 
-- pnpm installs run with `ignore-scripts=true`; AGS explicitly runs only `opencode-ai`'s required postinstall script and then verifies `opencode --version`.
+- pnpm installs run with `ignore-scripts=true`. OpenCode does not use pnpm: AGS selects a mature stable GitHub Release, verifies the pinned installer source hash, installs its binary in persistent storage, and verifies `opencode --version`.
+- `minimum_release_age` applies to pnpm package selection and to OpenCode, `br`, and `dcg` GitHub Release selection.
 - Codex releases are stored in a dedicated persistent `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
 - pnpm uses a stable store under `/usr/local/pnpm/.store`.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.

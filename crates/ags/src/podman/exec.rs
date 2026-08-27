@@ -8,6 +8,7 @@ use std::process::Command;
 
 use super::fd_exec::spawn_with_payload_fds;
 
+use crate::bundled_tools::{BundledToolVersions, resolve_bundled_tool_versions};
 use crate::plan::LaunchPlan;
 use crate::podman::args::build_run_args;
 use crate::podman::network::{
@@ -81,6 +82,7 @@ pub fn ensure_image(
     containerfile: &Path,
     extra_dnf_packages: &[String],
     tool_downloads: &[crate::config::LockedToolDownload],
+    minimum_release_age: u32,
 ) -> Result<(), PodmanError> {
     if image_exists(image) {
         return Ok(());
@@ -88,6 +90,8 @@ pub fn ensure_image(
 
     eprintln!("Building sandbox image: {image}");
 
+    let versions =
+        resolve_bundled_tool_versions(minimum_release_age).map_err(PodmanError::ImageBuild)?;
     let context_dir = containerfile.parent().unwrap_or_else(|| Path::new("."));
 
     let status = Command::new("podman")
@@ -95,6 +99,7 @@ pub fn ensure_image(
             image,
             containerfile,
             context_dir,
+            &versions,
             extra_dnf_packages,
             tool_downloads,
         ))
@@ -114,6 +119,7 @@ fn build_podman_build_args(
     image: &str,
     containerfile: &Path,
     context_dir: &Path,
+    versions: &BundledToolVersions,
     extra_dnf_packages: &[String],
     tool_downloads: &[crate::config::LockedToolDownload],
 ) -> Vec<String> {
@@ -124,6 +130,8 @@ fn build_podman_build_args(
         containerfile,
         context_dir,
         &[
+            ("BR_VERSION", versions.br.as_str()),
+            ("DCG_VERSION", versions.dcg.as_str()),
             ("EXTRA_DNF_PACKAGES", &packages),
             ("EXTRA_TOOL_DOWNLOADS_B64", &downloads),
         ],
@@ -219,6 +227,7 @@ pub(crate) fn execute_with_payload_sources(
         &plan.containerfile,
         &plan.extra_dnf_packages,
         &plan.tool_downloads,
+        plan.minimum_release_age,
     )?;
     let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
@@ -264,6 +273,7 @@ fn execute_inner(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, P
         &plan.containerfile,
         &plan.extra_dnf_packages,
         &plan.tool_downloads,
+        plan.minimum_release_age,
     )?;
     let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
@@ -396,7 +406,15 @@ mod tests {
     use base64::Engine;
 
     use super::build_podman_build_args;
+    use crate::bundled_tools::BundledToolVersions;
     use crate::config::LockedToolDownload;
+
+    fn bundled_versions() -> BundledToolVersions {
+        BundledToolVersions {
+            br: "v1.0.0".to_owned(),
+            dcg: "v3.0.0".to_owned(),
+        }
+    }
 
     #[test]
     fn image_build_args_include_configured_dnf_packages() {
@@ -404,10 +422,13 @@ mod tests {
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
+            &bundled_versions(),
             &["ansible-lint".to_owned(), "shellcheck".to_owned()],
             &[],
         );
 
+        assert!(args.contains(&"BR_VERSION=v1.0.0".to_owned()));
+        assert!(args.contains(&"DCG_VERSION=v3.0.0".to_owned()));
         assert!(args.contains(&"EXTRA_DNF_PACKAGES=ansible-lint shellcheck".to_owned()));
     }
 
@@ -417,6 +438,7 @@ mod tests {
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
+            &bundled_versions(),
             &[],
             &[],
         );
@@ -445,6 +467,7 @@ mod tests {
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
+            &bundled_versions(),
             &[],
             &[download],
         );

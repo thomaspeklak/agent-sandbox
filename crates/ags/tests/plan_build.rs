@@ -170,6 +170,7 @@ fn minimal_plan_has_correct_image() {
     assert_eq!(plan.extra_dnf_packages, vec!["ansible-lint", "shellcheck"]);
     assert_eq!(plan.tool_downloads.len(), 1);
     assert_eq!(plan.tool_downloads[0].id, "terraform");
+    assert_eq!(plan.minimum_release_age, 1_440);
 }
 
 #[test]

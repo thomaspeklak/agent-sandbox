@@ -59,7 +59,7 @@ fn run_checks(ck: &mut Checker, config: &ValidatedConfig) {
 
 fn check_tooling(ck: &mut Checker) {
     ck.section("Tooling");
-    for cmd in &["podman", "git", "ssh-keygen", "ssh-add", "bash"] {
+    for cmd in &["podman", "git", "ssh-keygen", "ssh-add", "bash", "curl"] {
         check_required_cmd(ck, cmd);
     }
     check_optional_cmd(ck, "secret-tool");
@@ -68,7 +68,6 @@ fn check_tooling(ck: &mut Checker) {
     check_optional_cmd(ck, "op");
     // Needed only for --op-secret-set's non-secret interruption cleanup helper.
     check_optional_cmd(ck, "python3");
-    check_optional_cmd(ck, "curl");
 }
 
 fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {

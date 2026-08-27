@@ -365,6 +365,7 @@ pub fn build_launch_plan(
         containerfile: config.sandbox.containerfile.clone(),
         extra_dnf_packages: config.sandbox.extra_dnf_packages.clone(),
         tool_downloads: config.sandbox.tool_downloads.clone(),
+        minimum_release_age: config.update.minimum_release_age,
         container_name,
         workdir: workdir_mapping,
         mounts,

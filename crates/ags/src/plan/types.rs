@@ -78,6 +78,8 @@ pub struct LaunchPlan {
     pub containerfile: PathBuf,
     pub extra_dnf_packages: Vec<String>,
     pub tool_downloads: Vec<LockedToolDownload>,
+    /// Minimum GitHub release age used if AGS must build the image on demand.
+    pub minimum_release_age: u32,
     pub container_name: String,
     pub workdir: WorkdirMapping,
     pub mounts: Vec<PlanMount>,

@@ -51,6 +51,7 @@ Required on host:
 - `ssh-keygen`
 - `ssh-add`
 - `bash`
+- `curl` (for mature GitHub Release resolution during image/agent updates)
 
 Optional but useful:
 
@@ -476,7 +477,7 @@ Use `config/config.example.toml` for full schema examples.
 - `[desktop_passthrough]`
   - Explicit broad desktop passthrough controls such as raw Wayland compositor access
 - `[update]`
-  - Controls Pi package spec and pnpm minimum release age for updates
+  - Controls Pi package spec and the minimum maturity age for pnpm and GitHub Release updates
 
 ---
 
@@ -488,7 +489,7 @@ Use `config/config.example.toml` for full schema examples.
 - For untrusted or foreign repos, prefer `--lockdown` to minimize host exposure for that run.
 - In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update-image` if Bash commands are unexpectedly blocked.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
-- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`). AGS explicitly runs only `opencode-ai`'s required postinstall script after installation and verifies the resulting binary.
+- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`). OpenCode is installed from a mature GitHub Release through a source-pinned, SHA-256-verified official installer, then its binary is executed for validation.
 - Non-RPM tools selected through `ags tools` use pinned HTTPS artifacts for both supported architectures. AGS validates their catalog metadata and verifies SHA-256 before extracting only the declared executable.
 - Rotate/revoke credentials quickly if compromise is suspected.
 - The clipboard bridge is narrower than raw Wayland passthrough. Host clipboard reads require approval by default and can be allowed for `[clipboard].approval_seconds`; disabling approval restores session-wide read access.
