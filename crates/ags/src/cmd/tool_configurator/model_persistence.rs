@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use toml_edit::{Array, DocumentMut, Item, Table};
 
 use crate::config::{
-    BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, validate_locked_agent_release_sources,
+    BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, validate_locked_agent_providers,
     validate_locked_tool_downloads,
 };
 
@@ -29,7 +29,7 @@ pub fn config_file_defines_tool_selection(path: &Path) -> Result<bool, ToolConfi
 }
 
 pub fn config_file_defines_agent_selection(path: &Path) -> Result<bool, ToolConfigError> {
-    config_file_defines_any(path, &["enabled_agents", "agent_release_source_lock"])
+    config_file_defines_any(path, &["enabled_agents", "agent_provider_lock"])
 }
 
 fn config_file_defines_any(path: &Path, keys: &[&str]) -> Result<bool, ToolConfigError> {
@@ -61,19 +61,19 @@ pub fn write_selected_tools_with_release_age(
         .parse::<DocumentMut>()
         .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
     let previous_lock_name = configured_lock_name(&doc, "tool_download_lock");
-    let previous_agent_lock_name = configured_lock_name(&doc, "agent_release_source_lock");
+    let previous_agent_lock_name = configured_lock_name(&doc, "agent_provider_lock");
     let backup_path = config_path.with_extension("toml.bak");
     let displaced_backup_lock_name =
         configured_lock_name_from_file(&backup_path, "tool_download_lock");
     let displaced_backup_agent_lock_name =
-        configured_lock_name_from_file(&backup_path, "agent_release_source_lock");
+        configured_lock_name_from_file(&backup_path, "agent_provider_lock");
 
     let mut report = apply_selection_to_document(&mut doc, state);
     let downloads = state.selected_downloads(minimum_release_age)?;
-    let agent_sources = state.selected_agent_sources();
+    let agent_providers = selected_agent_providers(state);
     validate_locked_tool_downloads(&downloads, "selected tool downloads")
         .map_err(ToolConfigError::InvalidPackage)?;
-    validate_locked_agent_release_sources(&agent_sources, "selected agent release sources")
+    validate_locked_agent_providers(&agent_providers, "selected agent providers")
         .map_err(ToolConfigError::InvalidPackage)?;
     let previous_download_ids = state
         .configured_downloads
@@ -91,12 +91,15 @@ pub fn write_selected_tools_with_release_age(
     let lock_digest = format!("{:x}", Sha256::digest(lock_content.as_bytes()));
     let lock_name = format!("tool-downloads.{lock_digest}.lock.json");
     let lock_path = config_path.with_file_name(&lock_name);
-    let agent_lock_content = serde_json::to_string_pretty(&agent_sources)? + "\n";
+    let agent_lock_content = serde_json::to_string_pretty(&agent_providers)? + "\n";
     let agent_lock_digest = format!("{:x}", Sha256::digest(agent_lock_content.as_bytes()));
-    let agent_lock_name = format!("agent-release-sources.{agent_lock_digest}.lock.json");
+    let agent_lock_name = format!("agent-providers.{agent_lock_digest}.lock.json");
     let agent_lock_path = config_path.with_file_name(&agent_lock_name);
     doc["sandbox"]["tool_download_lock"] = toml_edit::value(lock_name.clone());
-    doc["sandbox"]["agent_release_source_lock"] = toml_edit::value(agent_lock_name.clone());
+    doc["sandbox"]["agent_provider_lock"] = toml_edit::value(agent_lock_name.clone());
+    if let Some(sandbox) = doc["sandbox"].as_table_like_mut() {
+        sandbox.remove("agent_release_source_lock");
+    }
     backup_file(config_path)?;
     atomic_write(&lock_path, &lock_content)?;
     atomic_write(&agent_lock_path, &agent_lock_content)?;
@@ -118,13 +121,12 @@ pub fn write_selected_tools_with_release_age(
     }
     if let Some(stale_lock_name) = displaced_backup_agent_lock_name.filter(|name| {
         name != &agent_lock_name && previous_agent_lock_name.as_deref() != Some(name.as_str())
-    }) && let Err(error) =
-        remove_managed_lock(config_path, &stale_lock_name, "agent-release-sources")
+    }) && let Err(error) = remove_managed_lock(config_path, &stale_lock_name, "agent-providers")
     {
         add_cleanup_warning(
             &mut report,
             format!(
-                "saved agent selection, but could not remove stale agent release source lock {stale_lock_name}: {error}"
+                "saved agent selection, but could not remove stale agent provider lock {stale_lock_name}: {error}"
             ),
         );
     }
@@ -143,6 +145,28 @@ pub fn write_selected_tools_with_release_age(
         }
     }
     Ok(report)
+}
+
+fn selected_agent_providers(state: &ToolSelectionState) -> Vec<crate::config::LockedAgentProvider> {
+    state
+        .agents
+        .iter()
+        .filter(|agent| agent.selected)
+        .map(|agent| {
+            if !agent.touched
+                && let Some(configured) = state
+                    .configured_agent_providers
+                    .iter()
+                    .find(|entry| entry.agent == agent.definition.id)
+            {
+                return configured.clone();
+            }
+            crate::config::LockedAgentProvider {
+                agent: agent.definition.id,
+                provider: agent.definition.provider.clone(),
+            }
+        })
+        .collect()
 }
 
 fn configured_lock_name(doc: &DocumentMut, key: &str) -> Option<String> {

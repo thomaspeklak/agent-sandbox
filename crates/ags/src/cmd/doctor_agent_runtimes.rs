@@ -23,7 +23,7 @@ pub(super) fn check_agent_runtimes(ck: &mut Checker, config: &ValidatedConfig) {
         let present = if *agent == Agent::Codex {
             codex_runtime_present(cache)
         } else {
-            binary.exists()
+            binary.is_file() && crate::util::is_executable(&binary)
         };
         if present {
             ck.ok(&format!("{label} present: {}", binary.display()));

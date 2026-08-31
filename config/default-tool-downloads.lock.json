@@ -1,0 +1,59 @@
+[
+  {
+    "id": "br",
+    "download": {
+      "version": "0.5.2",
+      "archive": "tar.gz",
+      "member": "br",
+      "install_as": "br",
+      "artifacts": {
+        "aarch64": {
+          "url": "https://github.com/Dicklesworthstone/beads_rust/releases/download/v0.5.2/br-0.5.2-linux_arm64.tar.gz",
+          "sha256": "7ae3a4b5a0e2ea0f11bce3a47f21d3d52f7f96e073aa8eecd5d38422d2d5a668"
+        },
+        "x86_64": {
+          "url": "https://github.com/Dicklesworthstone/beads_rust/releases/download/v0.5.2/br-0.5.2-linux_amd64.tar.gz",
+          "sha256": "a1e740b0840464886f066a32e048721d028202e0bff9df024bf9d6fcc49ee0c7"
+        }
+      }
+    }
+  },
+  {
+    "id": "bv",
+    "download": {
+      "version": "0.22.0",
+      "archive": "tar.gz",
+      "member": "bv",
+      "install_as": "bv",
+      "artifacts": {
+        "aarch64": {
+          "url": "https://github.com/Dicklesworthstone/beads_viewer/releases/download/v0.22.0/bv_linux_arm64.tar.gz",
+          "sha256": "23d451b87bb9dccfb94fab416b0243d107919d9d56458087475afda5a617aa89"
+        },
+        "x86_64": {
+          "url": "https://github.com/Dicklesworthstone/beads_viewer/releases/download/v0.22.0/bv_linux_amd64.tar.gz",
+          "sha256": "e0b6c8b6d3230c601b19e19264b321e5ee513e6e2adacad7ef4aa29ecad9dae9"
+        }
+      }
+    }
+  },
+  {
+    "id": "dcg",
+    "download": {
+      "version": "0.13.0",
+      "archive": "tar.xz",
+      "member": "dcg",
+      "install_as": "dcg",
+      "artifacts": {
+        "aarch64": {
+          "url": "https://github.com/Dicklesworthstone/destructive_command_guard/releases/download/v0.13.0/dcg-aarch64-unknown-linux-gnu.tar.xz",
+          "sha256": "bee622cf51f2a79eca926e3d4bc4c5090c9d85c52ca22e0eacac78f7997bf0f7"
+        },
+        "x86_64": {
+          "url": "https://github.com/Dicklesworthstone/destructive_command_guard/releases/download/v0.13.0/dcg-x86_64-unknown-linux-musl.tar.xz",
+          "sha256": "6fcb1ead40f9f9266bab1290b3f6b4b9ea8a2a157064f2a573d60206e1ed1f19"
+        }
+      }
+    }
+  }
+]

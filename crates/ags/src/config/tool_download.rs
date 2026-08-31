@@ -5,8 +5,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::cli::Agent;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum ToolArchiveFormat {
     #[serde(rename = "zip")]
@@ -56,13 +54,6 @@ pub struct ToolDownloadSource {
 pub struct LockedToolDownload {
     pub id: String,
     pub download: ToolDownloadSource,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct LockedAgentReleaseSource {
-    pub agent: Agent,
-    pub github_release: GitHubReleaseSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -212,28 +203,6 @@ pub(crate) fn validate_locked_tool_downloads(
                 tool.download.install_as
             ));
         }
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_locked_agent_release_sources(
-    sources: &[LockedAgentReleaseSource],
-    context: &str,
-) -> Result<(), String> {
-    let mut agents = BTreeSet::new();
-    for (index, source) in sources.iter().enumerate() {
-        let item_context = format!("{context}[{index}]");
-        if source.agent == Agent::Shell {
-            return Err(format!("{item_context}.agent must not be 'shell'"));
-        }
-        if !agents.insert(source.agent) {
-            return Err(format!(
-                "{context} repeats agent '{}'",
-                source.agent.as_str()
-            ));
-        }
-        validate_github_release_source(&source.github_release)
-            .map_err(|error| format!("{item_context}.{error}"))?;
     }
     Ok(())
 }

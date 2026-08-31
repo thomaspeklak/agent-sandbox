@@ -3,6 +3,10 @@ use std::io;
 use std::path::Path;
 
 pub const CONTAINERFILE: &str = include_str!("../../../config/Containerfile");
+pub const DEFAULT_AGENT_PROVIDERS_LOCK: &str =
+    include_str!("../../../config/default-agent-providers.lock.json");
+pub const DEFAULT_TOOL_DOWNLOADS_LOCK: &str =
+    include_str!("../../../config/default-tool-downloads.lock.json");
 pub const TMUX_CONF: &str = include_str!("../../../config/tmux.conf");
 pub const UV_TOML: &str = include_str!("../../../config/uv.toml");
 pub const GUARD_TS: &str = include_str!("../../../agent/extensions/guard.ts");

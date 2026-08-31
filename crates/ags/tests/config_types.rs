@@ -16,7 +16,7 @@ sign_key = "/tmp/sign"
     let raw: ags::config::RawConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(raw.sandbox.image, "localhost/agent-sandbox:latest");
     assert!(raw.sandbox.tool_download_lock.is_empty());
-    assert!(raw.sandbox.agent_release_source_lock.is_empty());
+    assert!(raw.sandbox.agent_provider_lock.is_empty());
     assert_eq!(
         raw.sandbox.extra_dnf_packages,
         ags::config::DEFAULT_EXTRA_DNF_PACKAGES

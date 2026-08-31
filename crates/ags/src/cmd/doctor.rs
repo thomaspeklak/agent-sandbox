@@ -217,13 +217,13 @@ fn check_container_image(ck: &mut Checker, config: &ValidatedConfig) {
             || config.sandbox.is_agent_enabled(Agent::Claude);
         if guards_enabled {
             match crate::podman::image_has_binary(image, "dcg") {
-            Ok(true) => ck.ok("bundled dcg available inside sandbox image"),
-            Ok(false) => ck.fail(
-                "bundled dcg missing inside sandbox image; Pi/Claude Bash guards will fail open (run 'ags update-image')",
-            ),
-            Err(err) => ck.warn(&format!(
-                "could not verify bundled dcg inside sandbox image: {err}"
-            )),
+                Ok(true) => ck.ok("bundled dcg available inside sandbox image"),
+                Ok(false) => ck.fail(
+                    "bundled dcg missing inside sandbox image; Pi/Claude Bash commands will fail closed (run 'ags update-image')",
+                ),
+                Err(err) => ck.warn(&format!(
+                    "could not verify bundled dcg inside sandbox image: {err}"
+                )),
             }
         }
     } else {

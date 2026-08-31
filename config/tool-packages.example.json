@@ -1,16 +1,45 @@
 {
-  "agent_sources": [
+  "agents": [
     {
-      "agent": "opencode",
-      "github_release": {
-        "repository": "anomalyco/opencode",
-        "release": { "mode": "latest" },
-        "archive": "tar.gz",
-        "member": "opencode",
-        "install_as": "opencode",
-        "assets": {
-          "x86_64": { "archive": "^opencode-linux-x64-baseline\\.tar\\.gz$" },
-          "aarch64": { "archive": "^opencode-linux-arm64\\.tar\\.gz$" }
+      "id": "pi",
+      "name": "Pi",
+      "description": "Extensible coding agent with AGS guard and browser integrations.",
+      "provider": { "type": "pnpm", "package": "@earendil-works/pi-coding-agent" }
+    },
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "description": "Anthropic's coding agent with AGS guard hook integration.",
+      "provider": { "type": "builtin_installer", "installer": "claude" }
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "description": "OpenAI's coding agent CLI.",
+      "provider": { "type": "builtin_installer", "installer": "codex" }
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "description": "Google's Gemini coding agent CLI.",
+      "provider": { "type": "pnpm", "package": "@google/gemini-cli" }
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "description": "Provider-agnostic terminal coding agent.",
+      "provider": {
+        "type": "github_release",
+        "source": {
+          "repository": "anomalyco/opencode",
+          "release": { "mode": "latest" },
+          "archive": "tar.gz",
+          "member": "opencode",
+          "install_as": "opencode",
+          "assets": {
+            "x86_64": { "archive": "^opencode-linux-x64-baseline\\.tar\\.gz$" },
+            "aarch64": { "archive": "^opencode-linux-arm64\\.tar\\.gz$" }
+          }
         }
       }
     }

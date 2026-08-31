@@ -1,9 +1,12 @@
 use std::fmt;
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 use crate::cli::Agent;
-use crate::config::ValidatedConfig;
+use crate::config::{
+    AgentProviderPolicy, LockedAgentProvider, ToolDownloadSource, ValidatedConfig,
+};
 use crate::github_release::resolve_github_release_source;
 use crate::util::shell_quote;
 
@@ -21,7 +24,8 @@ pub struct UpdateAgentsOptions {
 #[derive(Debug)]
 pub enum UpdateAgentsError {
     HostDirCreate(String),
-    MissingReleaseSource(String),
+    MissingProvider(String),
+    RecoveryFailed(String),
     ReleaseResolveFailed(String),
     InstallFailed(String),
 }
@@ -30,10 +34,11 @@ impl fmt::Display for UpdateAgentsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::HostDirCreate(msg) => write!(f, "failed to create host directory: {msg}"),
-            Self::MissingReleaseSource(agent) => write!(
+            Self::MissingProvider(agent) => write!(
                 f,
-                "enabled agent '{agent}' has no release source; run `ags tools` to save the agent catalog"
+                "enabled agent '{agent}' has no provider; run `ags tools` to save the agent catalog"
             ),
+            Self::RecoveryFailed(msg) => write!(f, "failed to recover OpenCode update: {msg}"),
             Self::ReleaseResolveFailed(msg) => {
                 write!(f, "failed to resolve agent release: {msg}")
             }
@@ -68,29 +73,33 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         })?;
     }
 
-    let configured_pi_spec = opts.pi_spec.as_deref().unwrap_or(&config.update.pi_spec);
-    let pi_spec = resolve_pi_spec(configured_pi_spec);
     let release_age = opts
         .minimum_release_age
         .unwrap_or(config.update.minimum_release_age);
-    let opencode_download = if enabled_agents.contains(&Agent::Opencode) {
-        let source = config
-            .sandbox
-            .agent_release_sources
-            .iter()
-            .find(|source| source.agent == Agent::Opencode)
-            .ok_or_else(|| UpdateAgentsError::MissingReleaseSource("opencode".to_owned()))?;
-        Some(
-            resolve_github_release_source(&source.github_release, release_age)
-                .map_err(|error| UpdateAgentsError::ReleaseResolveFailed(error.to_string()))?,
-        )
+    let opencode_download = resolve_opencode_with_recovery(
+        &opencode_install,
+        enabled_agents,
+        &config.sandbox.agent_providers,
+        release_age,
+        resolve_github_release_source,
+    )?;
+    let configured_pi_spec = opts.pi_spec.as_deref().unwrap_or(&config.update.pi_spec);
+    let configured_pi_spec = resolve_pi_spec(configured_pi_spec);
+    let pi_spec = if configured_pi_spec == crate::config::DEFAULT_PI_SPEC {
+        provider_for(Agent::Pi, &config.sandbox.agent_providers)
+            .and_then(|provider| match provider {
+                AgentProviderPolicy::Pnpm { package } => Some(package.as_str()),
+                _ => None,
+            })
+            .unwrap_or(configured_pi_spec)
     } else {
-        None
+        configured_pi_spec
     };
     let install_script = build_install_script(
         pi_spec,
         release_age,
         enabled_agents,
+        &config.sandbox.agent_providers,
         opencode_download.as_ref(),
     )
     .map_err(UpdateAgentsError::InstallFailed)?;
@@ -107,10 +116,13 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     if let Some(disabled) = agent_list(&disabled_agents) {
         println!("  removing: {disabled}");
     }
-    if pi_spec == configured_pi_spec {
+    if pi_spec == opts.pi_spec.as_deref().unwrap_or(&config.update.pi_spec) {
         println!("  PI spec: {pi_spec}");
     } else {
-        println!("  PI spec: {pi_spec} (migrated from legacy {configured_pi_spec})");
+        println!(
+            "  PI spec: {pi_spec} (resolved from {})",
+            opts.pi_spec.as_deref().unwrap_or(&config.update.pi_spec)
+        );
     }
     println!("  minimum release age: {release_age} minutes");
     if let Some(download) = &opencode_download {
@@ -166,13 +178,108 @@ fn agent_list(agents: &[Agent]) -> Option<String> {
     })
 }
 
+fn provider_for(agent: Agent, providers: &[LockedAgentProvider]) -> Option<&AgentProviderPolicy> {
+    providers
+        .iter()
+        .find(|entry| entry.agent == agent)
+        .map(|entry| &entry.provider)
+}
+
+fn resolve_opencode_with_recovery<F>(
+    opencode_install: &Path,
+    enabled_agents: &[Agent],
+    providers: &[LockedAgentProvider],
+    release_age: u32,
+    resolver: F,
+) -> Result<Option<ToolDownloadSource>, UpdateAgentsError>
+where
+    F: FnOnce(
+        &crate::config::GitHubReleaseSource,
+        u32,
+    ) -> Result<ToolDownloadSource, crate::github_release::GitHubReleaseError>,
+{
+    recover_opencode_transaction(opencode_install)?;
+    if !enabled_agents.contains(&Agent::Opencode) {
+        return Ok(None);
+    }
+    let provider = provider_for(Agent::Opencode, providers)
+        .ok_or_else(|| UpdateAgentsError::MissingProvider("opencode".to_owned()))?;
+    let AgentProviderPolicy::GithubRelease { source } = provider else {
+        return Err(UpdateAgentsError::MissingProvider("opencode".to_owned()));
+    };
+    resolver(source, release_age)
+        .map(Some)
+        .map_err(|error| UpdateAgentsError::ReleaseResolveFailed(error.to_string()))
+}
+
+fn recover_opencode_transaction(root: &Path) -> Result<(), UpdateAgentsError> {
+    let active = root.join(".opencode");
+    let stage = root.join(".opencode.stage");
+    let backup = root.join(".opencode.previous");
+    let transaction = root.join(".opencode.transaction");
+    let has_transaction = path_exists(&transaction)?;
+    let has_active = path_exists(&active)?;
+    let has_backup = path_exists(&backup)?;
+
+    if has_transaction {
+        remove_entry(&active)?;
+        if has_backup {
+            restore_backup(&backup, &active)?;
+        }
+        remove_entry(&transaction)?;
+    } else if !has_active && has_backup {
+        restore_backup(&backup, &active)?;
+    } else if has_active && has_backup {
+        remove_entry(&backup)?;
+    }
+    remove_entry(&stage)?;
+    Ok(())
+}
+
+fn path_exists(path: &Path) -> Result<bool, UpdateAgentsError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(recovery_error(path, error)),
+    }
+}
+
+fn remove_entry(path: &Path) -> Result<(), UpdateAgentsError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(recovery_error(path, error)),
+    };
+    let result = if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    };
+    result.map_err(|error| recovery_error(path, error))
+}
+
+fn restore_backup(backup: &Path, active: &Path) -> Result<(), UpdateAgentsError> {
+    let metadata = fs::symlink_metadata(backup).map_err(|error| recovery_error(backup, error))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(UpdateAgentsError::RecoveryFailed(format!(
+            "{} is not a regular directory",
+            backup.display()
+        )));
+    }
+    fs::rename(backup, active).map_err(|error| recovery_error(backup, error))
+}
+
+fn recovery_error(path: &Path, error: std::io::Error) -> UpdateAgentsError {
+    UpdateAgentsError::RecoveryFailed(format!("{}: {error}", path.display()))
+}
+
 fn build_podman_run_args(
     image: &str,
-    pnpm_home: &std::path::Path,
-    codex_install: &std::path::Path,
-    opencode_install: &std::path::Path,
-    claude_install: &std::path::Path,
-    npm_global: &std::path::Path,
+    pnpm_home: &Path,
+    codex_install: &Path,
+    opencode_install: &Path,
+    claude_install: &Path,
+    npm_global: &Path,
     script: &str,
 ) -> Vec<String> {
     vec![

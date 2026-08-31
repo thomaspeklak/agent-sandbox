@@ -312,8 +312,8 @@ impl App {
                 };
                 Row::new(vec![
                     checkbox.to_owned(),
-                    agent.agent.display_name().to_owned(),
-                    agent.agent.description().to_owned(),
+                    agent.definition.name.clone(),
+                    agent.definition.description.clone(),
                 ])
                 .style(style)
             })

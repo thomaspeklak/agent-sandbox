@@ -374,7 +374,8 @@ fn suggestion_for_field(
             .next()
             .map(|s| s.value),
         "host" | "path" | "containerfile" | "cache_dir" | "gitconfig_path" | "auth_key"
-        | "sign_key" | "profile_dir" | "renderer_bin" | "tool_download_lock" =>
+        | "sign_key" | "profile_dir" | "renderer_bin" | "tool_download_lock"
+        | "agent_provider_lock" =>
             suggest_paths_from(query, cache.home_dirs)
             .into_iter()
             .next()

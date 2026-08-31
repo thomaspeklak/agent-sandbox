@@ -4,17 +4,15 @@ use std::path::{Path, PathBuf};
 use ags::{
     cli::Agent,
     cmd::tool_configurator::model::{
-        GroupRow, ToolCatalog, ToolDefinition, ToolGroupDefinition, ToolSelectionState,
-        ToolSubcategoryDefinition, apply_selection_to_document,
+        AgentDefinition, GroupRow, ToolCatalog, ToolDefinition, ToolGroupDefinition,
+        ToolSelectionState, ToolSubcategoryDefinition, apply_selection_to_document,
         config_file_defines_agent_selection, config_file_defines_tool_selection,
         configured_packages_from_document, load_package_file, write_selected_tools,
     },
     config::ArchiveMemberMatch,
     config::{
-        BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, GitHubReleaseAssetSelector,
-        GitHubReleaseAssetSelectors, GitHubReleaseSelection, GitHubReleaseSource,
-        LockedAgentReleaseSource, LockedToolDownload, ToolArchiveFormat, ToolDownloadArtifact,
-        ToolDownloadSource,
+        AgentProviderPolicy, BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, LockedAgentProvider,
+        LockedToolDownload, ToolArchiveFormat, ToolDownloadArtifact, ToolDownloadSource,
     },
 };
 use toml_edit::DocumentMut;
@@ -60,28 +58,27 @@ fn download_source() -> ToolDownloadSource {
     }
 }
 
-fn opencode_agent_source() -> LockedAgentReleaseSource {
-    LockedAgentReleaseSource {
-        agent: Agent::Opencode,
-        github_release: GitHubReleaseSource {
-            repository: "anomalyco/opencode".to_owned(),
-            release: GitHubReleaseSelection::Latest,
-            archive: ToolArchiveFormat::TarGz,
-            member: "opencode".to_owned(),
-            member_match: ArchiveMemberMatch::Exact,
-            install_as: "opencode".to_owned(),
-            assets: GitHubReleaseAssetSelectors {
-                x86_64: GitHubReleaseAssetSelector {
-                    archive: r"^opencode-linux-x64-baseline\.tar\.gz$".to_owned(),
-                    checksum: None,
-                },
-                aarch64: GitHubReleaseAssetSelector {
-                    archive: r"^opencode-linux-arm64\.tar\.gz$".to_owned(),
-                    checksum: None,
-                },
-            },
-        },
-    }
+fn default_agent_providers() -> Vec<LockedAgentProvider> {
+    serde_json::from_str(ags::assets::DEFAULT_AGENT_PROVIDERS_LOCK).unwrap()
+}
+
+fn agent_definitions() -> Vec<AgentDefinition> {
+    default_agent_providers()
+        .into_iter()
+        .map(|entry| AgentDefinition {
+            id: entry.agent,
+            name: entry.agent.display_name().to_owned(),
+            description: entry.agent.description().to_owned(),
+            provider: entry.provider,
+        })
+        .collect()
+}
+
+fn opencode_agent_provider() -> LockedAgentProvider {
+    default_agent_providers()
+        .into_iter()
+        .find(|entry| entry.agent == Agent::Opencode)
+        .unwrap()
 }
 
 fn download_tool(id: &str, default: bool) -> ToolDefinition {
@@ -112,7 +109,7 @@ fn group(id: &str, name: &str, tools: &[String]) -> ToolGroupDefinition {
 fn catalog(tools: Vec<ToolDefinition>) -> ToolCatalog {
     let ids = tools.iter().map(|tool| tool.id.clone()).collect::<Vec<_>>();
     ToolCatalog {
-        agent_sources: Vec::new(),
+        agents: agent_definitions(),
         tools,
         groups: vec![
             group("general", "General", &ids),
@@ -137,58 +134,71 @@ fn saved_lock_name(config: &Path) -> String {
 }
 
 #[test]
-fn save_materializes_selected_agent_release_sources() {
+fn save_materializes_selected_agent_providers() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
-    std::fs::write(&config, "[sandbox]\n").unwrap();
-    let mut source_catalog = catalog(vec![tool("git", &["git"], false)]);
-    source_catalog.agent_sources = vec![opencode_agent_source()];
-    let state = ToolSelectionState::from_catalog_with_config_and_agents(
+    std::fs::write(
+        &config,
+        "[sandbox]\nagent_release_source_lock = \"legacy.lock.json\"\n",
+    )
+    .unwrap();
+    let source_catalog = catalog(vec![tool("git", &["git"], false)]);
+    let mut configured_provider = opencode_agent_provider();
+    let AgentProviderPolicy::GithubRelease { source } = &mut configured_provider.provider else {
+        panic!("expected OpenCode GitHub release provider");
+    };
+    source.repository = "example/custom-opencode".to_owned();
+    let state = ToolSelectionState::from_catalog_with_config_and_agent_providers(
         source_catalog,
         Some(&[]),
         Some(&[]),
         &[Agent::Opencode],
-        &[],
+        std::slice::from_ref(&configured_provider),
     )
     .unwrap();
 
     write_selected_tools(&config, None, &state).unwrap();
 
     let doc: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
-    let lock_name = doc["sandbox"]["agent_release_source_lock"]
-        .as_str()
-        .unwrap();
-    let sources: Vec<LockedAgentReleaseSource> =
+    assert!(doc["sandbox"].get("agent_release_source_lock").is_none());
+    let lock_name = doc["sandbox"]["agent_provider_lock"].as_str().unwrap();
+    assert!(lock_name.starts_with("agent-providers."));
+    assert!(lock_name.ends_with(".lock.json"));
+    let providers: Vec<LockedAgentProvider> =
         serde_json::from_str(&std::fs::read_to_string(dir.path().join(lock_name)).unwrap())
             .unwrap();
-    assert_eq!(sources, vec![opencode_agent_source()]);
+    assert_eq!(providers, vec![configured_provider]);
 }
 
 #[test]
-fn save_preserves_configured_agent_source_omitted_by_catalog() {
+fn catalog_is_authoritative_for_agent_availability() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
     std::fs::write(&config, "[sandbox]\n").unwrap();
-    let source = opencode_agent_source();
+    let mut authoritative_catalog = catalog(vec![tool("git", &["git"], false)]);
+    authoritative_catalog.agents.clear();
     let state = ToolSelectionState::from_catalog_with_config_and_agents(
-        catalog(vec![tool("git", &["git"], false)]),
+        authoritative_catalog,
         Some(&[]),
         Some(&[]),
         &[Agent::Opencode],
-        std::slice::from_ref(&source),
     )
     .unwrap();
 
     write_selected_tools(&config, None, &state).unwrap();
 
     let doc: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
-    let lock_name = doc["sandbox"]["agent_release_source_lock"]
-        .as_str()
-        .unwrap();
-    let sources: Vec<LockedAgentReleaseSource> =
+    let lock_name = doc["sandbox"]["agent_provider_lock"].as_str().unwrap();
+    let providers: Vec<LockedAgentProvider> =
         serde_json::from_str(&std::fs::read_to_string(dir.path().join(lock_name)).unwrap())
             .unwrap();
-    assert_eq!(sources, vec![source]);
+    assert!(providers.is_empty());
+    assert!(
+        doc["sandbox"]["enabled_agents"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -214,7 +224,6 @@ fn enabled_agents_are_preselected_and_persisted_in_canonical_order() {
         Some(&["git".to_owned()]),
         Some(&[]),
         &[Agent::Opencode, Agent::Pi],
-        &[],
     )
     .unwrap();
 
@@ -730,7 +739,6 @@ fn agent_only_config_keeps_default_download_selected_and_saves_nonempty_lock() {
         has_tool_selection.then_some(configured_packages.as_slice()),
         has_tool_selection.then_some(configured_downloads.as_slice()),
         &[Agent::Pi],
-        &[],
     )
     .unwrap();
 
@@ -781,6 +789,22 @@ fn catalog_validation_rejects_shell_expressions() {
         error
             .to_string()
             .contains("not an option or shell expression")
+    );
+}
+
+#[test]
+fn catalog_validation_rejects_incompatible_agent_provider() {
+    let mut invalid = catalog(vec![tool("git", &["git"], false)]);
+    invalid.agents[0].provider = AgentProviderPolicy::BuiltinInstaller {
+        installer: ags::config::BuiltinAgentInstaller::Claude,
+    };
+
+    let error = ToolSelectionState::from_catalog(invalid, &[]).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("provider is incompatible with agent 'pi'")
     );
 }
 
@@ -885,8 +909,44 @@ fn example_catalog_has_profession_views_and_canonical_defaults() {
         catalog.groups[0].subcategories[0].tools,
         ["br", "bv", "dcg"]
     );
-    assert_eq!(catalog.agent_sources.len(), 1);
-    assert_eq!(catalog.agent_sources[0].agent, Agent::Opencode);
+    assert_eq!(
+        catalog
+            .agents
+            .iter()
+            .map(|agent| agent.id)
+            .collect::<Vec<_>>(),
+        Agent::INSTALLABLE
+    );
+    assert_eq!(
+        catalog
+            .agents
+            .iter()
+            .map(|agent| LockedAgentProvider {
+                agent: agent.id,
+                provider: agent.provider.clone(),
+            })
+            .collect::<Vec<_>>(),
+        default_agent_providers()
+    );
+    let pi = catalog
+        .agents
+        .iter()
+        .find(|agent| agent.id == Agent::Pi)
+        .unwrap();
+    assert!(matches!(
+        &pi.provider,
+        AgentProviderPolicy::Pnpm { package }
+            if package == ags::config::DEFAULT_PI_SPEC
+    ));
+    let opencode = catalog
+        .agents
+        .iter()
+        .find(|agent| agent.id == Agent::Opencode)
+        .unwrap();
+    assert!(matches!(
+        opencode.provider,
+        AgentProviderPolicy::GithubRelease { .. }
+    ));
 
     for id in ["br", "bv", "dcg"] {
         let tool = catalog.tools.iter().find(|tool| tool.id == id).unwrap();

@@ -12,23 +12,29 @@ pub(super) fn validate_catalog(catalog: &ToolCatalog) -> Result<(), ToolConfigEr
     let mut tool_ids = BTreeSet::new();
     let mut claimed_packages = BTreeSet::new();
     let mut claimed_commands = BTreeSet::new();
-    crate::config::validate_locked_agent_release_sources(
-        &catalog.agent_sources,
-        "catalog agent_sources",
-    )
-    .map_err(invalid)?;
-    for source in &catalog.agent_sources {
-        if source.agent != crate::cli::Agent::Opencode {
+    let mut agent_ids = BTreeSet::new();
+    for agent in &catalog.agents {
+        if agent.id == crate::cli::Agent::Shell {
+            return Err(invalid("catalog agents must not include shell"));
+        }
+        if !agent_ids.insert(agent.id) {
             return Err(invalid(format!(
-                "agent source '{}' is unsupported; only opencode uses catalog releases",
-                source.agent.as_str()
+                "agent '{}' is defined more than once",
+                agent.id.as_str()
             )));
         }
-        if source.github_release.install_as != "opencode" {
-            return Err(invalid(
-                "OpenCode agent source must install command 'opencode'",
-            ));
+        if agent.name.trim().is_empty() || agent.description.trim().is_empty() {
+            return Err(invalid(format!(
+                "agent '{}' must define a name and purpose-focused description",
+                agent.id.as_str()
+            )));
         }
+        crate::config::validate_agent_provider(
+            agent.id,
+            &agent.provider,
+            &format!("catalog agent '{}'", agent.id.as_str()),
+        )
+        .map_err(invalid)?;
     }
     for tool in &catalog.tools {
         if !crate::config::valid_tool_id(&tool.id) {

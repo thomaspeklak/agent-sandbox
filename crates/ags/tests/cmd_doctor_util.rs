@@ -41,8 +41,8 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
             extra_dnf_packages: vec![],
             tool_download_lock: None,
             tool_downloads: vec![],
-            agent_release_source_lock: None,
-            agent_release_sources: vec![],
+            agent_provider_lock: None,
+            agent_providers: vec![],
         },
         mounts: vec![ValidatedMount {
             host: pi_root,

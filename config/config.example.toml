@@ -17,7 +17,7 @@ extra_dnf_packages = [
   "kitty-terminfo", "socat", "make", "pkgconf-pkg-config", "sccache",
 ]
 # `ags tools` adds content-addressed tool_download_lock and
-# agent_release_source_lock entries here.
+# agent_provider_lock entries here.
 
 # Required agent config mounts (explicit and inspectable)
 [[agent_mount]]

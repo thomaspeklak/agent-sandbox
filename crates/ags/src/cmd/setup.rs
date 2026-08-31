@@ -27,10 +27,9 @@ pub fn run(config: &ValidatedConfig) -> Result<(), SetupError> {
             "\nsecret-tool not found; skipping secret-store setup.\n\
              You can still provide secrets via environment variables at runtime."
         );
-        return Ok(());
+    } else {
+        store_secrets_interactive(config)?;
     }
-
-    store_secrets_interactive(config)?;
 
     if config.host_ui.enabled {
         println!(

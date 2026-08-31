@@ -1,0 +1,53 @@
+[
+  {
+    "agent": "pi",
+    "provider": {
+      "type": "pnpm",
+      "package": "@earendil-works/pi-coding-agent"
+    }
+  },
+  {
+    "agent": "claude",
+    "provider": {
+      "type": "builtin_installer",
+      "installer": "claude"
+    }
+  },
+  {
+    "agent": "codex",
+    "provider": {
+      "type": "builtin_installer",
+      "installer": "codex"
+    }
+  },
+  {
+    "agent": "gemini",
+    "provider": {
+      "type": "pnpm",
+      "package": "@google/gemini-cli"
+    }
+  },
+  {
+    "agent": "opencode",
+    "provider": {
+      "type": "github_release",
+      "source": {
+        "repository": "anomalyco/opencode",
+        "release": {
+          "mode": "latest"
+        },
+        "archive": "tar.gz",
+        "member": "opencode",
+        "install_as": "opencode",
+        "assets": {
+          "x86_64": {
+            "archive": "^opencode-linux-x64-baseline\\.tar\\.gz$"
+          },
+          "aarch64": {
+            "archive": "^opencode-linux-arm64\\.tar\\.gz$"
+          }
+        }
+      }
+    }
+  }
+]

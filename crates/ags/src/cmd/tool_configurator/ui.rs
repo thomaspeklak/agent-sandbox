@@ -9,7 +9,7 @@ use super::model::{
     write_selected_tools_with_release_age,
 };
 use crate::cli::Agent;
-use crate::config::{LockedAgentReleaseSource, LockedToolDownload};
+use crate::config::{LockedAgentProvider, LockedToolDownload};
 
 #[derive(Clone, Copy)]
 enum StatusKind {
@@ -38,11 +38,11 @@ pub struct App {
 impl App {
     pub fn new(
         config_path: &Path,
-        legacy_cleanup_path: Option<&Path>,
         packages_path: &Path,
         configured_packages: Option<&[String]>,
         configured_downloads: Option<&[LockedToolDownload]>,
-        configured_agent_state: (&[Agent], &[LockedAgentReleaseSource]),
+        configured_agents: &[Agent],
+        configured_agent_providers: &[LockedAgentProvider],
         minimum_release_age: u32,
     ) -> Result<Self, ToolConfigError> {
         if !config_path.exists() {
@@ -53,17 +53,16 @@ impl App {
         }
 
         let catalog = load_package_file(packages_path)?;
-        let (configured_agents, configured_agent_sources) = configured_agent_state;
-        let state = ToolSelectionState::from_catalog_with_config_and_agents(
+        let state = ToolSelectionState::from_catalog_with_config_and_agent_providers(
             catalog,
             configured_packages,
             configured_downloads,
             configured_agents,
-            configured_agent_sources,
+            configured_agent_providers,
         )?;
         let mut app = Self {
             config_path: config_path.to_owned(),
-            legacy_cleanup_path: legacy_cleanup_path.map(Path::to_owned),
+            legacy_cleanup_path: None,
             packages_path: packages_path.to_owned(),
             state,
             running: true,
@@ -211,13 +210,14 @@ impl App {
             return;
         };
         agent.selected = !agent.selected;
+        agent.touched = true;
         let state = if agent.selected {
             "selected"
         } else {
             "deselected"
         };
         self.status_message = Some((
-            format!("{} {state}.", agent.agent.display_name()),
+            format!("{} {state}.", agent.definition.name),
             StatusKind::Info,
         ));
     }

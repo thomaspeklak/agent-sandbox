@@ -65,13 +65,13 @@ The example catalog resolves verified archives from upstream releases:
 
 ---
 
-## Startup warning: `dcg` is missing and Pi/Claude guards will fail open
+## Startup warning: `dcg` is missing and Pi/Claude guards will fail closed
 
 Symptoms:
 
 - `ags doctor` reports configured `dcg` missing inside the sandbox image
 - `ags --agent pi` or `ags --agent claude` prints a startup warning about `dcg`
-- Pi also shows an in-session warning that Bash classification will fail open
+- Pi also shows an in-session warning that guarded Bash commands will be blocked
 
 ### Fix
 

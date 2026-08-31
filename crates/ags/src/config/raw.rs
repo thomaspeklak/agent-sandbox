@@ -56,6 +56,8 @@ pub struct RawSandbox {
     #[serde(default)]
     pub tool_download_lock: String,
     #[serde(default)]
+    pub agent_provider_lock: String,
+    #[serde(default)]
     pub agent_release_source_lock: String,
 }
 

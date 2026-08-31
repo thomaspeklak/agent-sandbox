@@ -1,13 +1,29 @@
 mod tests {
     use super::*;
     use crate::cmd::tool_configurator::model::{
-        ToolCatalog, ToolDefinition, ToolGroupDefinition, ToolSubcategoryDefinition,
+        AgentDefinition, ToolCatalog, ToolDefinition, ToolGroupDefinition,
+        ToolSubcategoryDefinition,
     };
     use crate::config::ArchiveMemberMatch;
     use crate::config::{ToolArchiveFormat, ToolDownloadArtifact, ToolDownloadSource};
     use crossterm::event::{KeyEventKind, KeyModifiers};
     use std::collections::BTreeMap;
     use ratatui::backend::TestBackend;
+
+    fn agent_definitions() -> Vec<AgentDefinition> {
+        serde_json::from_str::<Vec<crate::config::LockedAgentProvider>>(
+            crate::assets::DEFAULT_AGENT_PROVIDERS_LOCK,
+        )
+        .unwrap()
+        .into_iter()
+        .map(|entry| AgentDefinition {
+            id: entry.agent,
+            name: entry.agent.display_name().to_owned(),
+            description: entry.agent.description().to_owned(),
+            provider: entry.provider,
+        })
+        .collect()
+    }
 
     fn definition(id: &str, default: bool) -> ToolDefinition {
         ToolDefinition {
@@ -37,7 +53,7 @@ mod tests {
 
     fn app() -> App {
         let catalog = ToolCatalog {
-            agent_sources: Vec::new(),
+            agents: agent_definitions(),
             tools: vec![definition("shared", true), definition("optional", false)],
             groups: vec![
                 group(
@@ -113,6 +129,7 @@ mod tests {
         assert!(!app.state.tools[1].selected);
         assert!(app.state.tools.iter().all(|tool| tool.touched));
         assert!(app.state.agents.iter().all(|agent| agent.selected));
+        assert!(app.state.agents.iter().all(|agent| agent.touched));
     }
 
     #[test]
@@ -123,6 +140,7 @@ mod tests {
         assert!(app.show_agents);
         app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
         assert!(!app.state.agents[0].selected);
+        assert!(app.state.agents[0].touched);
         assert_eq!(app.current_group, 0);
 
         app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
@@ -134,6 +152,28 @@ mod tests {
         assert_eq!(app.state.selected_agent_count(), Agent::INSTALLABLE.len());
         app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(!app.show_agents);
+    }
+
+    #[test]
+    fn agent_panel_renders_catalog_metadata() {
+        let mut app = app();
+        app.state.agents[0].definition.name = "Catalog Pi".to_owned();
+        app.state.agents[0].definition.description = "Catalog-defined purpose.".to_owned();
+        app.show_agents = true;
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| app.render(frame)).unwrap();
+
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("Catalog Pi"));
+        assert!(rendered.contains("Catalog-defined purpose."));
     }
 
     #[test]
@@ -208,7 +248,7 @@ mod tests {
             .map(String::as_str)
             .collect::<Vec<_>>();
         let catalog = ToolCatalog {
-            agent_sources: Vec::new(),
+            agents: agent_definitions(),
             tools,
             groups: vec![
                 group("general", "General", &[("Area", &ids)]),
