@@ -3,6 +3,7 @@ mod tests {
     use crate::cmd::tool_configurator::model::{
         ToolCatalog, ToolDefinition, ToolGroupDefinition, ToolSubcategoryDefinition,
     };
+    use crate::config::ArchiveMemberMatch;
     use crate::config::{ToolArchiveFormat, ToolDownloadArtifact, ToolDownloadSource};
     use crossterm::event::{KeyEventKind, KeyModifiers};
     use std::collections::BTreeMap;
@@ -16,6 +17,7 @@ mod tests {
             default,
             dnf_packages: vec![id.to_owned()],
             download: None,
+            github_release: None,
         }
     }
 
@@ -35,6 +37,7 @@ mod tests {
 
     fn app() -> App {
         let catalog = ToolCatalog {
+            agent_sources: Vec::new(),
             tools: vec![definition("shared", true), definition("optional", false)],
             groups: vec![
                 group(
@@ -69,6 +72,7 @@ mod tests {
             show_help: false,
             status_message: None,
             save_report: None,
+            minimum_release_age: 1_440,
         };
         app.normalize_selection();
         app
@@ -204,6 +208,7 @@ mod tests {
             .map(String::as_str)
             .collect::<Vec<_>>();
         let catalog = ToolCatalog {
+            agent_sources: Vec::new(),
             tools,
             groups: vec![
                 group("general", "General", &[("Area", &ids)]),
@@ -234,6 +239,7 @@ mod tests {
             show_help: false,
             status_message: None,
             save_report: None,
+            minimum_release_age: 1_440,
         };
         app.normalize_selection();
         let backend = TestBackend::new(100, 20);
@@ -252,6 +258,7 @@ mod tests {
             version: "1.0.0".to_owned(),
             archive: ToolArchiveFormat::Zip,
             member: "secret-member".to_owned(),
+            member_match: ArchiveMemberMatch::Exact,
             install_as: "secret-command".to_owned(),
             artifacts: BTreeMap::from([
                 (

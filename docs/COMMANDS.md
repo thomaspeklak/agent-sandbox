@@ -40,8 +40,8 @@ ags tools config/tool-packages.example.json --config ~/.config/ags/config.toml
 
 What it does:
 
-- Reads a JSON catalog with canonical `tools` and ordered profession `groups`.
-- Shows horizontal General, Software Development, and Operations and DevOps tabs.
+- Reads a JSON catalog with canonical `tools`, optional agent release sources, and ordered groups.
+- Shows horizontal AI Tools, General, Software Development, and Operations and DevOps tabs when the catalog defines all four.
 - Groups each profession's tools under area dividers such as Languages, Source control, Network, and Administration.
 - Keeps one selection state when a tool appears in several professions or areas.
 - Loads the selected base config plus its trusted repo-local overlay and preselects options from the effective DNF package list and verified-tool lock.
@@ -49,15 +49,16 @@ What it does:
 - Marks catalog defaults in the list; press `d` to restore those recommendations.
 - Opens a built-in Agent CLIs panel with `a`; these selections are independent of the external tool catalog.
 - Stores selected agent IDs in `[sandbox].enabled_agents`; omitted configuration keeps all current agent CLIs enabled.
-- Saves selected DNF packages and a content-addressed `tool-downloads.<sha256>.lock.json` beside the config layer that owns tool selection, then creates a config backup.
+- Resolves selected GitHub-backed image tools and saves them with pinned downloads in a content-addressed `tool-downloads.<sha256>.lock.json` beside the config layer that owns tool selection.
+- Saves selected agent release metadata in `agent-release-sources.<sha256>.lock.json`, updates both lock references, and creates a config backup.
 - Preserves configured package names that are not represented in the catalog, except fixed AGS baseline packages that no longer belong in the extra list.
 - Preserves unknown locked download tools until a catalog explicitly manages their IDs or a selected catalog tool owns the same installed command.
 - Removes obsolete `[[tool]]` entries created by older versions of this configurator while preserving user-authored tool mounts.
 - Prints image-component and agent changes, then prompts you to run `ags update-image` and `ags update-agents`.
 
-The catalog defines each purposeful executable tool once with a stable `id`, display `name`, purpose-focused `description`, required `default` flag, and exactly one installation provider. DNF tools own one or more internal `dnf_packages`. Downloaded tools declare a pinned version, archive format, executable member, destination command, and HTTPS URL plus SHA-256 for both `x86_64` and `aarch64`. Its three profession groups contain ordered subcategories that reference tool IDs. A tool may be referenced several times, but each package or downloaded command belongs to one canonical tool. Multi-package tools, such as tmux with its terminal metadata dependency, are selected only when all owned packages are configured.
+The catalog defines each purposeful executable tool once with a stable `id`, display `name`, purpose-focused `description`, required `default` flag, and exactly one installation provider. DNF tools own one or more internal `dnf_packages`. Pinned downloads declare a version, archive format, executable member, destination command, and HTTPS URL plus SHA-256 for both `x86_64` and `aarch64`. GitHub-backed tools declare a repository, latest-or-exact release policy, anchored architecture asset selectors, and optional checksum selectors. Groups contain ordered subcategories that reference tool IDs. A tool may be referenced several times, but each package or downloaded command belongs to one canonical tool. Multi-package tools, such as tmux with its terminal metadata dependency, are selected only when all owned packages are configured.
 
-`ags tools` only edits configuration and its generated download lock. It does not invoke a host package manager, download artifacts, inspect host `PATH`, mount host binaries, or modify user-authored `[[tool]]` and `[[secret]]` entries. Downloads occur only while building the sandbox image, use HTTPS, and must pass the pinned SHA-256 check. The only `[[tool]]` entries the picker removes are obsolete entries marked as owned by an older version of the configurator. Libraries, headers, certificate bundles, AGS runtimes, and standard utilities such as curl are not presented as tools. Deselecting a tool prevents AGS from requesting its optional image component explicitly; another selected component may still provide the same executable as a dependency.
+`ags tools` only edits configuration and its generated locks. It may fetch GitHub release metadata and small checksum files while resolving selected sources, but it does not invoke a host package manager, download executable archives, inspect host `PATH`, mount host binaries, or modify user-authored `[[tool]]` and `[[secret]]` entries. Executable archives are downloaded only while building the sandbox image or reconciling OpenCode, use HTTPS, and must pass the pinned SHA-256 check. The only `[[tool]]` entries the picker removes are obsolete entries marked as owned by an older version of the configurator. Libraries, headers, certificate bundles, AGS runtimes, and standard utilities such as curl are not presented as tools. Deselecting a tool prevents AGS from requesting its optional image component explicitly; another selected component may still provide the same executable as a dependency.
 
 Agent CLIs are not installed in the base image. `ags update-agents` installs selected agents into persistent runtime volumes and removes deselected runtimes while preserving their host authentication and settings. Shell is always available and is not shown in the agent checklist.
 
@@ -161,7 +162,7 @@ Health checks for your environment and config.
 - Required config/assets presence
 - Tool binaries and configured mounts
 - Image presence
-- Whether bundled `dcg` is available inside the sandbox image
+- Whether configured `dcg` is available inside the sandbox image
 - SSH keys and dedicated ssh-agent state
 - Secret source availability
 - Session directory/writeability checks
@@ -177,10 +178,7 @@ ags doctor
 
 ## `ags update-image`
 
-Rebuilds sandbox image from configured `Containerfile` and refreshes bundled sandbox tools:
-
-- `br` from `beads_rust` releases
-- `dcg` from `destructive_command_guard` releases
+Rebuilds the sandbox image from the configured `Containerfile`, including the DNF and verified-download tools selected through `ags tools`.
 
 ```bash
 ags update-image
@@ -188,9 +186,9 @@ ags update-image --keep-existing
 ags update-image --config /path/to/config.toml
 ```
 
-- Resolves the newest stable release that provides the required archive and checksum for the image architecture
-- Skips incomplete or platform-specific newer releases with a warning instead of failing on a missing asset
-- Verifies release checksums during image build and refuses releases without a checksum asset
+- Uses the immutable architecture-specific URLs and SHA-256 values in `[sandbox].tool_download_lock`
+- Supports exact executable extraction from `zip`, `tar.gz`, and `tar.xz` archives
+- Verifies every selected archive during image build before installing its declared executable
 - Removes the previously tagged sandbox image after the new build succeeds, unless a container still references it
 - Referenced previous images are retained with a warning listing the blocking container IDs
 - `--keep-existing` keeps the previous image for manual rollback/debugging
@@ -202,7 +200,7 @@ ags update-image --config /path/to/config.toml
 Version check (inside sandbox):
 
 ```bash
-ags --agent shell -- -lc 'br --version && dcg --version'
+ags --agent shell -- -lc 'br --version && bv --version && dcg --version'
 ```
 
 Use `ags update-agents` next if needed.
@@ -230,7 +228,9 @@ Use `--config <path>` when the selection was saved to a non-default config.
 
 Security hardening and runtime hygiene:
 
-- pnpm installs run with `ignore-scripts=true`; AGS explicitly runs only `opencode-ai`'s required postinstall script and then verifies `opencode --version`.
+- pnpm installs run with `ignore-scripts=true`. OpenCode does not use pnpm: AGS resolves its saved catalog source, downloads the architecture-specific release archive, verifies its SHA-256, validates the staged binary version, and atomically activates `/opt/opencode-home/.opencode/bin/opencode` with rollback recovery. The former `opencode-ai` package is removed only as migration cleanup.
+- `minimum_release_age` applies to pnpm package selection and catalog `latest` GitHub Release selection. Exact catalog versions never fall forward.
+- OpenCode requires the `agent_release_source_lock` written by `ags tools`; run the picker once when migrating an existing configuration.
 - Codex releases are stored in a dedicated persistent `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
 - pnpm uses a stable store under `/usr/local/pnpm/.store`.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.

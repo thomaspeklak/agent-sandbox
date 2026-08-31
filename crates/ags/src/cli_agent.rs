@@ -2,7 +2,10 @@ use std::fmt;
 
 use super::CliError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, serde::Serialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum Agent {
     Pi,
     Claude,

@@ -5,6 +5,7 @@ use ags::config::{
     DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource,
     ValidatedConfig, parse_and_validate_with_overlay, parse_toml_str,
 };
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 fn minimal_sandbox_toml() -> &'static str {
@@ -142,6 +143,41 @@ fn sandbox_loads_and_validates_tool_download_lock() {
 }
 
 #[test]
+fn sandbox_verifies_content_addressed_lock_digest() {
+    let dir = tempdir().unwrap();
+    let content = "[]\n";
+    let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+    let lock = dir
+        .path()
+        .join(format!("tool-downloads.{digest}.lock.json"));
+    std::fs::write(&lock, content).unwrap();
+
+    let cfg = parse_minimal(&format!(
+        "tool_download_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert!(cfg.sandbox.tool_downloads.is_empty());
+}
+
+#[test]
+fn sandbox_rejects_tampered_content_addressed_lock() {
+    let dir = tempdir().unwrap();
+    let digest = format!("{:x}", Sha256::digest(b"[]\n"));
+    let lock = dir
+        .path()
+        .join(format!("agent-release-sources.{digest}.lock.json"));
+    std::fs::write(&lock, "[ ]\n").unwrap();
+
+    let error = parse_err(&format!(
+        "agent_release_source_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert!(error.contains("content digest does not match"));
+}
+
+#[test]
 fn sandbox_resolves_relative_tool_download_lock_from_its_config_directory() {
     let dir = tempdir().unwrap();
     let config = dir.path().join("config.toml");
@@ -220,6 +256,73 @@ fn sandbox_rejects_incomplete_tool_download_lock() {
         toml::Value::String(lock.display().to_string())
     ));
     assert!(error.contains("must define exactly 'x86_64' and 'aarch64'"));
+}
+
+#[test]
+fn sandbox_loads_relative_agent_release_source_lock() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let lock = dir.path().join("agent-release-sources.content.lock.json");
+    std::fs::write(
+        &lock,
+        r#"[{
+  "agent": "opencode",
+  "github_release": {
+    "repository": "anomalyco/opencode",
+    "release": {"mode": "latest"},
+    "archive": "tar.gz",
+    "member": "opencode",
+    "install_as": "opencode",
+    "assets": {
+      "x86_64": {"archive": "^opencode-linux-x64-baseline\\.tar\\.gz$"},
+      "aarch64": {"archive": "^opencode-linux-arm64\\.tar\\.gz$"}
+    }
+  }
+}]"#,
+    )
+    .unwrap();
+    let toml = format!(
+        "{}\nagent_release_source_lock = \"agent-release-sources.content.lock.json\"",
+        minimal_sandbox_toml()
+    );
+
+    let cfg = parse_toml_str(&toml, &config).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.agent_release_source_lock.as_deref(),
+        Some(lock.as_path())
+    );
+    assert_eq!(cfg.sandbox.agent_release_sources.len(), 1);
+    assert_eq!(
+        cfg.sandbox.agent_release_sources[0].agent,
+        ags::cli::Agent::Opencode
+    );
+}
+
+#[test]
+fn overlay_resolves_relative_agent_release_source_lock_from_overlay_directory() {
+    let dir = tempdir().unwrap();
+    let base_dir = dir.path().join("user-config");
+    let overlay_dir = dir.path().join("project/.ags");
+    std::fs::create_dir_all(&base_dir).unwrap();
+    std::fs::create_dir_all(&overlay_dir).unwrap();
+    let base = base_dir.join("config.toml");
+    let overlay = overlay_dir.join("config.toml");
+    let lock = overlay_dir.join("agent-release-sources.content.lock.json");
+    std::fs::write(&base, minimal_sandbox_toml()).unwrap();
+    std::fs::write(&lock, "[]").unwrap();
+    std::fs::write(
+        &overlay,
+        "[sandbox]\nagent_release_source_lock = \"agent-release-sources.content.lock.json\"\n",
+    )
+    .unwrap();
+
+    let cfg = parse_and_validate_with_overlay(&base, Some(&overlay)).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.agent_release_source_lock.as_deref(),
+        Some(lock.as_path())
+    );
 }
 
 #[test]

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::cli::Agent;
 
 use super::defaults::DEFAULT_PI_SPEC;
-use super::tool_download::LockedToolDownload;
+use super::tool_download::{LockedAgentReleaseSource, LockedToolDownload};
 
 /// Validated, path-resolved configuration ready for use by the launch pipeline.
 #[derive(Debug, Clone)]
@@ -39,6 +39,8 @@ pub struct ValidatedSandbox {
     pub extra_dnf_packages: Vec<String>,
     pub tool_download_lock: Option<PathBuf>,
     pub tool_downloads: Vec<LockedToolDownload>,
+    pub agent_release_source_lock: Option<PathBuf>,
+    pub agent_release_sources: Vec<LockedAgentReleaseSource>,
 }
 
 impl ValidatedSandbox {

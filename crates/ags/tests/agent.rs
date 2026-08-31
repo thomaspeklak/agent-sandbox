@@ -295,7 +295,7 @@ fn gemini_profile_basics() {
 fn opencode_profile_injects_sandbox_instructions() {
     let config = minimal_config();
     let profile = profile_for(Agent::Opencode, &config);
-    assert_eq!(profile.command, "/usr/local/pnpm/bin/opencode");
+    assert_eq!(profile.command, "/opt/opencode-home/.opencode/bin/opencode");
     assert_eq!(
         profile.extra_boot_dirs,
         vec![

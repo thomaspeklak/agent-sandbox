@@ -1,6 +1,7 @@
 fn validate_sandbox(
     raw: &crate::config::raw::RawSandbox,
     tool_download_lock_config_path: &Path,
+    agent_release_source_lock_config_path: &Path,
 ) -> Result<ValidatedSandbox, ConfigError> {
     let tool_download_lock = if raw.tool_download_lock.trim().is_empty() {
         None
@@ -14,6 +15,20 @@ fn validate_sandbox(
     let tool_downloads = tool_download_lock
         .as_deref()
         .map(load_tool_download_lock)
+        .transpose()?
+        .unwrap_or_default();
+    let agent_release_source_lock = if raw.agent_release_source_lock.trim().is_empty() {
+        None
+    } else {
+        Some(expand_path_from_config(
+            &raw.agent_release_source_lock,
+            "[sandbox].agent_release_source_lock",
+            agent_release_source_lock_config_path,
+        )?)
+    };
+    let agent_release_sources = agent_release_source_lock
+        .as_deref()
+        .map(load_agent_release_source_lock)
         .transpose()?
         .unwrap_or_default();
     Ok(ValidatedSandbox {
@@ -36,7 +51,37 @@ fn validate_sandbox(
         )?,
         tool_download_lock,
         tool_downloads,
+        agent_release_source_lock,
+        agent_release_sources,
     })
+}
+
+fn load_agent_release_source_lock(
+    path: &Path,
+) -> Result<Vec<LockedAgentReleaseSource>, ConfigError> {
+    let content = std::fs::read_to_string(path).map_err(|error| {
+        ConfigError::Validation(format!(
+            "[sandbox].agent_release_source_lock could not read '{}': {error}",
+            path.display()
+        ))
+    })?;
+    verify_content_addressed_lock(
+        path,
+        "agent-release-sources",
+        "[sandbox].agent_release_source_lock",
+        content.as_bytes(),
+    )?;
+    let sources = serde_json::from_str::<Vec<LockedAgentReleaseSource>>(&content).map_err(
+        |error| {
+            ConfigError::Validation(format!(
+                "[sandbox].agent_release_source_lock contains invalid JSON in '{}': {error}",
+                path.display()
+            ))
+        },
+    )?;
+    crate::config::validate_locked_agent_release_sources(&sources, "agent release source lock")
+        .map_err(ConfigError::Validation)?;
+    Ok(sources)
 }
 
 fn validate_enabled_agents(list: &[String]) -> Result<Vec<Agent>, ConfigError> {
@@ -71,6 +116,12 @@ fn load_tool_download_lock(path: &Path) -> Result<Vec<LockedToolDownload>, Confi
         "[sandbox].tool_download_lock could not read '{}': {error}",
         path.display()
     )))?;
+    verify_content_addressed_lock(
+        path,
+        "tool-downloads",
+        "[sandbox].tool_download_lock",
+        content.as_bytes(),
+    )?;
     let downloads = serde_json::from_str::<Vec<LockedToolDownload>>(&content).map_err(|error| {
         ConfigError::Validation(format!(
             "[sandbox].tool_download_lock contains invalid JSON in '{}': {error}",
@@ -80,6 +131,32 @@ fn load_tool_download_lock(path: &Path) -> Result<Vec<LockedToolDownload>, Confi
     crate::config::validate_locked_tool_downloads(&downloads, "tool download lock")
         .map_err(ConfigError::Validation)?;
     Ok(downloads)
+}
+
+fn verify_content_addressed_lock(
+    path: &Path,
+    prefix: &str,
+    context: &str,
+    content: &[u8],
+) -> Result<(), ConfigError> {
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return Ok(());
+    };
+    let Some(digest) = file_name
+        .strip_prefix(&format!("{prefix}."))
+        .and_then(|name| name.strip_suffix(".lock.json"))
+        .filter(|digest| digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    else {
+        return Ok(());
+    };
+    let actual = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(content));
+    if !digest.eq_ignore_ascii_case(&actual) {
+        return Err(ConfigError::Validation(format!(
+            "{context} content digest does not match '{}': expected {digest}, got {actual}",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn require_non_empty<'a>(s: &'a str, ctx: &str) -> Result<&'a str, ConfigError> {

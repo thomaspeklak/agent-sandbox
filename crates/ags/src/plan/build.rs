@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::BROWSER_HOST_LOOPBACK;
-use crate::agent::{self, AgentProfile};
+use crate::agent::{self, AgentProfile, OPENCODE_INSTALL_HOME};
 use crate::auth_proxy::host::AuthProxyGuard;
 use crate::cli::Agent;
 use crate::clipboard::ClipboardGuard;
@@ -22,7 +22,7 @@ use crate::webview_relay::WebviewRelayGuard;
 const CONTAINER_HOME: &str = "/home/dev";
 const CONTAINER_GITCONFIG: &str = "/home/dev/.config/ags/gitconfig";
 const CONTAINER_SSH_SOCK: &str = "/ssh-agent";
-const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin";
+const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/opt/opencode-home/.opencode/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin";
 const PNPM_STORE_DIR: &str = "/usr/local/pnpm/.store";
 const PNPM_GLOBAL_BIN_DIR: &str = "/usr/local/pnpm";
 const HOST_SERVICES_HOST: &str = "host.containers.internal";
@@ -81,13 +81,19 @@ struct BuildEnvContext<'a> {
     lockdown: bool,
 }
 
-const PNPM_AGENTS: &[Agent] = &[Agent::Pi, Agent::Codex, Agent::Gemini, Agent::Opencode];
+const PNPM_AGENTS: &[Agent] = &[Agent::Pi, Agent::Codex, Agent::Gemini];
 
 /// Cache volume mappings: (host suffix, container path, env var, agent owners).
 /// Empty owners are general caches; an empty env var emits no environment variable.
 const CACHE_MOUNTS: &[(&str, &str, &str, &[Agent])] = &[
     ("pnpm-home", "/usr/local/pnpm", "PNPM_HOME", PNPM_AGENTS),
     ("codex-install", "/opt/codex-home", "", &[Agent::Codex]),
+    (
+        "opencode-install",
+        OPENCODE_INSTALL_HOME,
+        "",
+        &[Agent::Opencode],
+    ),
     ("claude-install", "/opt/claude-home", "", &[Agent::Claude]),
     ("cargo-home", "/home/dev/.cargo", "CARGO_HOME", &[]),
     ("go-path", "/home/dev/go", "GOPATH", &[]),

@@ -2,31 +2,27 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        BundledToolVersions, PreviousImageCleanup, build_podman_build_args,
-        build_podman_container_image_refs_args, build_podman_image_exists_args,
-        build_podman_image_inspect_args, build_podman_image_rm_args, is_image_reference_conflict,
-        parse_container_image_refs, retain_referenced_image, short_image_id,
+        PreviousImageCleanup, build_podman_build_args, build_podman_container_image_refs_args,
+        build_podman_image_exists_args, build_podman_image_inspect_args,
+        build_podman_image_rm_args, is_image_reference_conflict, parse_container_image_refs,
+        retain_referenced_image, short_image_id,
     };
 
     #[test]
-    fn build_args_include_dcg_version_and_pull_flag() {
+    fn build_args_include_selected_components_and_pull_flag() {
         let args = build_podman_build_args(
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
-            BundledToolVersions {
-                br: "v1.0.0",
-                dcg: "v3.0.0",
-            },
             &["ansible-lint".to_owned(), "shellcheck".to_owned()],
             &[],
             true,
         );
 
         assert!(args.contains(&"--pull".to_owned()));
-        assert!(args.contains(&"BR_VERSION=v1.0.0".to_owned()));
+        assert!(!args.iter().any(|arg| arg.starts_with("BR_VERSION=")));
         assert!(!args.iter().any(|arg| arg.starts_with("BV_VERSION=")));
-        assert!(args.contains(&"DCG_VERSION=v3.0.0".to_owned()));
+        assert!(!args.iter().any(|arg| arg.starts_with("DCG_VERSION=")));
         assert!(args.contains(&"EXTRA_DNF_PACKAGES=ansible-lint shellcheck".to_owned()));
         assert!(args.contains(&"EXTRA_TOOL_DOWNLOADS_B64=W10=".to_owned()));
         assert_eq!(args.last().unwrap(), "/tmp");
@@ -38,10 +34,6 @@ mod tests {
             "localhost/agent-sandbox:latest",
             Path::new("/tmp/Containerfile"),
             Path::new("/tmp"),
-            BundledToolVersions {
-                br: "v1.0.0",
-                dcg: "v3.0.0",
-            },
             &[],
             &[],
             false,

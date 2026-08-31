@@ -43,23 +43,25 @@ ags update-agents
 
 ---
 
-## `br` / `dcg` missing inside container
+## `br` / `bv` / `dcg` missing inside container
 
-If bundled sandbox commands are missing or stale.
+If catalog-selected sandbox commands are missing or stale.
 
 ### Fix
 
 ```bash
+ags tools --packages config/tool-packages.example.json
 ags update-image
-ags --agent shell -- -lc 'br --version && dcg --version'
+ags --agent shell -- -lc 'br --version && bv --version && dcg --version'
 ```
 
-`ags update-image` refreshes from upstream releases:
+The example catalog resolves verified archives from upstream releases:
 
 - `beads_rust` (`br`): https://github.com/Dicklesworthstone/beads_rust/releases
+- `beads_viewer` (`bv`): https://github.com/Dicklesworthstone/beads_viewer/releases
 - `destructive_command_guard` (`dcg`): https://github.com/Dicklesworthstone/destructive_command_guard/releases
 
-For each tool, AGS selects the newest stable release containing both the required archive and its checksum for the image architecture. If a newer release only publishes assets for other platforms, AGS warns and uses the newest compatible release instead.
+`ags tools` resolves each selected source into an immutable architecture-specific download lock. Exact-version entries fail if that version is incomplete and never fall forward; latest entries skip immature or incompatible releases and report their rejection reasons.
 
 ---
 
@@ -67,7 +69,7 @@ For each tool, AGS selects the newest stable release containing both the require
 
 Symptoms:
 
-- `ags doctor` reports bundled `dcg` missing inside the sandbox image
+- `ags doctor` reports configured `dcg` missing inside the sandbox image
 - `ags --agent pi` or `ags --agent claude` prints a startup warning about `dcg`
 - Pi also shows an in-session warning that Bash classification will fail open
 
@@ -323,7 +325,7 @@ ags update-image
 ags update-agents
 ```
 
-With pnpm 11, Pi, Gemini, and OpenCode launchers are in `/usr/local/pnpm/bin`; AGS invokes them there directly. Codex uses its official standalone installer and remains at `/usr/local/pnpm/codex`. Runtime `pnpm` comes from the sandbox image at `/usr/local/bin/pnpm`, so stale persistent shims cannot shadow it. `update-agents` also removes old pnpm/npm-global Codex installs and old npm-global agent shims from the sandbox cache.
+With pnpm 11, Pi and Gemini launchers are in `/usr/local/pnpm/bin`. OpenCode is installed outside pnpm at `/opt/opencode-home/.opencode/bin/opencode` in its dedicated persistent `opencode-install` volume. Codex uses its official standalone installer and remains at `/usr/local/pnpm/codex`. Runtime `pnpm` comes from the sandbox image at `/usr/local/bin/pnpm`, so stale persistent shims cannot shadow it. `update-agents` also removes old pnpm/npm-global Codex installs, the legacy `opencode-ai` package, and old npm-global agent shims from the sandbox cache.
 
 ---
 

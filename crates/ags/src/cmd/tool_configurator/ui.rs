@@ -6,10 +6,10 @@ use ratatui::widgets::*;
 
 use super::model::{
     GroupRow, SaveReport, ToolConfigError, ToolSelectionState, load_package_file,
-    write_selected_tools,
+    write_selected_tools_with_release_age,
 };
 use crate::cli::Agent;
-use crate::config::LockedToolDownload;
+use crate::config::{LockedAgentReleaseSource, LockedToolDownload};
 
 #[derive(Clone, Copy)]
 enum StatusKind {
@@ -32,6 +32,7 @@ pub struct App {
     show_help: bool,
     status_message: Option<(String, StatusKind)>,
     save_report: Option<SaveReport>,
+    minimum_release_age: u32,
 }
 
 impl App {
@@ -41,7 +42,8 @@ impl App {
         packages_path: &Path,
         configured_packages: Option<&[String]>,
         configured_downloads: Option<&[LockedToolDownload]>,
-        configured_agents: &[Agent],
+        configured_agent_state: (&[Agent], &[LockedAgentReleaseSource]),
+        minimum_release_age: u32,
     ) -> Result<Self, ToolConfigError> {
         if !config_path.exists() {
             return Err(ToolConfigError::Config(format!(
@@ -51,11 +53,13 @@ impl App {
         }
 
         let catalog = load_package_file(packages_path)?;
+        let (configured_agents, configured_agent_sources) = configured_agent_state;
         let state = ToolSelectionState::from_catalog_with_config_and_agents(
             catalog,
             configured_packages,
             configured_downloads,
             configured_agents,
+            configured_agent_sources,
         )?;
         let mut app = Self {
             config_path: config_path.to_owned(),
@@ -74,6 +78,7 @@ impl App {
                 StatusKind::Info,
             )),
             save_report: None,
+            minimum_release_age,
         };
         app.normalize_selection();
         Ok(app)
@@ -279,10 +284,11 @@ impl App {
     }
 
     fn save_and_quit(&mut self) {
-        match write_selected_tools(
+        match write_selected_tools_with_release_age(
             &self.config_path,
             self.legacy_cleanup_path.as_deref(),
             &self.state,
+            self.minimum_release_age,
         ) {
             Ok(report) => {
                 self.status_message = Some((

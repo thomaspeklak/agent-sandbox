@@ -55,6 +55,8 @@ pub struct RawSandbox {
     pub extra_dnf_packages: Vec<String>,
     #[serde(default)]
     pub tool_download_lock: String,
+    #[serde(default)]
+    pub agent_release_source_lock: String,
 }
 
 #[derive(Debug, Deserialize)]

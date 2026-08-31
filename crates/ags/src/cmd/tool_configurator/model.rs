@@ -5,7 +5,9 @@ use std::io;
 use serde::Deserialize;
 
 use crate::cli::Agent;
-use crate::config::{LockedToolDownload, ToolDownloadSource};
+use crate::config::{
+    GitHubReleaseSource, LockedAgentReleaseSource, LockedToolDownload, ToolDownloadSource,
+};
 
 #[path = "model_persistence.rs"]
 mod model_persistence;
@@ -15,13 +17,14 @@ mod model_validation;
 pub use model_persistence::{
     apply_selection_to_document, config_file_defines_agent_selection,
     config_file_defines_tool_selection, configured_packages_from_document, load_package_file,
-    write_selected_tools,
+    write_selected_tools, write_selected_tools_with_release_age,
 };
 use model_validation::validate_catalog;
 
 const LEGACY_MANAGED_BY_KEY: &str = "ags_managed_by";
 const LEGACY_MANAGED_BY_VALUE: &str = "tool-configurator";
 const PROFESSIONS: &[(&str, &str)] = &[
+    ("ai-tools", "AI Tools"),
     ("general", "General"),
     ("software-development", "Software Development"),
     ("operations-devops", "Operations and DevOps"),
@@ -34,6 +37,7 @@ pub enum ToolConfigError {
     Config(String),
     ConfigParse(String),
     InvalidPackage(String),
+    ReleaseResolve { item: String, message: String },
 }
 
 impl fmt::Display for ToolConfigError {
@@ -44,6 +48,9 @@ impl fmt::Display for ToolConfigError {
             Self::Config(error) => write!(f, "config error: {error}"),
             Self::ConfigParse(error) => write!(f, "config TOML parse error: {error}"),
             Self::InvalidPackage(error) => write!(f, "invalid tool catalog: {error}"),
+            Self::ReleaseResolve { item, message } => {
+                write!(f, "failed to resolve {item}: {message}")
+            }
         }
     }
 }
@@ -53,7 +60,10 @@ impl std::error::Error for ToolConfigError {
         match self {
             Self::Io(error) => Some(error),
             Self::Json(error) => Some(error),
-            Self::Config(_) | Self::ConfigParse(_) | Self::InvalidPackage(_) => None,
+            Self::Config(_)
+            | Self::ConfigParse(_)
+            | Self::InvalidPackage(_)
+            | Self::ReleaseResolve { .. } => None,
         }
     }
 }
@@ -73,6 +83,8 @@ impl From<serde_json::Error> for ToolConfigError {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolCatalog {
+    #[serde(default)]
+    pub agent_sources: Vec<LockedAgentReleaseSource>,
     pub tools: Vec<ToolDefinition>,
     pub groups: Vec<ToolGroupDefinition>,
 }
@@ -88,6 +100,8 @@ pub struct ToolDefinition {
     pub dnf_packages: Vec<String>,
     #[serde(default)]
     pub download: Option<ToolDownloadSource>,
+    #[serde(default)]
+    pub github_release: Option<GitHubReleaseSource>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -145,6 +159,7 @@ pub struct ToolSelectionState {
     configured_packages: Option<Vec<String>>,
     configured_downloads: Vec<LockedToolDownload>,
     configured_agents: Vec<Agent>,
+    agent_sources: Vec<LockedAgentReleaseSource>,
 }
 
 impl ToolSelectionState {
@@ -173,6 +188,7 @@ impl ToolSelectionState {
             configured_packages,
             configured_downloads,
             &Agent::INSTALLABLE,
+            &[],
         )
     }
 
@@ -181,8 +197,24 @@ impl ToolSelectionState {
         configured_packages: Option<&[String]>,
         configured_downloads: Option<&[LockedToolDownload]>,
         configured_agents: &[Agent],
+        configured_agent_sources: &[LockedAgentReleaseSource],
     ) -> Result<Self, ToolConfigError> {
         validate_catalog(&catalog)?;
+        let ToolCatalog {
+            mut agent_sources,
+            tools: catalog_tools,
+            groups: catalog_groups,
+        } = catalog;
+        let catalog_source_agents = agent_sources
+            .iter()
+            .map(|source| source.agent)
+            .collect::<BTreeSet<_>>();
+        agent_sources.extend(
+            configured_agent_sources
+                .iter()
+                .filter(|source| !catalog_source_agents.contains(&source.agent))
+                .cloned(),
+        );
         let explicit_selection = configured_packages.is_some() || configured_downloads.is_some();
         let configured_packages = configured_packages.map(<[String]>::to_vec);
         let configured = configured_packages
@@ -197,19 +229,17 @@ impl ToolSelectionState {
             .map(|download| download.id.as_str())
             .collect::<BTreeSet<_>>();
         let configured_downloads = configured_downloads.unwrap_or_default().to_vec();
-        let tool_indices = catalog
-            .tools
+        let tool_indices = catalog_tools
             .iter()
             .enumerate()
             .map(|(index, tool)| (tool.id.clone(), index))
             .collect::<BTreeMap<_, _>>();
 
-        let tools = catalog
-            .tools
+        let tools = catalog_tools
             .into_iter()
             .map(|definition| ToolState {
                 selected: if explicit_selection {
-                    if definition.download.is_some() {
+                    if definition.download.is_some() || definition.github_release.is_some() {
                         configured_download_ids.contains(definition.id.as_str())
                     } else {
                         definition
@@ -224,8 +254,7 @@ impl ToolSelectionState {
                 touched: false,
             })
             .collect();
-        let groups = catalog
-            .groups
+        let groups = catalog_groups
             .into_iter()
             .map(|group| ToolGroup {
                 id: group.id,
@@ -258,6 +287,7 @@ impl ToolSelectionState {
             configured_packages,
             configured_downloads,
             configured_agents: configured_agents.to_vec(),
+            agent_sources,
         })
     }
 
@@ -348,7 +378,10 @@ impl ToolSelectionState {
             .collect()
     }
 
-    fn selected_downloads(&self) -> Vec<LockedToolDownload> {
+    fn selected_downloads(
+        &self,
+        minimum_release_age: u32,
+    ) -> Result<Vec<LockedToolDownload>, ToolConfigError> {
         let catalog_ids = self
             .tools
             .iter()
@@ -358,30 +391,67 @@ impl ToolSelectionState {
             .tools
             .iter()
             .filter(|tool| tool.selected)
-            .filter_map(|tool| tool.definition.download.as_ref())
-            .map(|download| download.install_as.as_str())
-            .collect::<BTreeSet<_>>();
-        self.tools
-            .iter()
-            .filter(|tool| tool.selected)
             .filter_map(|tool| {
                 tool.definition
                     .download
-                    .clone()
-                    .map(|download| LockedToolDownload {
-                        id: tool.definition.id.clone(),
-                        download,
+                    .as_ref()
+                    .map(|download| download.install_as.as_str())
+                    .or_else(|| {
+                        tool.definition
+                            .github_release
+                            .as_ref()
+                            .map(|source| source.install_as.as_str())
                     })
             })
-            .chain(
-                self.configured_downloads
-                    .iter()
-                    .filter(|tool| {
-                        !catalog_ids.contains(tool.id.as_str())
-                            && !selected_commands.contains(tool.download.install_as.as_str())
-                    })
-                    .cloned(),
-            )
+            .collect::<BTreeSet<_>>();
+        let mut downloads = Vec::new();
+        for tool in self.tools.iter().filter(|tool| tool.selected) {
+            let download = if let Some(download) = &tool.definition.download {
+                Some(download.clone())
+            } else if let Some(source) = &tool.definition.github_release {
+                Some(
+                    crate::github_release::resolve_github_release_source(
+                        source,
+                        minimum_release_age,
+                    )
+                    .map_err(|error| ToolConfigError::ReleaseResolve {
+                        item: format!("tool '{}'", tool.definition.id),
+                        message: error.to_string(),
+                    })?,
+                )
+            } else {
+                None
+            };
+            if let Some(download) = download {
+                downloads.push(LockedToolDownload {
+                    id: tool.definition.id.clone(),
+                    download,
+                });
+            }
+        }
+        downloads.extend(
+            self.configured_downloads
+                .iter()
+                .filter(|tool| {
+                    !catalog_ids.contains(tool.id.as_str())
+                        && !selected_commands.contains(tool.download.install_as.as_str())
+                })
+                .cloned(),
+        );
+        Ok(downloads)
+    }
+
+    fn selected_agent_sources(&self) -> Vec<LockedAgentReleaseSource> {
+        let selected = self
+            .agents
+            .iter()
+            .filter(|agent| agent.selected)
+            .map(|agent| agent.agent)
+            .collect::<BTreeSet<_>>();
+        self.agent_sources
+            .iter()
+            .filter(|source| selected.contains(&source.agent))
+            .cloned()
             .collect()
     }
 

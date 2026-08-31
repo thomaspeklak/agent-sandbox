@@ -5,6 +5,9 @@ use crate::util::shell_quote;
 const HOST_SERVICE_PROMPT_HINT: &str =
     "Sandbox: use host.containers.internal (localhost is container-local).";
 const PNPM_AGENT_BIN_DIR: &str = "/usr/local/pnpm/bin";
+/// OpenCode is installed by its upstream binary installer rather than pnpm.
+pub(crate) const OPENCODE_INSTALL_HOME: &str = "/opt/opencode-home";
+pub(crate) const OPENCODE_BINARY_PATH: &str = "/opt/opencode-home/.opencode/bin/opencode";
 const OPENCODE_SANDBOX_INSTRUCTIONS_DIR: &str = "/tmp/ags-opencode";
 const OPENCODE_SANDBOX_INSTRUCTIONS_PATH: &str = "/tmp/ags-opencode/sandbox-instructions.md";
 
@@ -162,7 +165,7 @@ fn opencode_profile() -> AgentProfile {
     .to_string();
 
     AgentProfile {
-        command: pnpm_agent_command("opencode"),
+        command: OPENCODE_BINARY_PATH.to_owned(),
         extra_env: vec![("OPENCODE_CONFIG_CONTENT".to_owned(), config_content)],
         extra_boot_dirs,
         entrypoint_setup: format!(

@@ -7,6 +7,8 @@ pub mod clipboard;
 pub mod cmd;
 pub mod config;
 pub mod git;
+pub(crate) mod github_release;
+mod github_release_http;
 pub mod host_dialog;
 pub mod host_ui;
 pub mod lifecycle;

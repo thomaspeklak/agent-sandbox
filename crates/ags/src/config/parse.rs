@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use toml::Value;
 
 use crate::cli::Agent;
-use crate::config::LockedToolDownload;
 use crate::config::error::ConfigError;
 use crate::config::raw::{
     RawAgentMount, RawBrowser, RawClipboard, RawConfig, RawHostUi, RawMount, RawSecret, RawTool,
@@ -14,6 +13,7 @@ use crate::config::types::{
     HostUiConfig, MountKind, MountMode, MountWhen, PspConfig, SecretSource, UpdateConfig,
     ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret, ValidatedTool,
 };
+use crate::config::{LockedAgentReleaseSource, LockedToolDownload};
 
 /// Read, parse, and validate a config TOML file from disk.
 pub fn parse_and_validate(path: &Path) -> Result<ValidatedConfig, ConfigError> {
@@ -35,6 +35,7 @@ pub fn parse_and_validate_with_overlay(
 ) -> Result<ValidatedConfig, ConfigError> {
     let mut merged = read_toml_value(base_path)?;
     let mut tool_download_lock_config_path = base_path;
+    let mut agent_release_source_lock_config_path = base_path;
 
     if let Some(overlay_path) = overlay_path {
         let overlay = read_toml_value(overlay_path)?;
@@ -46,10 +47,22 @@ pub fn parse_and_validate_with_overlay(
         {
             tool_download_lock_config_path = overlay_path;
         }
+        if overlay
+            .get("sandbox")
+            .and_then(Value::as_table)
+            .is_some_and(|sandbox| sandbox.contains_key("agent_release_source_lock"))
+        {
+            agent_release_source_lock_config_path = overlay_path;
+        }
         merge_toml_value(&mut merged, overlay, &[]);
     }
 
-    parse_toml_value(merged, base_path, tool_download_lock_config_path)
+    parse_toml_value(
+        merged,
+        base_path,
+        tool_download_lock_config_path,
+        agent_release_source_lock_config_path,
+    )
 }
 
 /// Parse and validate config from a TOML string (useful for testing).
@@ -58,7 +71,7 @@ pub fn parse_toml_str(content: &str, config_path: &Path) -> Result<ValidatedConf
         path: config_path.to_owned(),
         source: e,
     })?;
-    parse_toml_value(value, config_path, config_path)
+    parse_toml_value(value, config_path, config_path, config_path)
 }
 
 fn read_toml_value(path: &Path) -> Result<Value, ConfigError> {
@@ -76,12 +89,18 @@ fn parse_toml_value(
     value: Value,
     config_path: &Path,
     tool_download_lock_config_path: &Path,
+    agent_release_source_lock_config_path: &Path,
 ) -> Result<ValidatedConfig, ConfigError> {
     let raw: RawConfig = value.try_into().map_err(|e| ConfigError::Toml {
         path: config_path.to_owned(),
         source: e,
     })?;
-    validate(raw, config_path, tool_download_lock_config_path)
+    validate(
+        raw,
+        config_path,
+        tool_download_lock_config_path,
+        agent_release_source_lock_config_path,
+    )
 }
 
 fn reject_overlay_command_secrets(overlay: &Value, overlay_path: &Path) -> Result<(), ConfigError> {
@@ -133,8 +152,13 @@ fn validate(
     raw: RawConfig,
     config_path: &Path,
     tool_download_lock_config_path: &Path,
+    agent_release_source_lock_config_path: &Path,
 ) -> Result<ValidatedConfig, ConfigError> {
-    let sandbox = validate_sandbox(&raw.sandbox, tool_download_lock_config_path)?;
+    let sandbox = validate_sandbox(
+        &raw.sandbox,
+        tool_download_lock_config_path,
+        agent_release_source_lock_config_path,
+    )?;
 
     let mut mounts = Vec::new();
     for (idx, m) in raw.mount.iter().enumerate() {

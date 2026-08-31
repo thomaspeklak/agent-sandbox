@@ -34,7 +34,11 @@ pub fn run(
         packages_path,
         has_configured_tool_selection.then_some(config.sandbox.extra_dnf_packages.as_slice()),
         has_configured_tool_selection.then_some(config.sandbox.tool_downloads.as_slice()),
-        config.sandbox.enabled_agents.as_slice(),
+        (
+            config.sandbox.enabled_agents.as_slice(),
+            config.sandbox.agent_release_sources.as_slice(),
+        ),
+        config.update.minimum_release_age,
     )?;
     let report = app.run()?;
 

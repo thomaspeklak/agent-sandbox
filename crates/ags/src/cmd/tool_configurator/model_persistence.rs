@@ -7,7 +7,8 @@ use sha2::{Digest, Sha256};
 use toml_edit::{Array, DocumentMut, Item, Table};
 
 use crate::config::{
-    BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, validate_locked_tool_downloads,
+    BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, validate_locked_agent_release_sources,
+    validate_locked_tool_downloads,
 };
 
 use super::model_validation::validate_catalog;
@@ -28,7 +29,7 @@ pub fn config_file_defines_tool_selection(path: &Path) -> Result<bool, ToolConfi
 }
 
 pub fn config_file_defines_agent_selection(path: &Path) -> Result<bool, ToolConfigError> {
-    config_file_defines_any(path, &["enabled_agents"])
+    config_file_defines_any(path, &["enabled_agents", "agent_release_source_lock"])
 }
 
 fn config_file_defines_any(path: &Path, keys: &[&str]) -> Result<bool, ToolConfigError> {
@@ -46,17 +47,33 @@ pub fn write_selected_tools(
     legacy_cleanup_path: Option<&Path>,
     state: &ToolSelectionState,
 ) -> Result<SaveReport, ToolConfigError> {
+    write_selected_tools_with_release_age(config_path, legacy_cleanup_path, state, 1_440)
+}
+
+pub fn write_selected_tools_with_release_age(
+    config_path: &Path,
+    legacy_cleanup_path: Option<&Path>,
+    state: &ToolSelectionState,
+    minimum_release_age: u32,
+) -> Result<SaveReport, ToolConfigError> {
     let content = fs::read_to_string(config_path)?;
     let mut doc: DocumentMut = content
         .parse::<DocumentMut>()
         .map_err(|error| ToolConfigError::ConfigParse(error.to_string()))?;
-    let previous_lock_name = configured_lock_name(&doc);
+    let previous_lock_name = configured_lock_name(&doc, "tool_download_lock");
+    let previous_agent_lock_name = configured_lock_name(&doc, "agent_release_source_lock");
     let backup_path = config_path.with_extension("toml.bak");
-    let displaced_backup_lock_name = configured_lock_name_from_file(&backup_path);
+    let displaced_backup_lock_name =
+        configured_lock_name_from_file(&backup_path, "tool_download_lock");
+    let displaced_backup_agent_lock_name =
+        configured_lock_name_from_file(&backup_path, "agent_release_source_lock");
 
     let mut report = apply_selection_to_document(&mut doc, state);
-    let downloads = state.selected_downloads();
+    let downloads = state.selected_downloads(minimum_release_age)?;
+    let agent_sources = state.selected_agent_sources();
     validate_locked_tool_downloads(&downloads, "selected tool downloads")
+        .map_err(ToolConfigError::InvalidPackage)?;
+    validate_locked_agent_release_sources(&agent_sources, "selected agent release sources")
         .map_err(ToolConfigError::InvalidPackage)?;
     let previous_download_ids = state
         .configured_downloads
@@ -74,14 +91,20 @@ pub fn write_selected_tools(
     let lock_digest = format!("{:x}", Sha256::digest(lock_content.as_bytes()));
     let lock_name = format!("tool-downloads.{lock_digest}.lock.json");
     let lock_path = config_path.with_file_name(&lock_name);
+    let agent_lock_content = serde_json::to_string_pretty(&agent_sources)? + "\n";
+    let agent_lock_digest = format!("{:x}", Sha256::digest(agent_lock_content.as_bytes()));
+    let agent_lock_name = format!("agent-release-sources.{agent_lock_digest}.lock.json");
+    let agent_lock_path = config_path.with_file_name(&agent_lock_name);
     doc["sandbox"]["tool_download_lock"] = toml_edit::value(lock_name.clone());
+    doc["sandbox"]["agent_release_source_lock"] = toml_edit::value(agent_lock_name.clone());
     backup_file(config_path)?;
     atomic_write(&lock_path, &lock_content)?;
+    atomic_write(&agent_lock_path, &agent_lock_content)?;
     atomic_write(config_path, &doc.to_string())?;
     if let Some(stale_lock_name) = displaced_backup_lock_name
         .filter(|name| name != &lock_name && previous_lock_name.as_deref() != Some(name.as_str()))
     {
-        match remove_managed_lock(config_path, &stale_lock_name) {
+        match remove_managed_lock(config_path, &stale_lock_name, "tool-downloads") {
             Ok(()) => {}
             Err(error) => {
                 add_cleanup_warning(
@@ -92,6 +115,18 @@ pub fn write_selected_tools(
                 );
             }
         }
+    }
+    if let Some(stale_lock_name) = displaced_backup_agent_lock_name.filter(|name| {
+        name != &agent_lock_name && previous_agent_lock_name.as_deref() != Some(name.as_str())
+    }) && let Err(error) =
+        remove_managed_lock(config_path, &stale_lock_name, "agent-release-sources")
+    {
+        add_cleanup_warning(
+            &mut report,
+            format!(
+                "saved agent selection, but could not remove stale agent release source lock {stale_lock_name}: {error}"
+            ),
+        );
     }
     if let Some(path) = legacy_cleanup_path {
         match remove_legacy_managed_tools_from_file(path) {
@@ -110,20 +145,24 @@ pub fn write_selected_tools(
     Ok(report)
 }
 
-fn configured_lock_name(doc: &DocumentMut) -> Option<String> {
+fn configured_lock_name(doc: &DocumentMut, key: &str) -> Option<String> {
     doc.get("sandbox")
-        .and_then(|sandbox| sandbox.get("tool_download_lock"))
+        .and_then(|sandbox| sandbox.get(key))
         .and_then(Item::as_str)
         .map(str::to_owned)
 }
 
-fn configured_lock_name_from_file(path: &Path) -> Option<String> {
+fn configured_lock_name_from_file(path: &Path, key: &str) -> Option<String> {
     let content = fs::read_to_string(path).ok()?;
     let doc = content.parse::<DocumentMut>().ok()?;
-    configured_lock_name(&doc)
+    configured_lock_name(&doc, key)
 }
 
-fn managed_lock_path(config_path: &Path, lock_name: &str) -> Option<(PathBuf, String)> {
+fn managed_lock_path(
+    config_path: &Path,
+    lock_name: &str,
+    prefix: &str,
+) -> Option<(PathBuf, String)> {
     let mut components = Path::new(lock_name).components();
     let Component::Normal(file_name) = components.next()? else {
         return None;
@@ -133,7 +172,7 @@ fn managed_lock_path(config_path: &Path, lock_name: &str) -> Option<(PathBuf, St
     }
     let file_name = file_name.to_str()?;
     let digest = file_name
-        .strip_prefix("tool-downloads.")?
+        .strip_prefix(&format!("{prefix}."))?
         .strip_suffix(".lock.json")?;
     if digest.len() != 64
         || !digest
@@ -145,8 +184,9 @@ fn managed_lock_path(config_path: &Path, lock_name: &str) -> Option<(PathBuf, St
     Some((config_path.with_file_name(file_name), digest.to_owned()))
 }
 
-fn remove_managed_lock(config_path: &Path, lock_name: &str) -> io::Result<()> {
-    let Some((lock_path, expected_digest)) = managed_lock_path(config_path, lock_name) else {
+fn remove_managed_lock(config_path: &Path, lock_name: &str, prefix: &str) -> io::Result<()> {
+    let Some((lock_path, expected_digest)) = managed_lock_path(config_path, lock_name, prefix)
+    else {
         return Ok(());
     };
     let metadata = match fs::symlink_metadata(&lock_path) {

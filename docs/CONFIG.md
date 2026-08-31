@@ -93,6 +93,7 @@ enabled_agents = ["pi", "claude", "codex", "gemini", "opencode"]
 extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
 # Written by `ags tools` when verified downloaded tools are selected:
 # tool_download_lock = "tool-downloads.<sha256>.lock.json"
+# agent_release_source_lock = "agent-release-sources.<sha256>.lock.json"
 ```
 
 ### Fields
@@ -137,6 +138,11 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
   - Config loading fails closed if the lock is missing, malformed, uses an unsafe path or URL, lacks `x86_64` or `aarch64`, or contains an invalid checksum.
   - Both automatic image builds and `ags update-image` verify the selected artifact before installing only its declared executable.
   - Do not hand-edit this file; update source metadata in the tool catalog and save through `ags tools`.
+- `agent_release_source_lock` (path, optional, managed by `ags tools`)
+  - Points to the generated, content-addressed JSON lock containing catalog release metadata for selected agent CLIs. OpenCode currently uses this source.
+  - AGS resolves the path relative to the config layer that declared it and validates the repository, release policy, archive, executable member, and anchored architecture selectors.
+  - `ags update-agents` resolves the saved source using `[update].minimum_release_age`, verifies the selected release digest, and installs OpenCode transactionally in its dedicated persistent volume.
+  - Existing configurations with OpenCode enabled must run `ags tools` once to create this lock before `ags update-agents`.
 
 ---
 
@@ -500,12 +506,12 @@ wayland = false
 
 ## `[update]`
 
-Controls `ags update-agents` behavior.
+Controls agent and catalog release update behavior.
 
 ```toml
 [update]
 pi_spec = "@earendil-works/pi-coding-agent"
-minimum_release_age = 1440
+minimum_release_age = 1440 # minutes
 ```
 
 ### Fields
@@ -513,8 +519,9 @@ minimum_release_age = 1440
 - `pi_spec` (string, default `@earendil-works/pi-coding-agent`)
   - Package spec used for Pi install/update.
   - Older configs with the exact legacy value `@mariozechner/pi-coding-agent` should be updated; `ags update-agents` treats that value as the current default during migration.
-- `minimum_release_age` (u32, default `1440`)
-  - Written to pnpm config (`minimum-release-age`) inside update container.
+- `minimum_release_age` (u32 minutes, default `1440`)
+  - Minimum maturity period for release selection, measured from its published time.
+  - Written to pnpm config (`minimum-release-age`) for Pi and Gemini packages. It also filters non-draft, non-prerelease catalog GitHub sources whose release mode is `latest`, including OpenCode and image tools. Exact-version sources inspect only their requested tag and do not apply the age filter or fall forward.
 
 ---
 
