@@ -360,7 +360,7 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
             match crate::podman::image_has_binary(&plan.image, "dcg") {
                 Ok(true) => {}
                 Ok(false) => eprintln!(
-                    "warning: destructive_command_guard (dcg) is missing in the sandbox image; AGS {} Bash guards will fail open. Run `ags doctor` or `ags update-image`.",
+                    "warning: destructive_command_guard (dcg) is missing in the sandbox image; AGS {} Bash commands will fail closed. Run `ags doctor` or `ags update-image`.",
                     opts.agent.as_str()
                 ),
                 Err(e) => eprintln!(

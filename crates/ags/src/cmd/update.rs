@@ -4,12 +4,6 @@ use std::process::{Command, ExitStatus};
 
 use crate::config::ValidatedConfig;
 
-mod github_release;
-
-use github_release::{
-    BuildArchitecture, BundledDependency, resolve_latest_compatible_tag, warn_if_fallback,
-};
-
 /// Options for the update command.
 pub struct UpdateOptions {
     pub pull: bool,
@@ -28,8 +22,6 @@ impl Default for UpdateOptions {
 #[derive(Debug)]
 pub enum UpdateError {
     MissingContainerfile(String),
-    ReleaseResolveFailed(String),
-    ReleaseParseFailed(String),
     ImageInspectFailed(String),
     BuildFailed(String),
     CleanupFailed(String),
@@ -39,11 +31,6 @@ impl fmt::Display for UpdateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingContainerfile(p) => write!(f, "missing Containerfile: {p}"),
-            Self::ReleaseResolveFailed(msg) => write!(
-                f,
-                "failed to resolve compatible bundled tool releases: {msg}"
-            ),
-            Self::ReleaseParseFailed(msg) => write!(f, "failed to parse release metadata: {msg}"),
             Self::ImageInspectFailed(msg) => write!(f, "failed to inspect existing image: {msg}"),
             Self::BuildFailed(msg) => write!(f, "podman build failed: {msg}"),
             Self::CleanupFailed(msg) => write!(f, "failed to remove previous image: {msg}"),
@@ -63,7 +50,7 @@ enum PreviousImageCleanup {
     },
 }
 
-/// Rebuild the sandbox container image and refresh bundled br/dcg release binaries.
+/// Rebuild the sandbox container image from configured components.
 pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateError> {
     let image = &config.sandbox.image;
     let containerfile = &config.sandbox.containerfile;
@@ -73,14 +60,6 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
             containerfile.display().to_string(),
         ));
     }
-
-    let arch = BuildArchitecture::detect()?;
-    let br_release = resolve_latest_compatible_tag(BundledDependency::Br, arch)?;
-    let dcg_release = resolve_latest_compatible_tag(BundledDependency::Dcg, arch)?;
-    warn_if_fallback(BundledDependency::Br, arch, &br_release);
-    warn_if_fallback(BundledDependency::Dcg, arch, &dcg_release);
-    let br_version = br_release.tag_name;
-    let dcg_version = dcg_release.tag_name;
 
     let context_dir = containerfile
         .parent()
@@ -96,18 +75,12 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
         image,
         containerfile,
         context_dir,
-        BundledToolVersions {
-            br: &br_version,
-            dcg: &dcg_version,
-        },
         &config.sandbox.extra_dnf_packages,
         &config.sandbox.tool_downloads,
         opts.pull,
     );
 
     println!("Rebuilding {image}");
-    println!("  br release: {br_version}");
-    println!("  dcg release: {dcg_version}");
 
     let status = Command::new("podman")
         .args(&args)
@@ -140,8 +113,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
         }
     }
 
-    println!("\nDone. Image rebuilt with br/dcg refreshed.");
-    println!("Verify inside sandbox with: br --version && dcg --version");
+    println!("\nDone. Image rebuilt with the configured tools.");
     println!("Run 'ags update-agents' to install/update agent CLIs in volumes.");
     Ok(())
 }
@@ -349,17 +321,10 @@ fn build_podman_container_image_refs_args() -> Vec<String> {
     ]
 }
 
-#[derive(Clone, Copy)]
-struct BundledToolVersions<'a> {
-    br: &'a str,
-    dcg: &'a str,
-}
-
 fn build_podman_build_args(
     image: &str,
     containerfile: &Path,
     context_dir: &Path,
-    versions: BundledToolVersions<'_>,
     extra_dnf_packages: &[String],
     tool_downloads: &[crate::config::LockedToolDownload],
     pull: bool,
@@ -371,8 +336,6 @@ fn build_podman_build_args(
         containerfile,
         context_dir,
         &[
-            ("BR_VERSION", versions.br),
-            ("DCG_VERSION", versions.dcg),
             ("EXTRA_DNF_PACKAGES", &packages),
             ("EXTRA_TOOL_DOWNLOADS_B64", &downloads),
         ],

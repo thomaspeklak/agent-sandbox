@@ -51,6 +51,7 @@ Required on host:
 - `ssh-keygen`
 - `ssh-add`
 - `bash`
+- `curl` (for mature GitHub Release resolution during image/agent updates)
 
 Optional but useful:
 
@@ -166,7 +167,7 @@ cargo run -p ags -- update-agents
 
 ```bash
 cargo run -p ags -- doctor
-cargo run -p ags -- --agent shell -- -lc 'br --version && dcg --version && tmux -V && test -f ~/.tmux.conf'
+cargo run -p ags -- --agent shell -- -lc 'br --version && bv --version && dcg --version && tmux -V && test -f ~/.tmux.conf'
 ```
 
 ---
@@ -375,7 +376,7 @@ Start here:
 
 - `ags setup` — generate keys, ensure Pi assets in mounted host path, optional keyring secret setup
 - `ags doctor` — run environment + config health checks
-- `ags update-image [--keep-existing]` — rebuild container image from `Containerfile`, refresh bundled `br`/`dcg` binaries, and remove the previous image after a successful rebuild unless it is still referenced by a container or `--keep-existing` is set
+- `ags update-image [--keep-existing]` — rebuild the container image from `Containerfile` with catalog-selected DNF and verified-download tools, and remove the previous image after a successful rebuild unless it is still referenced by a container or `--keep-existing` is set
 - `ags update-agents` — install/update agent CLIs in persistent volumes
 - `ags tools --packages <catalog.json>` — choose optional sandbox tools by profession and area
 - `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
@@ -476,7 +477,7 @@ Use `config/config.example.toml` for full schema examples.
 - `[desktop_passthrough]`
   - Explicit broad desktop passthrough controls such as raw Wayland compositor access
 - `[update]`
-  - Controls Pi package spec and pnpm minimum release age for updates
+  - Controls Pi package spec and the minimum maturity age for pnpm and GitHub Release updates
 
 ---
 
@@ -488,7 +489,7 @@ Use `config/config.example.toml` for full schema examples.
 - For untrusted or foreign repos, prefer `--lockdown` to minimize host exposure for that run.
 - In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update-image` if Bash commands are unexpectedly blocked.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
-- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`). AGS explicitly runs only `opencode-ai`'s required postinstall script after installation and verifies the resulting binary.
+- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`). For OpenCode, AGS resolves the catalog source saved by `ags tools`, verifies the architecture-specific GitHub Release archive, validates the staged binary version, and atomically activates it in a dedicated persistent volume outside pnpm.
 - Non-RPM tools selected through `ags tools` use pinned HTTPS artifacts for both supported architectures. AGS validates their catalog metadata and verifies SHA-256 before extracting only the declared executable.
 - Rotate/revoke credentials quickly if compromise is suspected.
 - The clipboard bridge is narrower than raw Wayland passthrough. Host clipboard reads require approval by default and can be allowed for `[clipboard].approval_seconds`; disabling approval restores session-wide read access.

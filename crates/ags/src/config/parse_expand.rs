@@ -1,6 +1,7 @@
 fn validate_sandbox(
     raw: &crate::config::raw::RawSandbox,
     tool_download_lock_config_path: &Path,
+    agent_provider_lock_config_path: &Path,
 ) -> Result<ValidatedSandbox, ConfigError> {
     let tool_download_lock = if raw.tool_download_lock.trim().is_empty() {
         None
@@ -11,11 +12,61 @@ fn validate_sandbox(
             tool_download_lock_config_path,
         )?)
     };
-    let tool_downloads = tool_download_lock
-        .as_deref()
-        .map(load_tool_download_lock)
-        .transpose()?
-        .unwrap_or_default();
+    // An omitted lock preserves the reviewed built-in default tools for backward
+    // compatibility. A generated lock containing [] means the user explicitly
+    // selected no downloaded tools.
+    let tool_downloads = match tool_download_lock.as_deref() {
+        Some(path) => load_tool_download_lock(path)?,
+        None => load_default_tool_downloads()?,
+    };
+    let configured_agent_provider_lock = if raw.agent_provider_lock.trim().is_empty() {
+        None
+    } else {
+        Some(expand_path_from_config(
+            &raw.agent_provider_lock,
+            "[sandbox].agent_provider_lock",
+            agent_provider_lock_config_path,
+        )?)
+    };
+    let legacy_agent_provider_lock = if raw.agent_release_source_lock.trim().is_empty() {
+        None
+    } else {
+        Some(expand_path_from_config(
+            &raw.agent_release_source_lock,
+            "[sandbox].agent_release_source_lock",
+            agent_provider_lock_config_path,
+        )?)
+    };
+    if configured_agent_provider_lock.is_some() && legacy_agent_provider_lock.is_some() {
+        return Err(ConfigError::Validation(
+            "[sandbox] must not define both agent_provider_lock and the legacy agent_release_source_lock"
+                .to_owned(),
+        ));
+    }
+    let (agent_provider_lock, agent_providers) = match (
+        configured_agent_provider_lock,
+        legacy_agent_provider_lock,
+    ) {
+        (Some(path), None) => {
+            let providers = load_agent_provider_lock(&path)?;
+            (Some(path), providers)
+        }
+        (None, Some(path)) => {
+            let providers = load_legacy_agent_provider_lock(&path)?;
+            (Some(path), providers)
+        }
+        (None, None) => (None, load_default_agent_providers()?),
+        (Some(_), Some(_)) => unreachable!("conflicting locks were rejected above"),
+    };
+    let enabled_agents = validate_enabled_agents(&raw.enabled_agents)?;
+    for agent in &enabled_agents {
+        if !agent_providers.iter().any(|entry| entry.agent == *agent) {
+            return Err(ConfigError::Validation(format!(
+                "[sandbox].enabled_agents includes '{}' but the agent provider lock does not",
+                agent.as_str()
+            )));
+        }
+    }
     Ok(ValidatedSandbox {
         image: require_non_empty(&raw.image, "[sandbox].image")?.to_owned(),
         containerfile: expand_path(&raw.containerfile, "[sandbox].containerfile")?,
@@ -29,14 +80,114 @@ fn validate_sandbox(
             "[sandbox].container_boot_dirs",
         )?,
         passthrough_env: validate_string_list(&raw.passthrough_env, "[sandbox].passthrough_env")?,
-        enabled_agents: validate_enabled_agents(&raw.enabled_agents)?,
+        enabled_agents,
         extra_dnf_packages: validate_dnf_packages(
             &raw.extra_dnf_packages,
             "[sandbox].extra_dnf_packages",
         )?,
         tool_download_lock,
         tool_downloads,
+        agent_provider_lock,
+        agent_providers,
     })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyLockedAgentReleaseSource {
+    agent: Agent,
+    github_release: crate::config::GitHubReleaseSource,
+}
+
+fn load_legacy_agent_provider_lock(path: &Path) -> Result<Vec<LockedAgentProvider>, ConfigError> {
+    let content = std::fs::read_to_string(path).map_err(|error| {
+        ConfigError::Validation(format!(
+            "[sandbox].agent_release_source_lock could not read '{}': {error}",
+            path.display()
+        ))
+    })?;
+    verify_content_addressed_lock(
+        path,
+        "agent-release-sources",
+        "[sandbox].agent_release_source_lock",
+        content.as_bytes(),
+    )?;
+    let sources = serde_json::from_str::<Vec<LegacyLockedAgentReleaseSource>>(&content).map_err(
+        |error| {
+            ConfigError::Validation(format!(
+                "[sandbox].agent_release_source_lock contains invalid JSON in '{}': {error}",
+                path.display()
+            ))
+        },
+    )?;
+    let [source] = sources.as_slice() else {
+        return Err(ConfigError::Validation(
+            "[sandbox].agent_release_source_lock must contain exactly the legacy OpenCode release source; run `ags tools` to create an agent provider lock"
+                .to_owned(),
+        ));
+    };
+    if source.agent != Agent::Opencode {
+        return Err(ConfigError::Validation(
+            "[sandbox].agent_release_source_lock must contain the legacy OpenCode release source; run `ags tools` to create an agent provider lock"
+                .to_owned(),
+        ));
+    }
+    let mut providers = load_default_agent_providers()?;
+    let opencode = providers
+        .iter_mut()
+        .find(|entry| entry.agent == Agent::Opencode)
+        .ok_or_else(|| {
+            ConfigError::Validation(
+                "embedded default agent provider lock does not include OpenCode".to_owned(),
+            )
+        })?;
+    opencode.provider = crate::config::AgentProviderPolicy::GithubRelease {
+        source: source.github_release.clone(),
+    };
+    crate::config::validate_locked_agent_providers(&providers, "legacy agent release source lock")
+        .map_err(ConfigError::Validation)?;
+    Ok(providers)
+}
+
+fn load_agent_provider_lock(path: &Path) -> Result<Vec<LockedAgentProvider>, ConfigError> {
+    let content = std::fs::read_to_string(path).map_err(|error| {
+        ConfigError::Validation(format!(
+            "[sandbox].agent_provider_lock could not read '{}': {error}",
+            path.display()
+        ))
+    })?;
+    verify_required_content_addressed_lock(
+        path,
+        "agent-providers",
+        "[sandbox].agent_provider_lock",
+        content.as_bytes(),
+    )?;
+    let providers = serde_json::from_str::<Vec<LockedAgentProvider>>(&content).map_err(|error| {
+            ConfigError::Validation(format!(
+                "[sandbox].agent_provider_lock contains invalid JSON in '{}': {error}",
+                path.display()
+            ))
+        })?;
+    crate::config::validate_locked_agent_providers(&providers, "agent provider lock")
+        .map_err(ConfigError::Validation)?;
+    Ok(providers)
+}
+
+fn load_default_agent_providers() -> Result<Vec<LockedAgentProvider>, ConfigError> {
+    let providers = serde_json::from_str::<Vec<LockedAgentProvider>>(
+        crate::assets::DEFAULT_AGENT_PROVIDERS_LOCK,
+    )
+    .map_err(|error| {
+        ConfigError::Validation(format!(
+            "embedded default agent provider lock contains invalid JSON: {error}"
+        ))
+    })?;
+    crate::config::validate_locked_agent_providers(
+        &providers,
+        "embedded default agent provider lock",
+    )
+    .map_err(ConfigError::Validation)?;
+    Ok(providers)
 }
 
 fn validate_enabled_agents(list: &[String]) -> Result<Vec<Agent>, ConfigError> {
@@ -71,6 +222,12 @@ fn load_tool_download_lock(path: &Path) -> Result<Vec<LockedToolDownload>, Confi
         "[sandbox].tool_download_lock could not read '{}': {error}",
         path.display()
     )))?;
+    verify_content_addressed_lock(
+        path,
+        "tool-downloads",
+        "[sandbox].tool_download_lock",
+        content.as_bytes(),
+    )?;
     let downloads = serde_json::from_str::<Vec<LockedToolDownload>>(&content).map_err(|error| {
         ConfigError::Validation(format!(
             "[sandbox].tool_download_lock contains invalid JSON in '{}': {error}",
@@ -80,6 +237,73 @@ fn load_tool_download_lock(path: &Path) -> Result<Vec<LockedToolDownload>, Confi
     crate::config::validate_locked_tool_downloads(&downloads, "tool download lock")
         .map_err(ConfigError::Validation)?;
     Ok(downloads)
+}
+
+fn load_default_tool_downloads() -> Result<Vec<LockedToolDownload>, ConfigError> {
+    let downloads = serde_json::from_str::<Vec<LockedToolDownload>>(
+        crate::assets::DEFAULT_TOOL_DOWNLOADS_LOCK,
+    )
+    .map_err(|error| {
+        ConfigError::Validation(format!(
+            "embedded default tool download lock contains invalid JSON: {error}"
+        ))
+    })?;
+    crate::config::validate_locked_tool_downloads(&downloads, "embedded default tool download lock")
+        .map_err(ConfigError::Validation)?;
+    Ok(downloads)
+}
+
+fn verify_content_addressed_lock(
+    path: &Path,
+    prefix: &str,
+    context: &str,
+    content: &[u8],
+) -> Result<(), ConfigError> {
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return Ok(());
+    };
+    let Some(digest) = file_name
+        .strip_prefix(&format!("{prefix}."))
+        .and_then(|name| name.strip_suffix(".lock.json"))
+        .filter(|digest| digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    else {
+        return Ok(());
+    };
+    let actual = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(content));
+    if !digest.eq_ignore_ascii_case(&actual) {
+        return Err(ConfigError::Validation(format!(
+            "{context} content digest does not match '{}': expected {digest}, got {actual}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn verify_required_content_addressed_lock(
+    path: &Path,
+    prefix: &str,
+    context: &str,
+    content: &[u8],
+) -> Result<(), ConfigError> {
+    let digest = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix(&format!("{prefix}.")))
+        .and_then(|name| name.strip_suffix(".lock.json"))
+        .filter(|digest| digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| {
+            ConfigError::Validation(format!(
+                "{context} must reference a content-addressed {prefix}.<sha256>.lock.json file"
+            ))
+        })?;
+    let actual = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(content));
+    if !digest.eq_ignore_ascii_case(&actual) {
+        return Err(ConfigError::Validation(format!(
+            "{context} content digest does not match '{}': expected {digest}, got {actual}",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn require_non_empty<'a>(s: &'a str, ctx: &str) -> Result<&'a str, ConfigError> {

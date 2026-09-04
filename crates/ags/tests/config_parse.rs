@@ -5,6 +5,7 @@ use ags::config::{
     DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC, MountKind, MountMode, MountWhen, SecretSource,
     ValidatedConfig, parse_and_validate_with_overlay, parse_toml_str,
 };
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 fn minimal_sandbox_toml() -> &'static str {
@@ -37,7 +38,14 @@ fn minimal_config_parses() {
     assert_eq!(cfg.sandbox.image, "localhost/agent-sandbox:latest");
     assert_eq!(cfg.sandbox.extra_dnf_packages, DEFAULT_EXTRA_DNF_PACKAGES);
     assert!(cfg.sandbox.tool_download_lock.is_none());
-    assert!(cfg.sandbox.tool_downloads.is_empty());
+    assert_eq!(
+        cfg.sandbox
+            .tool_downloads
+            .iter()
+            .map(|tool| tool.id.as_str())
+            .collect::<Vec<_>>(),
+        ["br", "bv", "dcg"]
+    );
     assert!(cfg.mounts.is_empty());
     assert!(cfg.tools.is_empty());
     assert!(cfg.secrets.is_empty());
@@ -49,6 +57,15 @@ fn minimal_config_parses() {
     assert!(!cfg.clipboard.approve_writes);
     assert!(!cfg.desktop_passthrough.wayland);
     assert_eq!(cfg.sandbox.enabled_agents, Agent::INSTALLABLE);
+    assert!(cfg.sandbox.agent_provider_lock.is_none());
+    assert_eq!(
+        cfg.sandbox
+            .agent_providers
+            .iter()
+            .map(|entry| entry.agent)
+            .collect::<Vec<_>>(),
+        Agent::INSTALLABLE
+    );
     assert!(cfg.sandbox.is_agent_enabled(Agent::Shell));
     assert_eq!(cfg.update.pi_spec, DEFAULT_PI_SPEC);
     assert_eq!(cfg.update.minimum_release_age, 1440);
@@ -142,6 +159,59 @@ fn sandbox_loads_and_validates_tool_download_lock() {
 }
 
 #[test]
+fn sandbox_verifies_content_addressed_lock_digest() {
+    let dir = tempdir().unwrap();
+    let content = "[]\n";
+    let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+    let lock = dir
+        .path()
+        .join(format!("tool-downloads.{digest}.lock.json"));
+    std::fs::write(&lock, content).unwrap();
+
+    let cfg = parse_minimal(&format!(
+        "tool_download_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert!(cfg.sandbox.tool_downloads.is_empty());
+}
+
+#[test]
+fn explicit_empty_tool_download_lock_disables_embedded_defaults() {
+    let dir = tempdir().unwrap();
+    let content = "[]\n";
+    let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+    let lock = dir
+        .path()
+        .join(format!("tool-downloads.{digest}.lock.json"));
+    std::fs::write(&lock, content).unwrap();
+
+    let cfg = parse_minimal(&format!(
+        "tool_download_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert!(cfg.sandbox.tool_downloads.is_empty());
+}
+
+#[test]
+fn sandbox_rejects_tampered_content_addressed_lock() {
+    let dir = tempdir().unwrap();
+    let digest = format!("{:x}", Sha256::digest(b"[]\n"));
+    let lock = dir
+        .path()
+        .join(format!("agent-providers.{digest}.lock.json"));
+    std::fs::write(&lock, "[ ]\n").unwrap();
+
+    let error = parse_err(&format!(
+        "agent_provider_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert!(error.contains("content digest does not match"));
+}
+
+#[test]
 fn sandbox_resolves_relative_tool_download_lock_from_its_config_directory() {
     let dir = tempdir().unwrap();
     let config = dir.path().join("config.toml");
@@ -220,6 +290,193 @@ fn sandbox_rejects_incomplete_tool_download_lock() {
         toml::Value::String(lock.display().to_string())
     ));
     assert!(error.contains("must define exactly 'x86_64' and 'aarch64'"));
+}
+
+#[test]
+fn sandbox_loads_relative_agent_provider_lock() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let content = r#"[{
+  "agent": "opencode",
+  "provider": {
+    "type": "github_release",
+    "source": {
+      "repository": "anomalyco/opencode",
+      "release": {"mode": "latest"},
+      "archive": "tar.gz",
+      "member": "opencode",
+      "install_as": "opencode",
+      "assets": {
+        "x86_64": {"archive": "^opencode-linux-x64-baseline\\.tar\\.gz$"},
+        "aarch64": {"archive": "^opencode-linux-arm64\\.tar\\.gz$"}
+      }
+    }
+  }
+}]"#;
+    let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+    let lock = dir
+        .path()
+        .join(format!("agent-providers.{digest}.lock.json"));
+    std::fs::write(&lock, content).unwrap();
+    let toml = format!(
+        "{}\nenabled_agents = [\"opencode\"]\nagent_provider_lock = \"{}\"",
+        minimal_sandbox_toml(),
+        lock.file_name().unwrap().to_string_lossy()
+    );
+
+    let cfg = parse_toml_str(&toml, &config).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.agent_provider_lock.as_deref(),
+        Some(lock.as_path())
+    );
+    assert_eq!(cfg.sandbox.agent_providers.len(), 1);
+    assert_eq!(
+        cfg.sandbox.agent_providers[0].agent,
+        ags::cli::Agent::Opencode
+    );
+}
+
+#[test]
+fn sandbox_migrates_legacy_opencode_release_source_lock() {
+    let dir = tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let content = r#"[{
+  "agent": "opencode",
+  "github_release": {
+    "repository": "example/opencode",
+    "release": {"mode": "latest"},
+    "archive": "tar.gz",
+    "member": "opencode",
+    "install_as": "opencode",
+    "assets": {
+      "x86_64": {"archive": "^opencode-linux-x64\\.tar\\.gz$"},
+      "aarch64": {"archive": "^opencode-linux-arm64\\.tar\\.gz$"}
+    }
+  }
+}]"#;
+    let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+    let lock = dir
+        .path()
+        .join(format!("agent-release-sources.{digest}.lock.json"));
+    std::fs::write(&lock, content).unwrap();
+    let toml = format!(
+        "{}\nagent_release_source_lock = \"{}\"",
+        minimal_sandbox_toml(),
+        lock.file_name().unwrap().to_string_lossy()
+    );
+
+    let cfg = parse_toml_str(&toml, &config).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.agent_provider_lock.as_deref(),
+        Some(lock.as_path())
+    );
+    assert_eq!(cfg.sandbox.agent_providers.len(), Agent::INSTALLABLE.len());
+    let opencode = cfg
+        .sandbox
+        .agent_providers
+        .iter()
+        .find(|entry| entry.agent == Agent::Opencode)
+        .unwrap();
+    let ags::config::AgentProviderPolicy::GithubRelease { source } = &opencode.provider else {
+        panic!("expected GitHub release provider");
+    };
+    assert_eq!(source.repository, "example/opencode");
+}
+
+#[test]
+fn sandbox_rejects_conflicting_agent_provider_lock_keys() {
+    let error = parse_err(
+        "enabled_agents = []\nagent_provider_lock = \"new.json\"\nagent_release_source_lock = \"old.json\"",
+    );
+
+    assert!(error.contains("must not define both"), "got: {error}");
+}
+
+#[test]
+fn overlay_resolves_relative_agent_provider_lock_from_overlay_directory() {
+    let dir = tempdir().unwrap();
+    let base_dir = dir.path().join("user-config");
+    let overlay_dir = dir.path().join("project/.ags");
+    std::fs::create_dir_all(&base_dir).unwrap();
+    std::fs::create_dir_all(&overlay_dir).unwrap();
+    let base = base_dir.join("config.toml");
+    let overlay = overlay_dir.join("config.toml");
+    let content = "[]";
+    let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+    let lock = overlay_dir.join(format!("agent-providers.{digest}.lock.json"));
+    std::fs::write(&base, minimal_sandbox_toml()).unwrap();
+    std::fs::write(&lock, content).unwrap();
+    std::fs::write(
+        &overlay,
+        format!(
+            "[sandbox]\nenabled_agents = []\nagent_provider_lock = \"{}\"\n",
+            lock.file_name().unwrap().to_string_lossy()
+        ),
+    )
+    .unwrap();
+
+    let cfg = parse_and_validate_with_overlay(&base, Some(&overlay)).unwrap();
+
+    assert_eq!(
+        cfg.sandbox.agent_provider_lock.as_deref(),
+        Some(lock.as_path())
+    );
+}
+
+#[test]
+fn sandbox_requires_content_addressed_agent_provider_lock_name() {
+    let dir = tempdir().unwrap();
+    let lock = dir.path().join("agent-providers.lock.json");
+    std::fs::write(&lock, "[]").unwrap();
+
+    let error = parse_err(&format!(
+        "enabled_agents = []\nagent_provider_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert!(error.contains("must reference a content-addressed"));
+}
+
+#[test]
+fn sandbox_rejects_enabled_agent_missing_from_provider_lock() {
+    let dir = tempdir().unwrap();
+    let content = "[]\n";
+    let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+    let lock = dir
+        .path()
+        .join(format!("agent-providers.{digest}.lock.json"));
+    std::fs::write(&lock, content).unwrap();
+
+    let error = parse_err(&format!(
+        "enabled_agents = [\"pi\"]\nagent_provider_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert!(error.contains("includes 'pi' but the agent provider lock does not"));
+}
+
+#[test]
+fn sandbox_rejects_incompatible_agent_provider() {
+    let dir = tempdir().unwrap();
+    let content = r#"[{
+  "agent": "pi",
+  "provider": {"type": "builtin_installer", "installer": "claude"}
+}]
+"#;
+    let digest = format!("{:x}", Sha256::digest(content.as_bytes()));
+    let lock = dir
+        .path()
+        .join(format!("agent-providers.{digest}.lock.json"));
+    std::fs::write(&lock, content).unwrap();
+
+    let error = parse_err(&format!(
+        "enabled_agents = [\"pi\"]\nagent_provider_lock = {}",
+        toml::Value::String(lock.display().to_string())
+    ));
+
+    assert!(error.contains("provider is incompatible with agent 'pi'"));
 }
 
 #[test]
@@ -782,6 +1039,17 @@ pi_spec = ""
 "#,
     );
     assert!(err.contains("[update].pi_spec"), "got: {err}");
+}
+
+#[test]
+fn update_pi_spec_rejects_versioned_or_non_package_values() {
+    for spec in ["@custom/agent@latest", "https://example.com/pi.tgz"] {
+        let err = parse_err(&format!(
+            "[update]\npi_spec = {}",
+            toml::Value::String(spec.to_owned())
+        ));
+        assert!(err.contains("unversioned npm package name"), "got: {err}");
+    }
 }
 
 #[test]

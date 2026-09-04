@@ -227,6 +227,7 @@ fn cache_mounts_created() {
     let cache_containers: Vec<&str> = vec![
         "/usr/local/pnpm",
         "/opt/claude-home",
+        "/opt/opencode-home",
         "/home/dev/.cargo",
         "/home/dev/go",
         "/home/dev/.cache/go-build",
@@ -451,6 +452,10 @@ fn env_has_required_inline_vars() {
         Some("/usr/local/pnpm".to_owned())
     );
     let path = find_plan_env(&plan, "PATH").expect("PATH should be set");
+    assert!(
+        path.contains("/opt/opencode-home/.opencode/bin"),
+        "shell sessions should resolve the standalone OpenCode binary"
+    );
     assert!(
         path.find(":/usr/bin:").unwrap() < path.find(":/usr/local/pnpm:").unwrap(),
         "system pnpm should take precedence over stale pnpm shims in PNPM_HOME"
@@ -1237,7 +1242,7 @@ fn opencode_agent_has_sandbox_mount() {
 
     assert!(
         plan.entrypoint
-            .contains("exec /usr/local/pnpm/bin/opencode"),
+            .contains("exec /opt/opencode-home/.opencode/bin/opencode"),
         "opencode entrypoint: {}",
         plan.entrypoint
     );

@@ -73,13 +73,14 @@ git clone https://github.com/thomaspeklak/agent-sandbox.git && \
   cargo install --locked --path crates/ags --force && \
   ags install && \
   ags setup && \
+  ags tools --packages config/tool-packages.example.json && \
   ags update-image && \
   ags update-agents && \
   ags doctor
 ```
 
-Run the tool picker before `ags update-image` when you want to customize the
-sandbox tool selection.
+The tool picker materializes verified image-download and agent-release locks;
+review its defaults before saving when you do not need custom selections.
 
 ## Clean, Build, and Install Locally
 

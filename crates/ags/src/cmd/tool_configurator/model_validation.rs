@@ -12,6 +12,30 @@ pub(super) fn validate_catalog(catalog: &ToolCatalog) -> Result<(), ToolConfigEr
     let mut tool_ids = BTreeSet::new();
     let mut claimed_packages = BTreeSet::new();
     let mut claimed_commands = BTreeSet::new();
+    let mut agent_ids = BTreeSet::new();
+    for agent in &catalog.agents {
+        if agent.id == crate::cli::Agent::Shell {
+            return Err(invalid("catalog agents must not include shell"));
+        }
+        if !agent_ids.insert(agent.id) {
+            return Err(invalid(format!(
+                "agent '{}' is defined more than once",
+                agent.id.as_str()
+            )));
+        }
+        if agent.name.trim().is_empty() || agent.description.trim().is_empty() {
+            return Err(invalid(format!(
+                "agent '{}' must define a name and purpose-focused description",
+                agent.id.as_str()
+            )));
+        }
+        crate::config::validate_agent_provider(
+            agent.id,
+            &agent.provider,
+            &format!("catalog agent '{}'", agent.id.as_str()),
+        )
+        .map_err(invalid)?;
+    }
     for tool in &catalog.tools {
         if !crate::config::valid_tool_id(&tool.id) {
             return Err(invalid(format!(
@@ -33,9 +57,14 @@ pub(super) fn validate_catalog(catalog: &ToolCatalog) -> Result<(), ToolConfigEr
         }
         let has_dnf_packages = !tool.dnf_packages.is_empty();
         let has_download = tool.download.is_some();
-        if has_dnf_packages == has_download {
+        let has_github_release = tool.github_release.is_some();
+        if usize::from(has_dnf_packages)
+            + usize::from(has_download)
+            + usize::from(has_github_release)
+            != 1
+        {
             return Err(invalid(format!(
-                "tool '{}' must define exactly one of dnf_packages or download",
+                "tool '{}' must define exactly one of dnf_packages, download, or github_release",
                 tool.id
             )));
         }
@@ -66,20 +95,36 @@ pub(super) fn validate_catalog(catalog: &ToolCatalog) -> Result<(), ToolConfigEr
                 )));
             }
         }
+        if let Some(source) = &tool.github_release {
+            crate::config::validate_github_release_source(source).map_err(invalid)?;
+            if !claimed_commands.insert(source.install_as.as_str()) {
+                return Err(invalid(format!(
+                    "downloaded command '{}' is assigned to more than one tool",
+                    source.install_as
+                )));
+            }
+        }
     }
 
-    if catalog.groups.len() != PROFESSIONS.len() {
-        return Err(invalid(format!(
-            "catalog must define exactly {} profession groups",
-            PROFESSIONS.len()
-        )));
+    if !(catalog.groups.len() == PROFESSIONS.len() || catalog.groups.len() + 1 == PROFESSIONS.len())
+    {
+        return Err(invalid(
+            "catalog must define the three profession groups and may define AI Tools",
+        ));
     }
     let mut referenced_tools = BTreeSet::new();
-    for (group, (expected_id, expected_name)) in catalog.groups.iter().zip(PROFESSIONS) {
-        if group.id != *expected_id {
+    let mut group_ids = BTreeSet::new();
+    for group in &catalog.groups {
+        let Some((_, expected_name)) = PROFESSIONS
+            .iter()
+            .find(|(expected_id, _)| *expected_id == group.id)
+        else {
+            return Err(invalid(format!("unknown profession group '{}'", group.id)));
+        };
+        if !group_ids.insert(group.id.as_str()) {
             return Err(invalid(format!(
-                "profession group '{}' must be '{}'",
-                group.id, expected_id
+                "profession group '{}' is defined more than once",
+                group.id
             )));
         }
         if group.name != *expected_name {
@@ -124,6 +169,13 @@ pub(super) fn validate_catalog(catalog: &ToolCatalog) -> Result<(), ToolConfigEr
                 }
                 referenced_tools.insert(tool_id.as_str());
             }
+        }
+    }
+    for required in ["general", "software-development", "operations-devops"] {
+        if !group_ids.contains(required) {
+            return Err(invalid(format!(
+                "catalog must define profession group '{required}'"
+            )));
         }
     }
 

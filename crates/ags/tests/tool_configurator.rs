@@ -4,13 +4,16 @@ use std::path::{Path, PathBuf};
 use ags::{
     cli::Agent,
     cmd::tool_configurator::model::{
-        GroupRow, ToolCatalog, ToolDefinition, ToolGroupDefinition, ToolSelectionState,
-        ToolSubcategoryDefinition, apply_selection_to_document,
+        AgentDefinition, GroupRow, ToolCatalog, ToolDefinition, ToolGroupDefinition,
+        ToolSelectionState, ToolSubcategoryDefinition, apply_selection_to_document,
         config_file_defines_agent_selection, config_file_defines_tool_selection,
         configured_packages_from_document, load_package_file, write_selected_tools,
     },
+    config::ArchiveMemberMatch,
     config::{
-        BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, LockedToolDownload, ToolArchiveFormat,
+        AgentProviderPolicy, BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES,
+        GitHubReleaseAssetSelector, GitHubReleaseAssetSelectors, GitHubReleaseSelection,
+        GitHubReleaseSource, LockedAgentProvider, LockedToolDownload, ToolArchiveFormat,
         ToolDownloadArtifact, ToolDownloadSource,
     },
 };
@@ -27,6 +30,7 @@ fn tool(id: &str, dnf_packages: &[&str], default: bool) -> ToolDefinition {
             .map(|package| (*package).to_owned())
             .collect(),
         download: None,
+        github_release: None,
     }
 }
 
@@ -35,6 +39,7 @@ fn download_source() -> ToolDownloadSource {
         version: "1.0.0".to_owned(),
         archive: ToolArchiveFormat::Zip,
         member: "tool".to_owned(),
+        member_match: ArchiveMemberMatch::Exact,
         install_as: "tool".to_owned(),
         artifacts: BTreeMap::from([
             (
@@ -55,6 +60,29 @@ fn download_source() -> ToolDownloadSource {
     }
 }
 
+fn default_agent_providers() -> Vec<LockedAgentProvider> {
+    serde_json::from_str(ags::assets::DEFAULT_AGENT_PROVIDERS_LOCK).unwrap()
+}
+
+fn agent_definitions() -> Vec<AgentDefinition> {
+    default_agent_providers()
+        .into_iter()
+        .map(|entry| AgentDefinition {
+            id: entry.agent,
+            name: entry.agent.display_name().to_owned(),
+            description: entry.agent.description().to_owned(),
+            provider: entry.provider,
+        })
+        .collect()
+}
+
+fn opencode_agent_provider() -> LockedAgentProvider {
+    default_agent_providers()
+        .into_iter()
+        .find(|entry| entry.agent == Agent::Opencode)
+        .unwrap()
+}
+
 fn download_tool(id: &str, default: bool) -> ToolDefinition {
     let mut download = download_source();
     download.install_as = id.to_owned();
@@ -65,6 +93,34 @@ fn download_tool(id: &str, default: bool) -> ToolDefinition {
         default,
         dnf_packages: vec![],
         download: Some(download),
+        github_release: None,
+    }
+}
+
+fn release_tool(id: &str) -> ToolDefinition {
+    let selector = |arch: &str| GitHubReleaseAssetSelector {
+        archive: format!(r"^{id}-{{version}}-{arch}\.tar\.xz$"),
+        checksum: None,
+    };
+    ToolDefinition {
+        id: id.to_owned(),
+        name: id.to_owned(),
+        description: format!("Use {id} to complete work."),
+        default: false,
+        dnf_packages: vec![],
+        download: None,
+        github_release: Some(GitHubReleaseSource {
+            repository: "example/unreachable".to_owned(),
+            release: GitHubReleaseSelection::Latest,
+            archive: ToolArchiveFormat::TarXz,
+            member: id.to_owned(),
+            member_match: ArchiveMemberMatch::UniqueBasename,
+            install_as: id.to_owned(),
+            assets: GitHubReleaseAssetSelectors {
+                x86_64: selector("x86_64"),
+                aarch64: selector("aarch64"),
+            },
+        }),
     }
 }
 
@@ -82,6 +138,7 @@ fn group(id: &str, name: &str, tools: &[String]) -> ToolGroupDefinition {
 fn catalog(tools: Vec<ToolDefinition>) -> ToolCatalog {
     let ids = tools.iter().map(|tool| tool.id.clone()).collect::<Vec<_>>();
     ToolCatalog {
+        agents: agent_definitions(),
         tools,
         groups: vec![
             group("general", "General", &ids),
@@ -103,6 +160,74 @@ fn saved_lock_name(config: &Path) -> String {
         .as_str()
         .unwrap()
         .to_owned()
+}
+
+#[test]
+fn save_materializes_selected_agent_providers() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(
+        &config,
+        "[sandbox]\nagent_release_source_lock = \"legacy.lock.json\"\n",
+    )
+    .unwrap();
+    let source_catalog = catalog(vec![tool("git", &["git"], false)]);
+    let mut configured_provider = opencode_agent_provider();
+    let AgentProviderPolicy::GithubRelease { source } = &mut configured_provider.provider else {
+        panic!("expected OpenCode GitHub release provider");
+    };
+    source.repository = "example/custom-opencode".to_owned();
+    let state = ToolSelectionState::from_catalog_with_config_and_agent_providers(
+        source_catalog,
+        Some(&[]),
+        Some(&[]),
+        &[Agent::Opencode],
+        std::slice::from_ref(&configured_provider),
+    )
+    .unwrap();
+
+    write_selected_tools(&config, None, &state).unwrap();
+
+    let doc: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+    assert!(doc["sandbox"].get("agent_release_source_lock").is_none());
+    let lock_name = doc["sandbox"]["agent_provider_lock"].as_str().unwrap();
+    assert!(lock_name.starts_with("agent-providers."));
+    assert!(lock_name.ends_with(".lock.json"));
+    let providers: Vec<LockedAgentProvider> =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(lock_name)).unwrap())
+            .unwrap();
+    assert_eq!(providers, vec![configured_provider]);
+}
+
+#[test]
+fn catalog_is_authoritative_for_agent_availability() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\n").unwrap();
+    let mut authoritative_catalog = catalog(vec![tool("git", &["git"], false)]);
+    authoritative_catalog.agents.clear();
+    let state = ToolSelectionState::from_catalog_with_config_and_agents(
+        authoritative_catalog,
+        Some(&[]),
+        Some(&[]),
+        &[Agent::Opencode],
+    )
+    .unwrap();
+
+    write_selected_tools(&config, None, &state).unwrap();
+
+    let doc: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+    let lock_name = doc["sandbox"]["agent_provider_lock"].as_str().unwrap();
+    let providers: Vec<LockedAgentProvider> =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(lock_name)).unwrap())
+            .unwrap();
+    assert!(providers.is_empty());
+    assert!(
+        doc["sandbox"]["enabled_agents"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -441,6 +566,63 @@ fn save_keeps_previously_referenced_download_lock_immutable() {
 }
 
 #[test]
+fn save_reuses_locked_release_for_untouched_tool_without_resolving() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    let mut locked = download_source();
+    locked.version = "7.7.7".to_owned();
+    locked.install_as = "br".to_owned();
+    let configured = vec![LockedToolDownload {
+        id: "br".to_owned(),
+        download: locked,
+    }];
+    let state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![release_tool("br")]),
+        Some(&[]),
+        Some(&configured),
+    )
+    .unwrap();
+    assert!(state.tools[0].selected);
+    assert!(!state.tools[0].touched);
+
+    // The catalog repository is unreachable, so this only succeeds when the
+    // locked entry is reused instead of re-resolved.
+    write_selected_tools(&config, None, &state).unwrap();
+
+    let saved: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+    let lock_name = saved["sandbox"]["tool_download_lock"].as_str().unwrap();
+    let lock: Vec<LockedToolDownload> =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(lock_name)).unwrap())
+            .unwrap();
+    assert_eq!(lock.len(), 1);
+    assert_eq!(lock[0].id, "br");
+    assert_eq!(lock[0].download.version, "7.7.7");
+}
+
+#[test]
+fn save_resolves_release_for_touched_or_newly_selected_tool() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    let mut state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![release_tool("br")]),
+        Some(&[]),
+        Some(&[]),
+    )
+    .unwrap();
+    state.tools[0].selected = true;
+    state.tools[0].touched = true;
+
+    let error = write_selected_tools(&config, None, &state).unwrap_err();
+
+    assert!(
+        error.to_string().contains("tool 'br'"),
+        "expected a release resolution error, got: {error}"
+    );
+}
+
+#[test]
 fn save_removes_lock_displaced_from_the_restorable_backup() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
@@ -697,6 +879,22 @@ fn catalog_validation_rejects_shell_expressions() {
 }
 
 #[test]
+fn catalog_validation_rejects_incompatible_agent_provider() {
+    let mut invalid = catalog(vec![tool("git", &["git"], false)]);
+    invalid.agents[0].provider = AgentProviderPolicy::BuiltinInstaller {
+        installer: ags::config::BuiltinAgentInstaller::Claude,
+    };
+
+    let error = ToolSelectionState::from_catalog(invalid, &[]).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("provider is incompatible with agent 'pi'")
+    );
+}
+
+#[test]
 fn catalog_validation_requires_exactly_one_install_provider() {
     let mut definition = tool("invalid", &["invalid"], false);
     definition.download = Some(download_source());
@@ -788,10 +986,61 @@ fn catalog_validation_requires_exact_profession_names() {
 #[test]
 fn example_catalog_has_profession_views_and_canonical_defaults() {
     let catalog = example_catalog();
-    assert_eq!(catalog.groups.len(), 3);
-    assert_eq!(catalog.groups[0].name, "General");
-    assert_eq!(catalog.groups[1].name, "Software Development");
-    assert_eq!(catalog.groups[2].name, "Operations and DevOps");
+    assert_eq!(catalog.groups.len(), 4);
+    assert_eq!(catalog.groups[0].name, "AI Tools");
+    assert_eq!(catalog.groups[1].name, "General");
+    assert_eq!(catalog.groups[2].name, "Software Development");
+    assert_eq!(catalog.groups[3].name, "Operations and DevOps");
+    assert_eq!(
+        catalog.groups[0].subcategories[0].tools,
+        ["br", "bv", "dcg"]
+    );
+    assert_eq!(
+        catalog
+            .agents
+            .iter()
+            .map(|agent| agent.id)
+            .collect::<Vec<_>>(),
+        Agent::INSTALLABLE
+    );
+    assert_eq!(
+        catalog
+            .agents
+            .iter()
+            .map(|agent| LockedAgentProvider {
+                agent: agent.id,
+                provider: agent.provider.clone(),
+            })
+            .collect::<Vec<_>>(),
+        default_agent_providers()
+    );
+    let pi = catalog
+        .agents
+        .iter()
+        .find(|agent| agent.id == Agent::Pi)
+        .unwrap();
+    assert!(matches!(
+        &pi.provider,
+        AgentProviderPolicy::Pnpm { package }
+            if package == ags::config::DEFAULT_PI_SPEC
+    ));
+    let opencode = catalog
+        .agents
+        .iter()
+        .find(|agent| agent.id == Agent::Opencode)
+        .unwrap();
+    assert!(matches!(
+        opencode.provider,
+        AgentProviderPolicy::GithubRelease { .. }
+    ));
+
+    for id in ["br", "bv", "dcg"] {
+        let tool = catalog.tools.iter().find(|tool| tool.id == id).unwrap();
+        assert!(tool.default, "{id} should be selected by default");
+        assert!(tool.github_release.is_some());
+        assert!(tool.dnf_packages.is_empty());
+        assert!(tool.download.is_none());
+    }
 
     let mut catalog_defaults = catalog
         .tools

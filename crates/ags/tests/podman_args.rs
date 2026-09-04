@@ -47,11 +47,12 @@ fn args_start_with_run() {
 }
 
 #[test]
-fn args_include_rm_and_it() {
+fn args_include_lifecycle_flags() {
     let plan = minimal_plan();
     let args = build_run_args(&plan, Path::new("/tmp/env"));
     assert!(args.contains(&"--rm".to_owned()));
     assert!(args.contains(&"-it".to_owned()));
+    assert!(!args.contains(&"--init".to_owned()));
 }
 
 #[test]

@@ -6,10 +6,10 @@ use ratatui::widgets::*;
 
 use super::model::{
     GroupRow, SaveReport, ToolConfigError, ToolSelectionState, load_package_file,
-    write_selected_tools,
+    write_selected_tools_with_release_age,
 };
 use crate::cli::Agent;
-use crate::config::LockedToolDownload;
+use crate::config::{LockedAgentProvider, LockedToolDownload};
 
 #[derive(Clone, Copy)]
 enum StatusKind {
@@ -32,16 +32,18 @@ pub struct App {
     show_help: bool,
     status_message: Option<(String, StatusKind)>,
     save_report: Option<SaveReport>,
+    minimum_release_age: u32,
 }
 
 impl App {
     pub fn new(
         config_path: &Path,
-        legacy_cleanup_path: Option<&Path>,
         packages_path: &Path,
         configured_packages: Option<&[String]>,
         configured_downloads: Option<&[LockedToolDownload]>,
         configured_agents: &[Agent],
+        configured_agent_providers: &[LockedAgentProvider],
+        minimum_release_age: u32,
     ) -> Result<Self, ToolConfigError> {
         if !config_path.exists() {
             return Err(ToolConfigError::Config(format!(
@@ -51,15 +53,16 @@ impl App {
         }
 
         let catalog = load_package_file(packages_path)?;
-        let state = ToolSelectionState::from_catalog_with_config_and_agents(
+        let state = ToolSelectionState::from_catalog_with_config_and_agent_providers(
             catalog,
             configured_packages,
             configured_downloads,
             configured_agents,
+            configured_agent_providers,
         )?;
         let mut app = Self {
             config_path: config_path.to_owned(),
-            legacy_cleanup_path: legacy_cleanup_path.map(Path::to_owned),
+            legacy_cleanup_path: None,
             packages_path: packages_path.to_owned(),
             state,
             running: true,
@@ -74,6 +77,7 @@ impl App {
                 StatusKind::Info,
             )),
             save_report: None,
+            minimum_release_age,
         };
         app.normalize_selection();
         Ok(app)
@@ -206,13 +210,14 @@ impl App {
             return;
         };
         agent.selected = !agent.selected;
+        agent.touched = true;
         let state = if agent.selected {
             "selected"
         } else {
             "deselected"
         };
         self.status_message = Some((
-            format!("{} {state}.", agent.agent.display_name()),
+            format!("{} {state}.", agent.definition.name),
             StatusKind::Info,
         ));
     }
@@ -279,10 +284,11 @@ impl App {
     }
 
     fn save_and_quit(&mut self) {
-        match write_selected_tools(
+        match write_selected_tools_with_release_age(
             &self.config_path,
             self.legacy_cleanup_path.as_deref(),
             &self.state,
+            self.minimum_release_age,
         ) {
             Ok(report) => {
                 self.status_message = Some((

@@ -93,6 +93,7 @@ enabled_agents = ["pi", "claude", "codex", "gemini", "opencode"]
 extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
 # Written by `ags tools` when verified downloaded tools are selected:
 # tool_download_lock = "tool-downloads.<sha256>.lock.json"
+# agent_provider_lock = "agent-providers.<sha256>.lock.json"
 ```
 
 ### Fields
@@ -132,11 +133,19 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
   - Use `ags tools --packages <catalog.json>` to edit the list interactively, then run `ags update-image`.
 - `tool_download_lock` (path, optional, managed by `ags tools`)
   - Points to the generated, content-addressed JSON lock for selected tools that are not available as Fedora packages.
+  - When omitted, AGS uses its reviewed embedded `br` 0.5.2, `bv` 0.22.0, and `dcg` 0.13.0 downloads for backward compatibility. A generated lock containing `[]` explicitly selects no downloaded tools.
   - AGS stores this as a relative path and resolves it from the base or repo-local config layer that declared it, so repo overlays remain portable with their checkout.
   - Each locked tool includes a pinned version, archive format, exact executable member, and architecture-specific HTTPS URL and SHA-256 digest.
   - Config loading fails closed if the lock is missing, malformed, uses an unsafe path or URL, lacks `x86_64` or `aarch64`, or contains an invalid checksum.
   - Both automatic image builds and `ags update-image` verify the selected artifact before installing only its declared executable.
   - Do not hand-edit this file; update source metadata in the tool catalog and save through `ags tools`.
+- `agent_provider_lock` (path, optional, managed by `ags tools`)
+  - Points to the generated `agent-providers.<sha256>.lock.json` containing typed provider policies for selected agent CLIs.
+  - When omitted, AGS uses reviewed embedded policies for all five agents. An explicit lock must contain a compatible provider for every enabled agent.
+  - The closed provider types are pnpm for Pi/Gemini, trusted built-in installers for Claude/Codex, and a validated GitHub release policy for OpenCode; arbitrary installer commands are not accepted.
+  - AGS resolves the path relative to the config layer that declared it, requires a matching content-addressed filename, and validates agent/provider compatibility.
+  - `ags update-agents` resolves GitHub releases using `[update].minimum_release_age`, verifies the selected artifact digest, and installs OpenCode transactionally in its dedicated persistent volume.
+  - During migration, the former `agent_release_source_lock` key is accepted when it contains the legacy OpenCode release source. AGS combines that source with embedded providers for the other agents; the next `ags tools` save replaces it with `agent_provider_lock`.
 
 ---
 
@@ -500,21 +509,22 @@ wayland = false
 
 ## `[update]`
 
-Controls `ags update-agents` behavior.
+Controls agent and catalog release update behavior.
 
 ```toml
 [update]
 pi_spec = "@earendil-works/pi-coding-agent"
-minimum_release_age = 1440
+minimum_release_age = 1440 # minutes
 ```
 
 ### Fields
 
 - `pi_spec` (string, default `@earendil-works/pi-coding-agent`)
-  - Package spec used for Pi install/update.
+  - Unversioned npm package name used for Pi install/update.
   - Older configs with the exact legacy value `@mariozechner/pi-coding-agent` should be updated; `ags update-agents` treats that value as the current default during migration.
-- `minimum_release_age` (u32, default `1440`)
-  - Written to pnpm config (`minimum-release-age`) inside update container.
+- `minimum_release_age` (u32 minutes, default `1440`)
+  - Minimum maturity period for release selection, measured from its published time.
+  - Written to pnpm config (`minimum-release-age`) for Pi and Gemini packages. It also filters non-draft, non-prerelease catalog GitHub sources whose release mode is `latest`, including OpenCode and image tools. Exact-version sources inspect only their requested tag and do not apply the age filter or fall forward.
 
 ---
 

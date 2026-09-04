@@ -16,14 +16,14 @@ pub(super) fn check_agent_runtimes(ck: &mut Checker, config: &ValidatedConfig) {
             Agent::Claude => cache.join("claude-install/.local/bin/claude"),
             Agent::Codex => cache.join("pnpm-home/codex"),
             Agent::Gemini => cache.join("pnpm-home/bin/gemini"),
-            Agent::Opencode => cache.join("pnpm-home/bin/opencode"),
+            Agent::Opencode => cache.join("opencode-install/.opencode/bin/opencode"),
             Agent::Shell => continue,
         };
         let label = format!("{} runtime", agent.display_name());
         let present = if *agent == Agent::Codex {
             codex_runtime_present(cache)
         } else {
-            binary.exists()
+            binary.is_file() && crate::util::is_executable(&binary)
         };
         if present {
             ck.ok(&format!("{label} present: {}", binary.display()));

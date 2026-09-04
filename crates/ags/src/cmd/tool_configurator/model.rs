@@ -5,8 +5,13 @@ use std::io;
 use serde::Deserialize;
 
 use crate::cli::Agent;
-use crate::config::{LockedToolDownload, ToolDownloadSource};
+use crate::config::{
+    AgentProviderPolicy, GitHubReleaseSource, LockedAgentProvider, LockedToolDownload,
+    ToolDownloadSource,
+};
 
+#[path = "model_downloads.rs"]
+mod model_downloads;
 #[path = "model_persistence.rs"]
 mod model_persistence;
 #[path = "model_validation.rs"]
@@ -15,13 +20,14 @@ mod model_validation;
 pub use model_persistence::{
     apply_selection_to_document, config_file_defines_agent_selection,
     config_file_defines_tool_selection, configured_packages_from_document, load_package_file,
-    write_selected_tools,
+    write_selected_tools, write_selected_tools_with_release_age,
 };
 use model_validation::validate_catalog;
 
 const LEGACY_MANAGED_BY_KEY: &str = "ags_managed_by";
 const LEGACY_MANAGED_BY_VALUE: &str = "tool-configurator";
 const PROFESSIONS: &[(&str, &str)] = &[
+    ("ai-tools", "AI Tools"),
     ("general", "General"),
     ("software-development", "Software Development"),
     ("operations-devops", "Operations and DevOps"),
@@ -34,6 +40,7 @@ pub enum ToolConfigError {
     Config(String),
     ConfigParse(String),
     InvalidPackage(String),
+    ReleaseResolve { item: String, message: String },
 }
 
 impl fmt::Display for ToolConfigError {
@@ -44,6 +51,9 @@ impl fmt::Display for ToolConfigError {
             Self::Config(error) => write!(f, "config error: {error}"),
             Self::ConfigParse(error) => write!(f, "config TOML parse error: {error}"),
             Self::InvalidPackage(error) => write!(f, "invalid tool catalog: {error}"),
+            Self::ReleaseResolve { item, message } => {
+                write!(f, "failed to resolve {item}: {message}")
+            }
         }
     }
 }
@@ -53,7 +63,10 @@ impl std::error::Error for ToolConfigError {
         match self {
             Self::Io(error) => Some(error),
             Self::Json(error) => Some(error),
-            Self::Config(_) | Self::ConfigParse(_) | Self::InvalidPackage(_) => None,
+            Self::Config(_)
+            | Self::ConfigParse(_)
+            | Self::InvalidPackage(_)
+            | Self::ReleaseResolve { .. } => None,
         }
     }
 }
@@ -73,8 +86,18 @@ impl From<serde_json::Error> for ToolConfigError {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolCatalog {
+    pub agents: Vec<AgentDefinition>,
     pub tools: Vec<ToolDefinition>,
     pub groups: Vec<ToolGroupDefinition>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentDefinition {
+    pub id: Agent,
+    pub name: String,
+    pub description: String,
+    pub provider: AgentProviderPolicy,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -88,6 +111,8 @@ pub struct ToolDefinition {
     pub dnf_packages: Vec<String>,
     #[serde(default)]
     pub download: Option<ToolDownloadSource>,
+    #[serde(default)]
+    pub github_release: Option<GitHubReleaseSource>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -114,8 +139,9 @@ pub struct ToolState {
 
 #[derive(Debug, Clone)]
 pub struct AgentState {
-    pub agent: Agent,
+    pub definition: AgentDefinition,
     pub selected: bool,
+    pub touched: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -145,6 +171,7 @@ pub struct ToolSelectionState {
     configured_packages: Option<Vec<String>>,
     configured_downloads: Vec<LockedToolDownload>,
     configured_agents: Vec<Agent>,
+    configured_agent_providers: Vec<LockedAgentProvider>,
 }
 
 impl ToolSelectionState {
@@ -182,7 +209,32 @@ impl ToolSelectionState {
         configured_downloads: Option<&[LockedToolDownload]>,
         configured_agents: &[Agent],
     ) -> Result<Self, ToolConfigError> {
+        Self::from_catalog_with_config_and_agent_providers(
+            catalog,
+            configured_packages,
+            configured_downloads,
+            configured_agents,
+            &[],
+        )
+    }
+
+    pub fn from_catalog_with_config_and_agent_providers(
+        catalog: ToolCatalog,
+        configured_packages: Option<&[String]>,
+        configured_downloads: Option<&[LockedToolDownload]>,
+        configured_agents: &[Agent],
+        configured_agent_providers: &[LockedAgentProvider],
+    ) -> Result<Self, ToolConfigError> {
         validate_catalog(&catalog)?;
+        let ToolCatalog {
+            agents: catalog_agents,
+            tools: catalog_tools,
+            groups: catalog_groups,
+        } = catalog;
+        let mut agent_definitions = catalog_agents
+            .into_iter()
+            .map(|definition| (definition.id, definition))
+            .collect::<BTreeMap<_, _>>();
         let explicit_selection = configured_packages.is_some() || configured_downloads.is_some();
         let configured_packages = configured_packages.map(<[String]>::to_vec);
         let configured = configured_packages
@@ -197,19 +249,17 @@ impl ToolSelectionState {
             .map(|download| download.id.as_str())
             .collect::<BTreeSet<_>>();
         let configured_downloads = configured_downloads.unwrap_or_default().to_vec();
-        let tool_indices = catalog
-            .tools
+        let tool_indices = catalog_tools
             .iter()
             .enumerate()
             .map(|(index, tool)| (tool.id.clone(), index))
             .collect::<BTreeMap<_, _>>();
 
-        let tools = catalog
-            .tools
+        let tools = catalog_tools
             .into_iter()
             .map(|definition| ToolState {
                 selected: if explicit_selection {
-                    if definition.download.is_some() {
+                    if definition.download.is_some() || definition.github_release.is_some() {
                         configured_download_ids.contains(definition.id.as_str())
                     } else {
                         definition
@@ -224,8 +274,7 @@ impl ToolSelectionState {
                 touched: false,
             })
             .collect();
-        let groups = catalog
-            .groups
+        let groups = catalog_groups
             .into_iter()
             .map(|group| ToolGroup {
                 id: group.id,
@@ -249,15 +298,18 @@ impl ToolSelectionState {
             tools,
             agents: Agent::INSTALLABLE
                 .into_iter()
-                .map(|agent| AgentState {
-                    agent,
-                    selected: configured_agents.contains(&agent),
+                .filter_map(|agent| agent_definitions.remove(&agent))
+                .map(|definition| AgentState {
+                    selected: configured_agents.contains(&definition.id),
+                    definition,
+                    touched: false,
                 })
                 .collect(),
             groups,
             configured_packages,
             configured_downloads,
             configured_agents: configured_agents.to_vec(),
+            configured_agent_providers: configured_agent_providers.to_vec(),
         })
     }
 
@@ -301,6 +353,7 @@ impl ToolSelectionState {
         }
         for agent in &mut self.agents {
             agent.selected = true;
+            agent.touched = true;
         }
     }
 
@@ -348,48 +401,11 @@ impl ToolSelectionState {
             .collect()
     }
 
-    fn selected_downloads(&self) -> Vec<LockedToolDownload> {
-        let catalog_ids = self
-            .tools
-            .iter()
-            .map(|tool| tool.definition.id.as_str())
-            .collect::<BTreeSet<_>>();
-        let selected_commands = self
-            .tools
-            .iter()
-            .filter(|tool| tool.selected)
-            .filter_map(|tool| tool.definition.download.as_ref())
-            .map(|download| download.install_as.as_str())
-            .collect::<BTreeSet<_>>();
-        self.tools
-            .iter()
-            .filter(|tool| tool.selected)
-            .filter_map(|tool| {
-                tool.definition
-                    .download
-                    .clone()
-                    .map(|download| LockedToolDownload {
-                        id: tool.definition.id.clone(),
-                        download,
-                    })
-            })
-            .chain(
-                self.configured_downloads
-                    .iter()
-                    .filter(|tool| {
-                        !catalog_ids.contains(tool.id.as_str())
-                            && !selected_commands.contains(tool.download.install_as.as_str())
-                    })
-                    .cloned(),
-            )
-            .collect()
-    }
-
     fn selected_agents(&self) -> Vec<Agent> {
         self.agents
             .iter()
             .filter(|agent| agent.selected)
-            .map(|agent| agent.agent)
+            .map(|agent| agent.definition.id)
             .collect()
     }
 

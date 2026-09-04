@@ -16,6 +16,7 @@ sign_key = "/tmp/sign"
     let raw: ags::config::RawConfig = toml::from_str(toml_str).unwrap();
     assert_eq!(raw.sandbox.image, "localhost/agent-sandbox:latest");
     assert!(raw.sandbox.tool_download_lock.is_empty());
+    assert!(raw.sandbox.agent_provider_lock.is_empty());
     assert_eq!(
         raw.sandbox.extra_dnf_packages,
         ags::config::DEFAULT_EXTRA_DNF_PACKAGES
@@ -62,6 +63,8 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
         ags::config::BASE_DNF_PACKAGES
     );
     assert!(containerfile.contains("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\""));
+    assert!(!containerfile.contains("ARG BR_VERSION"));
+    assert!(!containerfile.contains("ARG DCG_VERSION"));
     assert!(containerfile.contains("sha256sum -c -"));
 
     let example: ags::config::RawConfig =
@@ -85,7 +88,9 @@ fn verified_download_loop_propagates_installer_failures() {
     assert!(download_block.contains("while IFS= read -r tool; do"));
     assert!(download_block.contains("install -D -m 0755 \"$binary\""));
     assert!(download_block.contains("done < \"$entries\";"));
-    assert!(download_block.contains("tar -xOzf \"$archive\" -- \"$member\""));
+    assert!(download_block.contains("unzip -p \"$archive\" \"$archive_member\""));
+    assert!(download_block.contains("tar -xOzf \"$archive\" -- \"$archive_member\""));
+    assert!(download_block.contains("tar -xOJf \"$archive\" -- \"$archive_member\""));
 }
 
 #[test]

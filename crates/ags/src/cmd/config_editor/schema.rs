@@ -90,6 +90,12 @@ const SANDBOX_FIELDS: &[ScalarFieldSchema] = &[
         required: false,
         default_input: "",
     },
+    ScalarFieldSchema {
+        key: "agent_provider_lock",
+        kind: ScalarFieldKind::Text,
+        required: false,
+        default_input: "",
+    },
 ];
 
 const BROWSER_FIELDS: &[ScalarFieldSchema] = &[

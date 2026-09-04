@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use toml::Value;
 
 use crate::cli::Agent;
-use crate::config::LockedToolDownload;
 use crate::config::error::ConfigError;
 use crate::config::raw::{
     RawAgentMount, RawBrowser, RawClipboard, RawConfig, RawHostUi, RawMount, RawSecret, RawTool,
@@ -14,6 +13,7 @@ use crate::config::types::{
     HostUiConfig, MountKind, MountMode, MountWhen, PspConfig, SecretSource, UpdateConfig,
     ValidatedConfig, ValidatedMount, ValidatedSandbox, ValidatedSecret, ValidatedTool,
 };
+use crate::config::{LockedAgentProvider, LockedToolDownload};
 
 /// Read, parse, and validate a config TOML file from disk.
 pub fn parse_and_validate(path: &Path) -> Result<ValidatedConfig, ConfigError> {
@@ -25,16 +25,14 @@ pub fn parse_and_validate(path: &Path) -> Result<ValidatedConfig, ConfigError> {
 }
 
 /// Read, merge, and validate a base config plus an optional overlay config.
-///
-/// Scalar and table fields from the overlay take precedence. Repeatable top-level
-/// tables (`[[mount]]`, `[[agent_mount]]`, `[[tool]]`, `[[secret]]`) are additive
-/// so repository-local config can extend the base config instead of replacing it.
+/// Overlay scalars take precedence; repeatable mount, tool, and secret tables are additive.
 pub fn parse_and_validate_with_overlay(
     base_path: &Path,
     overlay_path: Option<&Path>,
 ) -> Result<ValidatedConfig, ConfigError> {
     let mut merged = read_toml_value(base_path)?;
     let mut tool_download_lock_config_path = base_path;
+    let mut agent_provider_lock_config_path = base_path;
 
     if let Some(overlay_path) = overlay_path {
         let overlay = read_toml_value(overlay_path)?;
@@ -46,10 +44,25 @@ pub fn parse_and_validate_with_overlay(
         {
             tool_download_lock_config_path = overlay_path;
         }
+        if overlay
+            .get("sandbox")
+            .and_then(Value::as_table)
+            .is_some_and(|sandbox| {
+                sandbox.contains_key("agent_provider_lock")
+                    || sandbox.contains_key("agent_release_source_lock")
+            })
+        {
+            agent_provider_lock_config_path = overlay_path;
+        }
         merge_toml_value(&mut merged, overlay, &[]);
     }
 
-    parse_toml_value(merged, base_path, tool_download_lock_config_path)
+    parse_toml_value(
+        merged,
+        base_path,
+        tool_download_lock_config_path,
+        agent_provider_lock_config_path,
+    )
 }
 
 /// Parse and validate config from a TOML string (useful for testing).
@@ -58,7 +71,7 @@ pub fn parse_toml_str(content: &str, config_path: &Path) -> Result<ValidatedConf
         path: config_path.to_owned(),
         source: e,
     })?;
-    parse_toml_value(value, config_path, config_path)
+    parse_toml_value(value, config_path, config_path, config_path)
 }
 
 fn read_toml_value(path: &Path) -> Result<Value, ConfigError> {
@@ -76,12 +89,18 @@ fn parse_toml_value(
     value: Value,
     config_path: &Path,
     tool_download_lock_config_path: &Path,
+    agent_provider_lock_config_path: &Path,
 ) -> Result<ValidatedConfig, ConfigError> {
     let raw: RawConfig = value.try_into().map_err(|e| ConfigError::Toml {
         path: config_path.to_owned(),
         source: e,
     })?;
-    validate(raw, config_path, tool_download_lock_config_path)
+    validate(
+        raw,
+        config_path,
+        tool_download_lock_config_path,
+        agent_provider_lock_config_path,
+    )
 }
 
 fn reject_overlay_command_secrets(overlay: &Value, overlay_path: &Path) -> Result<(), ConfigError> {
@@ -133,8 +152,13 @@ fn validate(
     raw: RawConfig,
     config_path: &Path,
     tool_download_lock_config_path: &Path,
+    agent_provider_lock_config_path: &Path,
 ) -> Result<ValidatedConfig, ConfigError> {
-    let sandbox = validate_sandbox(&raw.sandbox, tool_download_lock_config_path)?;
+    let sandbox = validate_sandbox(
+        &raw.sandbox,
+        tool_download_lock_config_path,
+        agent_provider_lock_config_path,
+    )?;
 
     let mut mounts = Vec::new();
     for (idx, m) in raw.mount.iter().enumerate() {
@@ -162,6 +186,8 @@ fn validate(
     let host_ui = validate_host_ui(&raw.host_ui)?;
     let clipboard = validate_clipboard(&raw.clipboard)?;
 
+    crate::config::validate_pnpm_package(&raw.update.pi_spec, "[update].pi_spec")
+        .map_err(ConfigError::Validation)?;
     Ok(ValidatedConfig {
         config_file: config_path.to_owned(),
         sandbox,
@@ -170,7 +196,7 @@ fn validate(
         secrets,
         browser,
         update: UpdateConfig {
-            pi_spec: require_non_empty(&raw.update.pi_spec, "[update].pi_spec")?.to_owned(),
+            pi_spec: raw.update.pi_spec.clone(),
             minimum_release_age: raw.update.minimum_release_age,
         },
         auth_proxy: AuthProxyConfig {
@@ -469,8 +495,6 @@ fn validate_host_ui(raw: &RawHostUi) -> Result<HostUiConfig, ConfigError> {
         log_level,
     })
 }
-
-// --- helpers ---
 
 include!("parse_merge.rs");
 include!("parse_expand.rs");

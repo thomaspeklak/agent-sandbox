@@ -16,7 +16,8 @@ extra_dnf_packages = [
   "git", "gh", "openssh-clients", "fd-find", "ripgrep", "rsync", "tmux",
   "kitty-terminfo", "socat", "make", "pkgconf-pkg-config", "sccache",
 ]
-# `ags tools` adds tool_download_lock here when verified downloads are selected.
+# `ags tools` adds content-addressed tool_download_lock and
+# agent_provider_lock entries here.
 
 # Required agent config mounts (explicit and inspectable)
 [[agent_mount]]
@@ -170,4 +171,4 @@ wayland = false
 
 [update]
 pi_spec = "@earendil-works/pi-coding-agent"
-minimum_release_age = 1440
+minimum_release_age = 1440  # minutes; applies to pnpm and catalog GitHub releases

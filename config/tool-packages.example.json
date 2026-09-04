@@ -1,5 +1,119 @@
 {
+  "agents": [
+    {
+      "id": "pi",
+      "name": "Pi",
+      "description": "Extensible coding agent with AGS guard and browser integrations.",
+      "provider": { "type": "pnpm", "package": "@earendil-works/pi-coding-agent" }
+    },
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "description": "Anthropic's coding agent with AGS guard hook integration.",
+      "provider": { "type": "builtin_installer", "installer": "claude" }
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "description": "OpenAI's coding agent CLI.",
+      "provider": { "type": "builtin_installer", "installer": "codex" }
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "description": "Google's Gemini coding agent CLI.",
+      "provider": { "type": "pnpm", "package": "@google/gemini-cli" }
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "description": "Provider-agnostic terminal coding agent.",
+      "provider": {
+        "type": "github_release",
+        "source": {
+          "repository": "anomalyco/opencode",
+          "release": { "mode": "latest" },
+          "archive": "tar.gz",
+          "member": "opencode",
+          "install_as": "opencode",
+          "assets": {
+            "x86_64": { "archive": "^opencode-linux-x64-baseline\\.tar\\.gz$" },
+            "aarch64": { "archive": "^opencode-linux-arm64\\.tar\\.gz$" }
+          }
+        }
+      }
+    }
+  ],
   "tools": [
+    {
+      "id": "br",
+      "name": "Beads Rust",
+      "description": "Track project work and dependencies with the Beads Rust CLI.",
+      "default": true,
+      "github_release": {
+        "repository": "Dicklesworthstone/beads_rust",
+        "release": { "mode": "version", "version": "0.5.2" },
+        "archive": "tar.gz",
+        "member": "br",
+        "install_as": "br",
+        "assets": {
+          "x86_64": {
+            "archive": "^br-{version}-linux_amd64\\.tar\\.gz$",
+            "checksum": "^br-{version}-linux_amd64\\.tar\\.gz\\.sha256$"
+          },
+          "aarch64": {
+            "archive": "^br-{version}-linux_arm64\\.tar\\.gz$",
+            "checksum": "^br-{version}-linux_arm64\\.tar\\.gz\\.sha256$"
+          }
+        }
+      }
+    },
+    {
+      "id": "bv",
+      "name": "Beads Viewer",
+      "description": "Explore Beads issue graphs and project state in an interactive terminal UI.",
+      "default": true,
+      "github_release": {
+        "repository": "Dicklesworthstone/beads_viewer",
+        "release": { "mode": "version", "version": "0.22.0" },
+        "archive": "tar.gz",
+        "member": "bv",
+        "install_as": "bv",
+        "assets": {
+          "x86_64": {
+            "archive": "^bv_linux_amd64\\.tar\\.gz$",
+            "checksum": "^bv_linux_amd64\\.tar\\.gz\\.sha256$"
+          },
+          "aarch64": {
+            "archive": "^bv_linux_arm64\\.tar\\.gz$",
+            "checksum": "^bv_linux_arm64\\.tar\\.gz\\.sha256$"
+          }
+        }
+      }
+    },
+    {
+      "id": "dcg",
+      "name": "Destructive Command Guard",
+      "description": "Block destructive shell commands before coding agents execute them.",
+      "default": true,
+      "github_release": {
+        "repository": "Dicklesworthstone/destructive_command_guard",
+        "release": { "mode": "version", "version": "0.13.0" },
+        "archive": "tar.xz",
+        "member": "dcg",
+        "install_as": "dcg",
+        "assets": {
+          "x86_64": {
+            "archive": "^dcg-x86_64-unknown-linux-musl\\.tar\\.xz$",
+            "checksum": "^SHA256SUMS$"
+          },
+          "aarch64": {
+            "archive": "^dcg-aarch64-unknown-linux-gnu\\.tar\\.xz$",
+            "checksum": "^SHA256SUMS$"
+          }
+        }
+      }
+    },
     {
       "id": "git",
       "name": "Git",
@@ -256,6 +370,13 @@
     }
   ],
   "groups": [
+    {
+      "id": "ai-tools",
+      "name": "AI Tools",
+      "subcategories": [
+        { "name": "Agent utilities", "tools": ["br", "bv", "dcg"] }
+      ]
+    },
     {
       "id": "general",
       "name": "General",
