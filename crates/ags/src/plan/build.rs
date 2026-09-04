@@ -270,12 +270,13 @@ pub fn build_launch_plan(
                 mode: MountMode::Rw,
             });
             let shim_host = runtime_dir.join("auth-proxy-shim");
-            let shim_container = format!("{CONTAINER_HOME}/.local/bin/auth-proxy-shim");
-            mounts.push(PlanMount {
-                host: shim_host,
-                container: shim_container,
-                mode: MountMode::Ro,
-            });
+            for name in ["auth-proxy-shim", "xdg-open", "sensible-browser"] {
+                mounts.push(PlanMount {
+                    host: shim_host.clone(),
+                    container: format!("{CONTAINER_HOME}/.local/bin/{name}"),
+                    mode: MountMode::Ro,
+                });
+            }
         }
 
         if let Some(runtime_dir) = clipboard_runtime_dir {

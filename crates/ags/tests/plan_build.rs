@@ -1505,13 +1505,21 @@ fn auth_proxy_mounts_and_env_when_enabled() {
     );
     assert_eq!(runtime_mount.unwrap().mode, MountMode::Rw);
 
-    // Should have shim mount
-    let shim_mount = plan
-        .mounts
-        .iter()
-        .find(|m| m.container == "/home/dev/.local/bin/auth-proxy-shim");
-    assert!(shim_mount.is_some(), "auth proxy shim should be mounted");
-    assert_eq!(shim_mount.unwrap().mode, MountMode::Ro);
+    // Should expose the shim both through $BROWSER and the standard Linux URL openers.
+    for name in ["auth-proxy-shim", "xdg-open", "sensible-browser"] {
+        let container_path = format!("/home/dev/.local/bin/{name}");
+        let shim_mount = plan
+            .mounts
+            .iter()
+            .find(|mount| mount.container == container_path);
+        assert!(
+            shim_mount.is_some(),
+            "auth proxy shim should be mounted as {name}"
+        );
+        let shim_mount = shim_mount.unwrap();
+        assert_eq!(shim_mount.host, shim_path);
+        assert_eq!(shim_mount.mode, MountMode::Ro);
+    }
 
     // Should have BROWSER and AGS_AUTH_PROXY_SOCK env vars
     assert_eq!(

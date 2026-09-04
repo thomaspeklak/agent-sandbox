@@ -508,7 +508,7 @@ Use `config/config.example.toml` for full schema examples.
 - `config/config.example.toml` — full config template
 - `agent/extensions/guard.ts` — runtime guard extension mounted for Pi
 - `agent/settings.example.json` — example Pi settings template
-- `agent/auth-proxy-shim` — container-side `$BROWSER` replacement for auth proxy
+- `agent/auth-proxy-shim` — container-side `$BROWSER`, `xdg-open`, and `sensible-browser` replacement for the auth proxy
 - `Makefile` — convenience command wrappers
 
 ---
