@@ -166,6 +166,42 @@ fn latest_orders_versions_numerically_not_lexically() {
 }
 
 #[test]
+fn latest_orders_numeric_components_larger_than_u64_without_panicking() {
+    let source = catalog_source(GitHubReleaseSelection::Latest);
+    let assets = |version: &str| {
+        vec![
+            catalog_asset(
+                &format!("tool-{version}-x86_64.tar.xz"),
+                &format!("https://objects.example/{version}/x"),
+                Some(&digest('a')),
+            ),
+            catalog_asset(
+                &format!("tool-{version}-aarch64.tar.xz"),
+                &format!("https://objects.example/{version}/a"),
+                Some(&digest('b')),
+            ),
+        ]
+    };
+    let oversized = "18446744073709551616.0.0";
+    let page = serde_json::json!([
+        catalog_release(
+            "v18446744073709551615.0.0",
+            "2026-08-20T13:00:00Z",
+            assets("18446744073709551615.0.0")
+        ),
+        catalog_release(
+            &format!("v{oversized}"),
+            "2026-08-19T13:00:00Z",
+            assets(oversized)
+        ),
+    ]);
+
+    let resolved = resolve_catalog(&source, vec![page], None, BTreeMap::new()).unwrap();
+
+    assert_eq!(resolved.version, oversized);
+}
+
+#[test]
 fn exact_version_uses_only_the_requested_tag_without_age_or_fallback() {
     let source = catalog_source(GitHubReleaseSelection::Version {
         version: "4.5.6".to_owned(),

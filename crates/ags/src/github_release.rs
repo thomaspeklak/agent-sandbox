@@ -186,8 +186,9 @@ where
 {
     let mut rejections = Vec::new();
     for release in stable_releases_newest_first(source, fetch)? {
-        let version = version_from_stable_tag(&release.tag_name)
-            .expect("stable releases carry a parsed version tag");
+        let Some(version) = version_from_stable_tag(&release.tag_name) else {
+            continue;
+        };
         if !is_mature(&release, minimum_release_age, now) {
             push_rejection(&mut rejections, &release.tag_name, "release is immature");
             continue;
@@ -232,19 +233,18 @@ where
         }
         page += 1;
     }
-    stable.sort_by_cached_key(|release| {
-        std::cmp::Reverse(
-            stable_version_key(&release.tag_name).expect("filtered to stable version tags"),
-        )
+    stable.sort_by(|left, right| {
+        stable_version_key(&right.tag_name).cmp(&stable_version_key(&left.tag_name))
     });
     Ok(stable)
 }
 
-fn stable_version_key(tag: &str) -> Option<[u64; 3]> {
-    let mut parts = version_from_stable_tag(tag)?
-        .split('.')
-        .map(|part| part.parse::<u64>().ok());
-    Some([parts.next()??, parts.next()??, parts.next()??])
+fn stable_version_key(tag: &str) -> Option<[(usize, &str); 3]> {
+    let mut parts = version_from_stable_tag(tag)?.split('.').map(|part| {
+        let significant = part.trim_start_matches('0');
+        (significant.len(), significant)
+    });
+    Some([parts.next()?, parts.next()?, parts.next()?])
 }
 
 fn materialize_release<F>(

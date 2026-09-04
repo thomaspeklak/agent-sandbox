@@ -42,7 +42,7 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
     let mut args: Vec<String> = Vec::with_capacity(64);
 
     // Base flags
-    args.extend(["run", "--rm", "-it", "--init", "--pull=never"].map(String::from));
+    args.extend(["run", "--rm", "-it", "--pull=never"].map(String::from));
     if let Some(ref userns) = plan.security.userns {
         args.push(format!("--userns={userns}"));
     }
