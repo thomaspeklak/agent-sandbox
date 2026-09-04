@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use toml::Value;
 
+use crate::cli::Agent;
 use crate::config::LockedToolDownload;
 use crate::config::error::ConfigError;
 use crate::config::raw::{

@@ -1,9 +1,13 @@
+#[path = "cli_agent.rs"]
+mod agent;
 #[path = "cli_help.rs"]
 mod help;
 #[path = "cli_subcommands.rs"]
 mod subcommands;
 #[path = "cli_tools.rs"]
 mod tools;
+#[path = "cli_update_agents.rs"]
+mod update_agents;
 #[path = "cli_update_image.rs"]
 mod update_image;
 
@@ -12,48 +16,8 @@ use help::HELP_TEXT;
 use std::fmt;
 use std::path::PathBuf;
 
+pub use agent::Agent;
 pub use tools::ToolConfigOptions;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Agent {
-    Pi,
-    Claude,
-    Codex,
-    Gemini,
-    Opencode,
-    Shell,
-}
-
-impl Agent {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Pi => "pi",
-            Self::Claude => "claude",
-            Self::Codex => "codex",
-            Self::Gemini => "gemini",
-            Self::Opencode => "opencode",
-            Self::Shell => "shell",
-        }
-    }
-
-    fn parse(value: &str) -> Result<Self, CliError> {
-        match value {
-            "pi" => Ok(Self::Pi),
-            "claude" => Ok(Self::Claude),
-            "codex" => Ok(Self::Codex),
-            "gemini" => Ok(Self::Gemini),
-            "opencode" => Ok(Self::Opencode),
-            "shell" => Ok(Self::Shell),
-            _ => Err(CliError::InvalidAgent(value.to_owned())),
-        }
-    }
-}
-
-impl fmt::Display for Agent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -141,13 +105,18 @@ pub struct UpdateImageOptions {
     pub config_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UpdateAgentsCliOptions {
+    pub config_path: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubCommand {
     Setup,
     Doctor,
     UpdateImage(UpdateImageOptions),
     UpdateDeprecated(UpdateImageOptions),
-    UpdateAgents,
+    UpdateAgents(UpdateAgentsCliOptions),
     Install(InstallOptions),
     Uninstall,
     CreateAliases(CreateAliasesOptions),
@@ -256,7 +225,11 @@ where
                 update_image::parse_args(iter)?,
             )));
         }
-        "update-agents" => return Ok(Command::Sub(SubCommand::UpdateAgents)),
+        "update-agents" => {
+            return Ok(Command::Sub(SubCommand::UpdateAgents(
+                update_agents::parse_args(iter)?,
+            )));
+        }
         "install" => {
             let opts = subcommands::parse_install_args(iter)?;
             return Ok(Command::Sub(SubCommand::Install(opts)));

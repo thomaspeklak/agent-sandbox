@@ -61,7 +61,7 @@ pub const SECTIONS: &[SectionInfo] = &[
         is_array: false,
     },
     SectionInfo {
-        label: "Agents",
+        label: "Agent Homes",
         toml_key: "agent_mount",
         is_array: true,
     },

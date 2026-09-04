@@ -25,12 +25,17 @@ fn build_env(
         ("PATH".to_owned(), CONTAINER_PATH.to_owned()),
         ("RUSTUP_HOME".to_owned(), "/usr/local/rustup".to_owned()),
         ("AGS_SANDBOX".to_owned(), "1".to_owned()),
-        ("NPM_CONFIG_STORE_DIR".to_owned(), PNPM_STORE_DIR.to_owned()),
-        (
+    ];
+    if lockdown || cache_mount_enabled(config, PNPM_AGENTS) {
+        inline.push((
+            "NPM_CONFIG_STORE_DIR".to_owned(),
+            PNPM_STORE_DIR.to_owned(),
+        ));
+        inline.push((
             "NPM_CONFIG_GLOBAL_BIN_DIR".to_owned(),
             PNPM_GLOBAL_BIN_DIR.to_owned(),
-        ),
-    ];
+        ));
+    }
     if lockdown {
         inline.push(("AGS_LOCKDOWN".to_owned(), "1".to_owned()));
     } else {
@@ -52,8 +57,10 @@ fn build_env(
         inline.extend(
             CACHE_MOUNTS
                 .iter()
-                .filter(|(_, _, env_var)| !env_var.is_empty())
-                .map(|(_, container_path, env_var)| {
+                .filter(|(_, _, env_var, owners)| {
+                    !env_var.is_empty() && cache_mount_enabled(config, owners)
+                })
+                .map(|(_, container_path, env_var, _)| {
                     (env_var.to_string(), container_path.to_string())
                 }),
         );

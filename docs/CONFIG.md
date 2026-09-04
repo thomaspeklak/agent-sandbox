@@ -89,6 +89,7 @@ sign_key = "~/.ssh/ags-agent-signing"
 bootstrap_files = ["auth.json", "models.json"]
 container_boot_dirs = ["/home/dev/.ssh"]
 passthrough_env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+enabled_agents = ["pi", "claude", "codex", "gemini", "opencode"]
 extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
 # Written by `ags tools` when verified downloaded tools are selected:
 # tool_download_lock = "tool-downloads.<sha256>.lock.json"
@@ -114,6 +115,13 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
   - Directories created in container before launching agent.
 - `passthrough_env` (string array, optional)
   - Host env vars to pass into container if set and not already resolved from secrets.
+- `enabled_agents` (string array, optional, managed by `ags tools`)
+  - Selects agent CLIs installed by `ags update-agents`: `pi`, `claude`, `codex`, `gemini`, and `opencode`.
+  - When omitted, all current agent CLIs remain enabled for backward compatibility. Set it to `[]` for shell-only use; shell is always available and must not appear in this list.
+  - Unknown and duplicate values are rejected. AGS writes the list in canonical order.
+  - Disabled agent runtime caches and known `[[agent_mount]]` entries are excluded from normal runs. Authentication and settings remain on the host so re-enabling does not require signing in again.
+  - Repo-local overlays replace the complete base list rather than appending to it.
+  - Use the Agent CLIs panel in `ags tools`, then run `ags update-agents` to reconcile persistent runtime volumes.
 - `extra_dnf_packages` (string array, optional)
   - Advanced representation of the optional tools installed by automatic builds and `ags update-image`.
   - AGS installs its runtime, common Unix utilities, and fixed development headers as a non-selectable baseline outside this list.
@@ -135,6 +143,8 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
 ## `[[agent_mount]]`
 
 Dedicated, explicit mounts for agent home-state paths (no implicit runtime mounts).
+
+Known agent-home mounts are active only while their agent is enabled. AGS preserves their configuration entries and host contents when an agent is disabled. Generic `[[mount]]` entries remain unconditional unless constrained by their own fields.
 
 ```toml
 [[agent_mount]]

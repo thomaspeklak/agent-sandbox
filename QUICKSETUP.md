@@ -39,7 +39,7 @@ Create the initial config and SSH setup:
 ags setup
 ```
 
-Choose tools by profession and area for the sandbox image:
+Choose tools by profession and area, and press `a` to choose agent CLIs:
 
 ```bash
 ags tools --packages config/tool-packages.example.json
@@ -51,7 +51,7 @@ Build or update the sandbox image with the selected tools:
 ags update-image
 ```
 
-Install or update all configured agent CLIs:
+Reconcile the selected agent CLIs in persistent runtime volumes:
 
 ```bash
 ags update-agents

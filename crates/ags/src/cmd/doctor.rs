@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::cli::Agent;
 use crate::config::{ClipboardMode, MountWhen, ValidatedConfig};
 
 use super::doctor_util::{
@@ -11,6 +12,9 @@ use super::doctor_util::{
 #[path = "doctor_secrets.rs"]
 mod doctor_secrets;
 use doctor_secrets::check_secrets;
+#[path = "doctor_agent_runtimes.rs"]
+mod doctor_agent_runtimes;
+use doctor_agent_runtimes::check_agent_runtimes;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DoctorSummary {
@@ -48,10 +52,13 @@ fn run_checks(ck: &mut Checker, config: &ValidatedConfig) {
     check_tooling(ck);
     check_config_files(ck, config);
     check_integrations(ck, config);
+    check_agent_runtimes(ck, config);
     check_container_image(ck, config);
     check_keys_and_agent(ck, config);
     check_secrets(ck, config);
-    check_sessions(ck, config);
+    if config.sandbox.is_agent_enabled(Agent::Pi) {
+        check_sessions(ck, config);
+    }
     check_browser(ck, config);
     check_host_ui(ck, config);
     check_clipboard(ck, config);
@@ -77,13 +84,19 @@ fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
     // Self-heal: write embedded image-build assets before checking
     let _ = crate::assets::ensure_image_build_context(&config.sandbox.containerfile);
     let tmux_conf = config.sandbox.containerfile.with_file_name("tmux.conf");
-    let pi_host = config.mount_host_for_container("/home/dev/.pi");
+    let pi_host = config
+        .sandbox
+        .is_agent_enabled(Agent::Pi)
+        .then(|| config.mount_host_for_container("/home/dev/.pi"))
+        .flatten();
     if let Some(pi_host) = pi_host {
         let _ = crate::assets::ensure_guard_extension(&pi_host.join("agent"));
     }
     let hooks_dir = config.sandbox.cache_dir.join("ags-hooks");
-    let _ = crate::assets::ensure_claude_guard_hook(&hooks_dir);
-    let _ = crate::assets::ensure_claude_guard_skill(&hooks_dir);
+    if config.sandbox.is_agent_enabled(Agent::Claude) {
+        let _ = crate::assets::ensure_claude_guard_hook(&hooks_dir);
+        let _ = crate::assets::ensure_claude_guard_skill(&hooks_dir);
+    }
 
     check_file_exists(ck, &config.sandbox.containerfile, "Containerfile", true);
     check_file_exists(ck, &tmux_conf, "tmux config", true);
@@ -93,15 +106,17 @@ fn check_config_files(ck: &mut Checker, config: &ValidatedConfig) {
         check_file_exists(ck, &settings, "sandbox settings", true);
         let guard = pi_agent_dir.join("extensions/guard.ts");
         check_file_exists(ck, &guard, "Pi guard extension", true);
-    } else {
+    } else if config.sandbox.is_agent_enabled(Agent::Pi) {
         ck.fail("required mount missing for container path /home/dev/.pi");
     }
-    let claude_guard = hooks_dir.join("guard.sh");
-    check_file_exists(ck, &claude_guard, "Claude guard hook", true);
-    let claude_plugin = hooks_dir.join(".claude-plugin/plugin.json");
-    check_file_exists(ck, &claude_plugin, "Claude guard plugin manifest", true);
-    let claude_skill = hooks_dir.join("skills/guard/SKILL.md");
-    check_file_exists(ck, &claude_skill, "Claude guard skill", true);
+    if config.sandbox.is_agent_enabled(Agent::Claude) {
+        let claude_guard = hooks_dir.join("guard.sh");
+        check_file_exists(ck, &claude_guard, "Claude guard hook", true);
+        let claude_plugin = hooks_dir.join(".claude-plugin/plugin.json");
+        check_file_exists(ck, &claude_plugin, "Claude guard plugin manifest", true);
+        let claude_skill = hooks_dir.join("skills/guard/SKILL.md");
+        check_file_exists(ck, &claude_skill, "Claude guard skill", true);
+    }
     check_gitconfig(ck, &config.sandbox.gitconfig_path);
 }
 
@@ -169,7 +184,12 @@ fn check_integrations(ck: &mut Checker, config: &ValidatedConfig) {
             ));
         }
     }
-    for mount in config.mounts.iter().filter(|m| m.when == MountWhen::Always) {
+    for mount in config.mounts.iter().filter(|mount| {
+        mount.when == MountWhen::Always
+            && mount
+                .agent_owner()
+                .is_none_or(|agent| config.sandbox.is_agent_enabled(agent))
+    }) {
         check_mount(ck, mount);
     }
 }
@@ -194,7 +214,10 @@ fn check_container_image(ck: &mut Checker, config: &ValidatedConfig) {
     let image = &config.sandbox.image;
     if crate::podman::image_exists(image) {
         ck.ok(&format!("image exists: {image}"));
-        match crate::podman::image_has_binary(image, "dcg") {
+        let guards_enabled = config.sandbox.is_agent_enabled(Agent::Pi)
+            || config.sandbox.is_agent_enabled(Agent::Claude);
+        if guards_enabled {
+            match crate::podman::image_has_binary(image, "dcg") {
             Ok(true) => ck.ok("bundled dcg available inside sandbox image"),
             Ok(false) => ck.fail(
                 "bundled dcg missing inside sandbox image; Pi/Claude Bash guards will fail open (run 'ags update-image')",
@@ -202,12 +225,17 @@ fn check_container_image(ck: &mut Checker, config: &ValidatedConfig) {
             Err(err) => ck.warn(&format!(
                 "could not verify bundled dcg inside sandbox image: {err}"
             )),
+            }
         }
     } else {
         ck.warn(&format!(
             "image not built yet: {image} (run 'ags update-image' to build)"
         ));
-        ck.warn("cannot verify bundled dcg until the sandbox image is built");
+        if config.sandbox.is_agent_enabled(Agent::Pi)
+            || config.sandbox.is_agent_enabled(Agent::Claude)
+        {
+            ck.warn("cannot verify bundled dcg until the sandbox image is built");
+        }
     }
 }
 

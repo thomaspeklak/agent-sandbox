@@ -2,9 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use ags::{
+    cli::Agent,
     cmd::tool_configurator::model::{
         GroupRow, ToolCatalog, ToolDefinition, ToolGroupDefinition, ToolSelectionState,
-        ToolSubcategoryDefinition, apply_selection_to_document, config_file_defines_tool_selection,
+        ToolSubcategoryDefinition, apply_selection_to_document,
+        config_file_defines_agent_selection, config_file_defines_tool_selection,
         configured_packages_from_document, load_package_file, write_selected_tools,
     },
     config::{
@@ -117,6 +119,38 @@ fn configured_packages_preselect_canonical_tools() {
     assert_eq!(state.selected_tool_count(), 1);
     assert!(state.tools[0].selected);
     assert!(!state.tools[1].selected);
+}
+
+#[test]
+fn enabled_agents_are_preselected_and_persisted_in_canonical_order() {
+    let mut state = ToolSelectionState::from_catalog_with_config_and_agents(
+        catalog(vec![tool("git", &["git"], true)]),
+        Some(&["git".to_owned()]),
+        Some(&[]),
+        &[Agent::Opencode, Agent::Pi],
+    )
+    .unwrap();
+
+    assert!(state.agents[0].selected);
+    assert!(!state.agents[1].selected);
+    assert!(state.agents[4].selected);
+    state.agents[0].selected = false;
+
+    let mut doc = "[sandbox]\nextra_dnf_packages = [\"git\"]\n"
+        .parse::<DocumentMut>()
+        .unwrap();
+    let report = apply_selection_to_document(&mut doc, &state);
+
+    assert_eq!(report.selected_agents, 1);
+    assert_eq!(report.added_agents, 0);
+    assert_eq!(report.removed_agents, 1);
+    assert_eq!(
+        doc["sandbox"]["enabled_agents"]
+            .as_array()
+            .unwrap()
+            .to_string(),
+        "[\"opencode\"]"
+    );
 }
 
 #[test]
@@ -579,15 +613,49 @@ fn save_drops_unknown_download_that_collides_with_selected_catalog_command() {
 }
 
 #[test]
-fn detects_the_config_layer_that_defines_packages() {
+fn detects_tool_and_agent_selection_layers_independently() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path().join("base.toml");
     let overlay = dir.path().join("overlay.toml");
+    let unrelated = dir.path().join("unrelated.toml");
     std::fs::write(&base, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
-    std::fs::write(&overlay, "[sandbox]\nimage = \"overlay\"\n").unwrap();
+    std::fs::write(&overlay, "[sandbox]\nenabled_agents = [\"pi\"]\n").unwrap();
+    std::fs::write(&unrelated, "[sandbox]\nimage = \"overlay\"\n").unwrap();
 
     assert!(config_file_defines_tool_selection(&base).unwrap());
+    assert!(!config_file_defines_agent_selection(&base).unwrap());
     assert!(!config_file_defines_tool_selection(&overlay).unwrap());
+    assert!(config_file_defines_agent_selection(&overlay).unwrap());
+    assert!(!config_file_defines_tool_selection(&unrelated).unwrap());
+    assert!(!config_file_defines_agent_selection(&unrelated).unwrap());
+}
+
+#[test]
+fn agent_only_config_keeps_default_download_selected_and_saves_nonempty_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\nenabled_agents = [\"pi\"]\n").unwrap();
+    let configured_packages = Vec::<String>::new();
+    let configured_downloads = Vec::<LockedToolDownload>::new();
+    let has_tool_selection = config_file_defines_tool_selection(&config).unwrap();
+    let state = ToolSelectionState::from_catalog_with_config_and_agents(
+        catalog(vec![download_tool("recommended-download", true)]),
+        has_tool_selection.then_some(configured_packages.as_slice()),
+        has_tool_selection.then_some(configured_downloads.as_slice()),
+        &[Agent::Pi],
+    )
+    .unwrap();
+
+    assert!(state.tools[0].selected);
+    let report = write_selected_tools(&config, None, &state).unwrap();
+    let lock: Vec<LockedToolDownload> = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join(saved_lock_name(&config))).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(report.selected_tools, 1);
+    assert_eq!(lock.len(), 1);
+    assert_eq!(lock[0].id, "recommended-download");
 }
 
 #[test]

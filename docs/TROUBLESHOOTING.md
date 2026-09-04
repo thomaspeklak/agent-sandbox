@@ -299,8 +299,11 @@ If command like `pi`, `codex`, `gemini`, `opencode`, or `claude` is missing/old.
 ### Fix
 
 ```bash
+ags tools --packages config/tool-packages.example.json
 ags update-agents
 ```
+
+Ensure the agent is selected in the Agent CLIs panel. A disabled agent is rejected before container startup even if an old launcher still exists in a cache volume.
 
 ---
 

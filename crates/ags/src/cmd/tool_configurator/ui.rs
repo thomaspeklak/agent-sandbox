@@ -8,6 +8,7 @@ use super::model::{
     GroupRow, SaveReport, ToolConfigError, ToolSelectionState, load_package_file,
     write_selected_tools,
 };
+use crate::cli::Agent;
 use crate::config::LockedToolDownload;
 
 #[derive(Clone, Copy)]
@@ -26,6 +27,8 @@ pub struct App {
     current_group: usize,
     selected_row: usize,
     table_state: TableState,
+    show_agents: bool,
+    selected_agent: usize,
     show_help: bool,
     status_message: Option<(String, StatusKind)>,
     save_report: Option<SaveReport>,
@@ -38,6 +41,7 @@ impl App {
         packages_path: &Path,
         configured_packages: Option<&[String]>,
         configured_downloads: Option<&[LockedToolDownload]>,
+        configured_agents: &[Agent],
     ) -> Result<Self, ToolConfigError> {
         if !config_path.exists() {
             return Err(ToolConfigError::Config(format!(
@@ -47,10 +51,11 @@ impl App {
         }
 
         let catalog = load_package_file(packages_path)?;
-        let state = ToolSelectionState::from_catalog_with_config(
+        let state = ToolSelectionState::from_catalog_with_config_and_agents(
             catalog,
             configured_packages,
             configured_downloads,
+            configured_agents,
         )?;
         let mut app = Self {
             config_path: config_path.to_owned(),
@@ -61,10 +66,11 @@ impl App {
             current_group: 0,
             selected_row: 0,
             table_state: TableState::default(),
+            show_agents: false,
+            selected_agent: 0,
             show_help: false,
             status_message: Some((
-                "Choose tools by profession; shared tools stay synchronized across tabs."
-                    .to_owned(),
+                "Choose image tools by profession; press `a` to choose agent CLIs.".to_owned(),
                 StatusKind::Info,
             )),
             save_report: None,
@@ -146,8 +152,16 @@ impl App {
             KeyCode::Char(character) => KeyCode::Char(character.to_ascii_lowercase()),
             code => code,
         };
+        if self.show_agents {
+            self.handle_agent_key(code);
+            return;
+        }
         match code {
             KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('a') => {
+                self.show_agents = true;
+                self.status_message = None;
+            }
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
             KeyCode::Char('s') => self.save_and_quit(),
             KeyCode::Char('d') => self.restore_defaults(),
@@ -158,6 +172,49 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.move_tool(-1),
             _ => {}
         }
+    }
+
+    fn handle_agent_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('a') | KeyCode::Esc => {
+                self.show_agents = false;
+                self.status_message = None;
+            }
+            KeyCode::Char('q') => self.running = false,
+            KeyCode::Char('s') => self.save_and_quit(),
+            KeyCode::Char('d') => self.restore_defaults(),
+            KeyCode::Char(' ') => self.toggle_current_agent(),
+            KeyCode::Down | KeyCode::Char('j') => self.move_agent(1),
+            KeyCode::Up | KeyCode::Char('k') => self.move_agent(-1),
+            _ => {}
+        }
+    }
+
+    fn move_agent(&mut self, delta: isize) {
+        let count = self.state.agents.len();
+        if count == 0 {
+            return;
+        }
+        self.selected_agent =
+            (self.selected_agent as isize + delta).clamp(0, (count - 1) as isize) as usize;
+        self.status_message = None;
+    }
+
+    fn toggle_current_agent(&mut self) {
+        let Some(agent) = self.state.agents.get_mut(self.selected_agent) else {
+            return;
+        };
+        agent.selected = !agent.selected;
+        let state = if agent.selected {
+            "selected"
+        } else {
+            "deselected"
+        };
+        self.status_message = Some((
+            format!("{} {state}.", agent.agent.display_name()),
+            StatusKind::Info,
+        ));
     }
 
     fn move_group(&mut self, delta: isize) {
@@ -229,7 +286,10 @@ impl App {
         ) {
             Ok(report) => {
                 self.status_message = Some((
-                    format!("Saved {} selected tools.", report.selected_tools),
+                    format!(
+                        "Saved {} tools and {} agent CLIs.",
+                        report.selected_tools, report.selected_agents
+                    ),
                     StatusKind::Success,
                 ));
                 self.save_report = Some(report);

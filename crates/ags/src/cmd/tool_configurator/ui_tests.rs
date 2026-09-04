@@ -64,6 +64,8 @@ mod tests {
             current_group: 0,
             selected_row: 0,
             table_state: TableState::default(),
+            show_agents: false,
+            selected_agent: 0,
             show_help: false,
             status_message: None,
             save_report: None,
@@ -106,6 +108,28 @@ mod tests {
         assert!(app.state.tools[0].selected);
         assert!(!app.state.tools[1].selected);
         assert!(app.state.tools.iter().all(|tool| tool.touched));
+        assert!(app.state.agents.iter().all(|agent| agent.selected));
+    }
+
+    #[test]
+    fn agent_panel_toggles_agents_without_changing_profession_tabs() {
+        let mut app = app();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        assert!(app.show_agents);
+        app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+        assert!(!app.state.agents[0].selected);
+        assert_eq!(app.current_group, 0);
+
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+        assert!(!app.state.agents[1].selected);
+        assert_eq!(app.state.selected_agent_count(), 3);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+        assert_eq!(app.state.selected_agent_count(), Agent::INSTALLABLE.len());
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!app.show_agents);
     }
 
     #[test]
@@ -205,6 +229,8 @@ mod tests {
             current_group: 0,
             selected_row: 20,
             table_state: TableState::default(),
+            show_agents: false,
+            selected_agent: 0,
             show_help: false,
             status_message: None,
             save_report: None,

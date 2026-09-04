@@ -1,6 +1,7 @@
 use ags::cli::{
     Agent, AliasMode, CliError, Command, CompletionsOptions, CreateAliasesOptions, InstallOptions,
-    Shell, SubCommand, ToolConfigOptions, UpdateImageOptions, help_text, parse_args,
+    Shell, SubCommand, ToolConfigOptions, UpdateAgentsCliOptions, UpdateImageOptions, help_text,
+    parse_args,
 };
 
 fn args(items: &[&str]) -> Vec<String> {
@@ -183,7 +184,10 @@ fn parses_subcommands() {
             "update",
             SubCommand::UpdateDeprecated(UpdateImageOptions::default()),
         ),
-        ("update-agents", SubCommand::UpdateAgents),
+        (
+            "update-agents",
+            SubCommand::UpdateAgents(UpdateAgentsCliOptions::default()),
+        ),
         ("uninstall", SubCommand::Uninstall),
     ] {
         let cmd = parse_args(args(&["ags", arg])).unwrap();
@@ -240,6 +244,34 @@ fn parses_update_image_config_path_as_separate_value() {
 }
 
 #[test]
+fn parses_update_agents_config_path() {
+    for arguments in [
+        &["ags", "update-agents", "--config=/tmp/ags.toml"][..],
+        &["ags", "update-agents", "--config", "/tmp/ags.toml"][..],
+    ] {
+        let cmd = parse_args(args(arguments)).unwrap();
+        assert_eq!(
+            cmd,
+            Command::Sub(SubCommand::UpdateAgents(UpdateAgentsCliOptions {
+                config_path: Some("/tmp/ags.toml".into()),
+            }))
+        );
+    }
+}
+
+#[test]
+fn update_agents_rejects_invalid_arguments() {
+    assert_eq!(
+        parse_args(args(&["ags", "update-agents", "--config"])).unwrap_err(),
+        CliError::MissingConfigValue
+    );
+    assert_eq!(
+        parse_args(args(&["ags", "update-agents", "unexpected"])).unwrap_err(),
+        CliError::UnexpectedPositional("unexpected".into())
+    );
+}
+
+#[test]
 fn update_image_rejects_missing_or_empty_config_values() {
     for arguments in [
         &["ags", "update-image", "--config"][..],
@@ -255,11 +287,7 @@ fn update_image_rejects_missing_or_empty_config_values() {
 fn help_shows_update_image_but_not_deprecated_update_alias() {
     let help = help_text();
     assert!(help.contains("update-image"));
-    assert!(
-        help.contains(
-            "\ntools          Choose sandbox tools from a profession-guided JSON catalog\n"
-        )
-    );
+    assert!(help.contains("\ntools          Choose sandbox tools and agent CLIs\n"));
     assert!(help.contains("--keep-existing Keep the previous image after a successful rebuild"));
     assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
     assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));

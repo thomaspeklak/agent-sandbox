@@ -81,20 +81,39 @@ struct BuildEnvContext<'a> {
     lockdown: bool,
 }
 
-/// Cache volume mappings: (host_suffix under cache_dir, container_path, env_var).
-/// An empty env_var means no environment variable is emitted for that mount.
-const CACHE_MOUNTS: &[(&str, &str, &str)] = &[
-    ("pnpm-home", "/usr/local/pnpm", "PNPM_HOME"),
-    ("codex-install", "/opt/codex-home", ""),
-    ("claude-install", "/opt/claude-home", ""),
-    ("cargo-home", "/home/dev/.cargo", "CARGO_HOME"),
-    ("go-path", "/home/dev/go", "GOPATH"),
-    ("go-build", "/home/dev/.cache/go-build", "GOCACHE"),
-    ("sccache", "/home/dev/.cache/sccache", "SCCACHE_DIR"),
-    ("cachepot", "/home/dev/.cache/cachepot", "CACHEPOT_DIR"),
-    ("ags-hooks", "/home/dev/.config/ags/hooks", ""),
-    ("npm-global", "/home/dev/.npm-global", "NPM_CONFIG_PREFIX"),
+const PNPM_AGENTS: &[Agent] = &[Agent::Pi, Agent::Codex, Agent::Gemini, Agent::Opencode];
+
+/// Cache volume mappings: (host suffix, container path, env var, agent owners).
+/// Empty owners are general caches; an empty env var emits no environment variable.
+const CACHE_MOUNTS: &[(&str, &str, &str, &[Agent])] = &[
+    ("pnpm-home", "/usr/local/pnpm", "PNPM_HOME", PNPM_AGENTS),
+    ("codex-install", "/opt/codex-home", "", &[Agent::Codex]),
+    ("claude-install", "/opt/claude-home", "", &[Agent::Claude]),
+    ("cargo-home", "/home/dev/.cargo", "CARGO_HOME", &[]),
+    ("go-path", "/home/dev/go", "GOPATH", &[]),
+    ("go-build", "/home/dev/.cache/go-build", "GOCACHE", &[]),
+    ("sccache", "/home/dev/.cache/sccache", "SCCACHE_DIR", &[]),
+    ("cachepot", "/home/dev/.cache/cachepot", "CACHEPOT_DIR", &[]),
+    (
+        "ags-hooks",
+        "/home/dev/.config/ags/hooks",
+        "",
+        &[Agent::Claude],
+    ),
+    (
+        "npm-global",
+        "/home/dev/.npm-global",
+        "NPM_CONFIG_PREFIX",
+        &[],
+    ),
 ];
+
+fn cache_mount_enabled(config: &ValidatedConfig, owners: &[Agent]) -> bool {
+    owners.is_empty()
+        || owners
+            .iter()
+            .any(|agent| config.sandbox.is_agent_enabled(*agent))
+}
 
 /// Build a complete launch plan from validated config and runtime context.
 pub fn build_launch_plan(
@@ -163,8 +182,10 @@ pub fn build_launch_plan(
 
     if !lockdown {
         ensure_dir(cache_dir)?;
-        for (suffix, _, _) in CACHE_MOUNTS {
-            ensure_dir(&cache_dir.join(suffix))?;
+        for (suffix, _, _, owners) in CACHE_MOUNTS {
+            if cache_mount_enabled(config, owners) {
+                ensure_dir(&cache_dir.join(suffix))?;
+            }
         }
     }
 
@@ -211,7 +232,7 @@ pub fn build_launch_plan(
 
     if !lockdown {
         expand_config_mounts(
-            &config.mounts,
+            config,
             effective_browser_mode,
             &mut mounts,
             &mut read_roots,

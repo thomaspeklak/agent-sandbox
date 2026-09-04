@@ -4,6 +4,7 @@ use std::io;
 
 use serde::Deserialize;
 
+use crate::cli::Agent;
 use crate::config::{LockedToolDownload, ToolDownloadSource};
 
 #[path = "model_persistence.rs"]
@@ -12,8 +13,9 @@ mod model_persistence;
 mod model_validation;
 
 pub use model_persistence::{
-    apply_selection_to_document, config_file_defines_tool_selection,
-    configured_packages_from_document, load_package_file, write_selected_tools,
+    apply_selection_to_document, config_file_defines_agent_selection,
+    config_file_defines_tool_selection, configured_packages_from_document, load_package_file,
+    write_selected_tools,
 };
 use model_validation::validate_catalog;
 
@@ -111,6 +113,12 @@ pub struct ToolState {
 }
 
 #[derive(Debug, Clone)]
+pub struct AgentState {
+    pub agent: Agent,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct ToolGroup {
     pub id: String,
     pub name: String,
@@ -132,9 +140,11 @@ pub enum GroupRow<'a> {
 #[derive(Debug, Clone)]
 pub struct ToolSelectionState {
     pub tools: Vec<ToolState>,
+    pub agents: Vec<AgentState>,
     pub groups: Vec<ToolGroup>,
     configured_packages: Option<Vec<String>>,
     configured_downloads: Vec<LockedToolDownload>,
+    configured_agents: Vec<Agent>,
 }
 
 impl ToolSelectionState {
@@ -157,6 +167,20 @@ impl ToolSelectionState {
         catalog: ToolCatalog,
         configured_packages: Option<&[String]>,
         configured_downloads: Option<&[LockedToolDownload]>,
+    ) -> Result<Self, ToolConfigError> {
+        Self::from_catalog_with_config_and_agents(
+            catalog,
+            configured_packages,
+            configured_downloads,
+            &Agent::INSTALLABLE,
+        )
+    }
+
+    pub fn from_catalog_with_config_and_agents(
+        catalog: ToolCatalog,
+        configured_packages: Option<&[String]>,
+        configured_downloads: Option<&[LockedToolDownload]>,
+        configured_agents: &[Agent],
     ) -> Result<Self, ToolConfigError> {
         validate_catalog(&catalog)?;
         let explicit_selection = configured_packages.is_some() || configured_downloads.is_some();
@@ -223,14 +247,26 @@ impl ToolSelectionState {
 
         Ok(Self {
             tools,
+            agents: Agent::INSTALLABLE
+                .into_iter()
+                .map(|agent| AgentState {
+                    agent,
+                    selected: configured_agents.contains(&agent),
+                })
+                .collect(),
             groups,
             configured_packages,
             configured_downloads,
+            configured_agents: configured_agents.to_vec(),
         })
     }
 
     pub fn selected_tool_count(&self) -> usize {
         self.tools.iter().filter(|tool| tool.selected).count()
+    }
+
+    pub fn selected_agent_count(&self) -> usize {
+        self.agents.iter().filter(|agent| agent.selected).count()
     }
 
     pub fn group_rows(&self, group_index: usize) -> Vec<GroupRow<'_>> {
@@ -262,6 +298,9 @@ impl ToolSelectionState {
         for tool in &mut self.tools {
             tool.selected = tool.definition.default;
             tool.touched = true;
+        }
+        for agent in &mut self.agents {
+            agent.selected = true;
         }
     }
 
@@ -346,6 +385,14 @@ impl ToolSelectionState {
             .collect()
     }
 
+    fn selected_agents(&self) -> Vec<Agent> {
+        self.agents
+            .iter()
+            .filter(|agent| agent.selected)
+            .map(|agent| agent.agent)
+            .collect()
+    }
+
     fn preserves_untouched_package(&self, package: &str) -> bool {
         self.tools
             .iter()
@@ -362,8 +409,11 @@ impl ToolSelectionState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaveReport {
     pub selected_tools: usize,
+    pub selected_agents: usize,
     pub added_components: usize,
     pub removed_components: usize,
+    pub added_agents: usize,
+    pub removed_agents: usize,
     pub removed_legacy_tools: usize,
     pub cleanup_warning: Option<String>,
 }

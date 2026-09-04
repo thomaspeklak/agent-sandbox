@@ -79,6 +79,20 @@ const BASH: &str = r#"_ags_completion() {
       COMPREPLY=( $(compgen -W "--keep-existing --config -h --help" -- "$cur") )
       return 0
       ;;
+    update-agents)
+      if [[ "$prev" == "--config" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+        return 0
+      fi
+      if [[ "$cur" == --config=* ]]; then
+        local value="${cur#--config=}"
+        COMPREPLY=( $(compgen -f -- "$value") )
+        COMPREPLY=( "${COMPREPLY[@]/#/--config=}" )
+        return 0
+      fi
+      COMPREPLY=( $(compgen -W "--config -h --help" -- "$cur") )
+      return 0
+      ;;
     tools)
       if [[ "$prev" == "--packages" || "$prev" == "--config" ]]; then
         COMPREPLY=( $(compgen -f -- "$cur") )
@@ -98,7 +112,7 @@ const BASH: &str = r#"_ags_completion() {
       COMPREPLY=( $(compgen -W "--packages --config -h --help" -- "$cur") )
       return 0
       ;;
-    setup|doctor|update-agents|uninstall)
+    setup|doctor|uninstall)
       COMPREPLY=( $(compgen -W "-h --help" -- "$cur") )
       return 0
       ;;
@@ -219,7 +233,13 @@ case "$words[2]" in
       '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
-  setup|doctor|update-agents|uninstall)
+  update-agents)
+    _arguments \
+      '--config[Config file to reconcile from]:config file:_files' \
+      '(-h --help)'{-h,--help}'[Show help]'
+    return
+    ;;
+  setup|doctor|uninstall)
     _values 'option' -h --help
     return
     ;;
@@ -288,7 +308,7 @@ set -l __ags_modes wrappers aliases both
 complete -c ags -n "__fish_use_subcommand" -a setup -d "Generate SSH keys and configure secrets"
 complete -c ags -n "__fish_use_subcommand" -a doctor -d "Run environment and config health checks"
 complete -c ags -n "__fish_use_subcommand" -a update-image -d "Rebuild sandbox image"
-complete -c ags -n "__fish_use_subcommand" -a update-agents -d "Install/update agent CLIs"
+complete -c ags -n "__fish_use_subcommand" -a update-agents -d "Reconcile selected agent CLIs"
 complete -c ags -n "__fish_use_subcommand" -a install -d "Install assets/config layout"
 complete -c ags -n "__fish_use_subcommand" -a uninstall -d "Reserved no-op"
 complete -c ags -n "__fish_use_subcommand" -a create-aliases -d "Create wrappers and/or aliases"
@@ -317,6 +337,10 @@ complete -c ags -n "__fish_seen_subcommand_from update-image" -l keep-existing -
 complete -c ags -n "__fish_seen_subcommand_from update-image" -l config -r -d "Config file to build from"
 complete -c ags -n "__fish_seen_subcommand_from update-image" -s h -l help -d "Show help"
 
+# update-agents
+complete -c ags -n "__fish_seen_subcommand_from update-agents" -l config -r -d "Config file to reconcile from"
+complete -c ags -n "__fish_seen_subcommand_from update-agents" -s h -l help -d "Show help"
+
 # install
 complete -c ags -n "__fish_seen_subcommand_from install" -l link-self -d "Link ags to ~/.local/bin/ags"
 complete -c ags -n "__fish_seen_subcommand_from install" -l force -d "Replace existing target"
@@ -340,7 +364,7 @@ complete -c ags -n "__fish_seen_subcommand_from tools" -l config -r -d "Config f
 complete -c ags -n "__fish_seen_subcommand_from tools" -s h -l help -d "Show help"
 
 # simple subcommands
-for __ags_cmd in setup doctor update-agents uninstall
+for __ags_cmd in setup doctor uninstall
   complete -c ags -n "__fish_seen_subcommand_from $__ags_cmd" -s h -l help -d "Show help"
 end
 "#;
