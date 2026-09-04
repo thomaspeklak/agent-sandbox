@@ -11,8 +11,10 @@ use ags::{
     },
     config::ArchiveMemberMatch,
     config::{
-        AgentProviderPolicy, BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES, LockedAgentProvider,
-        LockedToolDownload, ToolArchiveFormat, ToolDownloadArtifact, ToolDownloadSource,
+        AgentProviderPolicy, BASE_DNF_PACKAGES, DEFAULT_EXTRA_DNF_PACKAGES,
+        GitHubReleaseAssetSelector, GitHubReleaseAssetSelectors, GitHubReleaseSelection,
+        GitHubReleaseSource, LockedAgentProvider, LockedToolDownload, ToolArchiveFormat,
+        ToolDownloadArtifact, ToolDownloadSource,
     },
 };
 use toml_edit::DocumentMut;
@@ -92,6 +94,33 @@ fn download_tool(id: &str, default: bool) -> ToolDefinition {
         dnf_packages: vec![],
         download: Some(download),
         github_release: None,
+    }
+}
+
+fn release_tool(id: &str) -> ToolDefinition {
+    let selector = |arch: &str| GitHubReleaseAssetSelector {
+        archive: format!(r"^{id}-{{version}}-{arch}\.tar\.xz$"),
+        checksum: None,
+    };
+    ToolDefinition {
+        id: id.to_owned(),
+        name: id.to_owned(),
+        description: format!("Use {id} to complete work."),
+        default: false,
+        dnf_packages: vec![],
+        download: None,
+        github_release: Some(GitHubReleaseSource {
+            repository: "example/unreachable".to_owned(),
+            release: GitHubReleaseSelection::Latest,
+            archive: ToolArchiveFormat::TarXz,
+            member: id.to_owned(),
+            member_match: ArchiveMemberMatch::UniqueBasename,
+            install_as: id.to_owned(),
+            assets: GitHubReleaseAssetSelectors {
+                x86_64: selector("x86_64"),
+                aarch64: selector("aarch64"),
+            },
+        }),
     }
 }
 
@@ -534,6 +563,63 @@ fn save_keeps_previously_referenced_download_lock_immutable() {
     assert_ne!(first_name, second_name);
     assert_eq!(std::fs::read_to_string(first_path).unwrap(), first_content);
     assert!(dir.path().join(second_name).is_file());
+}
+
+#[test]
+fn save_reuses_locked_release_for_untouched_tool_without_resolving() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    let mut locked = download_source();
+    locked.version = "7.7.7".to_owned();
+    locked.install_as = "br".to_owned();
+    let configured = vec![LockedToolDownload {
+        id: "br".to_owned(),
+        download: locked,
+    }];
+    let state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![release_tool("br")]),
+        Some(&[]),
+        Some(&configured),
+    )
+    .unwrap();
+    assert!(state.tools[0].selected);
+    assert!(!state.tools[0].touched);
+
+    // The catalog repository is unreachable, so this only succeeds when the
+    // locked entry is reused instead of re-resolved.
+    write_selected_tools(&config, None, &state).unwrap();
+
+    let saved: DocumentMut = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+    let lock_name = saved["sandbox"]["tool_download_lock"].as_str().unwrap();
+    let lock: Vec<LockedToolDownload> =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(lock_name)).unwrap())
+            .unwrap();
+    assert_eq!(lock.len(), 1);
+    assert_eq!(lock[0].id, "br");
+    assert_eq!(lock[0].download.version, "7.7.7");
+}
+
+#[test]
+fn save_resolves_release_for_touched_or_newly_selected_tool() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[sandbox]\nextra_dnf_packages = []\n").unwrap();
+    let mut state = ToolSelectionState::from_catalog_with_config(
+        catalog(vec![release_tool("br")]),
+        Some(&[]),
+        Some(&[]),
+    )
+    .unwrap();
+    state.tools[0].selected = true;
+    state.tools[0].touched = true;
+
+    let error = write_selected_tools(&config, None, &state).unwrap_err();
+
+    assert!(
+        error.to_string().contains("tool 'br'"),
+        "expected a release resolution error, got: {error}"
+    );
 }
 
 #[test]

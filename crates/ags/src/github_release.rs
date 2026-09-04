@@ -184,41 +184,67 @@ fn resolve_latest_source<F>(
 where
     F: FnMut(FetchRequest) -> Result<Vec<u8>, GitHubReleaseError>,
 {
-    let mut page = 1;
     let mut rejections = Vec::new();
-    loop {
-        let body = fetch(FetchRequest::ReleasesPage(page))?;
-        let releases = parse_release_page(&source.repository, &body)?;
-        let page_len = releases.len();
-        for release in releases {
-            if release.draft || release.prerelease {
-                continue;
-            }
-            let Some(version) = version_from_stable_tag(&release.tag_name) else {
-                continue;
-            };
-            if !is_mature(&release, minimum_release_age, now) {
-                push_rejection(&mut rejections, &release.tag_name, "release is immature");
-                continue;
-            }
-            match materialize_release(source, &release, version, fetch) {
-                Ok(download) => return Ok(download),
-                Err(ReleaseResolutionError::Incompatible(message)) => {
-                    push_rejection(&mut rejections, &release.tag_name, &message)
-                }
-                Err(ReleaseResolutionError::Fetch(error)) => return Err(error),
-            }
+    for release in stable_releases_newest_first(source, fetch)? {
+        let version = version_from_stable_tag(&release.tag_name)
+            .expect("stable releases carry a parsed version tag");
+        if !is_mature(&release, minimum_release_age, now) {
+            push_rejection(&mut rejections, &release.tag_name, "release is immature");
+            continue;
         }
-        if page_len < RELEASES_PER_PAGE {
-            break;
+        match materialize_release(source, &release, version, fetch) {
+            Ok(download) => return Ok(download),
+            Err(ReleaseResolutionError::Incompatible(message)) => {
+                push_rejection(&mut rejections, &release.tag_name, &message)
+            }
+            Err(ReleaseResolutionError::Fetch(error)) => return Err(error),
         }
-        page += 1;
     }
     Err(GitHubReleaseError::NoCompatibleRelease {
         repo: source.repository.clone(),
         minimum_release_age,
         rejections,
     })
+}
+
+/// Lists every stable `vX.Y.Z` release ordered by version, highest first, because
+/// GitHub orders by creation time and a late backport patch must not win.
+fn stable_releases_newest_first<F>(
+    source: &GitHubReleaseSource,
+    fetch: &mut F,
+) -> Result<Vec<GitHubRelease>, GitHubReleaseError>
+where
+    F: FnMut(FetchRequest) -> Result<Vec<u8>, GitHubReleaseError>,
+{
+    let mut stable = Vec::new();
+    let mut page = 1;
+    loop {
+        let body = fetch(FetchRequest::ReleasesPage(page))?;
+        let releases = parse_release_page(&source.repository, &body)?;
+        let page_len = releases.len();
+        stable.extend(releases.into_iter().filter(|release| {
+            !release.draft
+                && !release.prerelease
+                && version_from_stable_tag(&release.tag_name).is_some()
+        }));
+        if page_len < RELEASES_PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    stable.sort_by_cached_key(|release| {
+        std::cmp::Reverse(
+            stable_version_key(&release.tag_name).expect("filtered to stable version tags"),
+        )
+    });
+    Ok(stable)
+}
+
+fn stable_version_key(tag: &str) -> Option<[u64; 3]> {
+    let mut parts = version_from_stable_tag(tag)?
+        .split('.')
+        .map(|part| part.parse::<u64>().ok());
+    Some([parts.next()??, parts.next()??, parts.next()??])
 }
 
 fn materialize_release<F>(

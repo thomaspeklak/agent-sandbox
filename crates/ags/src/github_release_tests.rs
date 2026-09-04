@@ -89,7 +89,7 @@ fn resolve_catalog(
 }
 
 #[test]
-fn latest_uses_api_order_and_falls_back_to_the_first_compatible_release() {
+fn latest_picks_the_highest_mature_version_regardless_of_api_order() {
     let source = catalog_source(GitHubReleaseSelection::Latest);
     let compatible_assets = |version: &str| {
         vec![
@@ -105,30 +105,64 @@ fn latest_uses_api_order_and_falls_back_to_the_first_compatible_release() {
             ),
         ]
     };
+    // GitHub lists by creation time: a backport patch is first, the newest
+    // major is immature, and the highest mature version lacks an asset.
     let page = serde_json::json!([
-        catalog_release("v1.0.0", "2026-08-27T13:30:00Z", compatible_assets("1.0.0")),
         catalog_release(
-            "v2.0.0",
+            "v1.9.10",
+            "2026-08-25T13:30:00Z",
+            compatible_assets("1.9.10")
+        ),
+        catalog_release("v3.0.0", "2026-08-27T13:00:00Z", compatible_assets("3.0.0")),
+        catalog_release(
+            "v2.1.0",
             "2026-08-20T13:00:00Z",
             vec![catalog_asset(
-                "tool-2.0.0-x86_64.tar.xz",
+                "tool-2.1.0-x86_64.tar.xz",
                 "https://objects.example/2/x",
                 Some(&digest('c')),
             )],
         ),
-        catalog_release("v3.0.0", "2026-08-20T13:00:00Z", compatible_assets("3.0.0")),
+        catalog_release("v2.0.0", "2026-08-20T13:00:00Z", compatible_assets("2.0.0")),
         catalog_release(
-            "v99.0.0",
-            "2026-08-20T13:00:00Z",
-            compatible_assets("99.0.0")
+            "v2.0.0-rc1",
+            "2026-08-01T13:00:00Z",
+            compatible_assets("2.0.0")
         ),
     ]);
 
     let resolved = resolve_catalog(&source, vec![page], None, BTreeMap::new()).unwrap();
 
-    assert_eq!(resolved.version, "3.0.0");
+    assert_eq!(resolved.version, "2.0.0");
     assert_eq!(resolved.archive, ToolArchiveFormat::TarXz);
     assert_eq!(resolved.member_match, ArchiveMemberMatch::UniqueBasename);
+}
+
+#[test]
+fn latest_orders_versions_numerically_not_lexically() {
+    let source = catalog_source(GitHubReleaseSelection::Latest);
+    let assets = |version: &str| {
+        vec![
+            catalog_asset(
+                &format!("tool-{version}-x86_64.tar.xz"),
+                &format!("https://objects.example/{version}/x"),
+                Some(&digest('a')),
+            ),
+            catalog_asset(
+                &format!("tool-{version}-aarch64.tar.xz"),
+                &format!("https://objects.example/{version}/a"),
+                Some(&digest('b')),
+            ),
+        ]
+    };
+    let page = serde_json::json!([
+        catalog_release("v1.9.0", "2026-08-20T13:00:00Z", assets("1.9.0")),
+        catalog_release("v1.10.0", "2026-08-19T13:00:00Z", assets("1.10.0")),
+    ]);
+
+    let resolved = resolve_catalog(&source, vec![page], None, BTreeMap::new()).unwrap();
+
+    assert_eq!(resolved.version, "1.10.0");
 }
 
 #[test]
