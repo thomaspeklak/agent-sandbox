@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.0] - 2026-09-10
+
+### Added
+
+- Select which agent CLIs to install through `ags tools`. Disabled agents are excluded from sandbox mounts, while their host authentication and settings are preserved.
+- Select GitHub-release tools through the tool catalog, with verified, architecture-specific download locks.
+
+### Changed
+
+- Install OpenCode from checksum-verified standalone releases instead of pnpm, with recovery from interrupted updates. Run `ags update-agents` to migrate.
+- `ags tools` now edits only the selected base configuration, without applying repository-local overlays.
+
+### Fixed
+
+- Stop persisting interactive terminal output and TUI redraws through Podman, preventing excessive journal and syslog growth and unnecessary retention of session content. Restart existing AGS sessions after updating; no image rebuild is needed for this fix.
+- Route `xdg-open` and `sensible-browser` through the auth proxy so third-party tools can open URLs using the host approval flow.
+- Ensure the sandbox user's local data directory exists with correct ownership.
+
 ## [v0.20.1] — 2026-08-25
 
 ### Bug Fixes
