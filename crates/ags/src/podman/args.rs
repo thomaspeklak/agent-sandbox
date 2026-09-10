@@ -42,7 +42,9 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
     let mut args: Vec<String> = Vec::with_capacity(64);
 
     // Base flags
-    args.extend(["run", "--rm", "-it", "--pull=never"].map(String::from));
+    // Keep attached terminal output, but never persist TUI redraws or session
+    // contents through the host's default logging driver (often journald).
+    args.extend(["run", "--rm", "-it", "--pull=never", "--log-driver=none"].map(String::from));
     if let Some(ref userns) = plan.security.userns {
         args.push(format!("--userns={userns}"));
     }

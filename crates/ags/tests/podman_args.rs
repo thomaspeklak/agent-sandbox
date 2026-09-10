@@ -56,6 +56,18 @@ fn args_include_lifecycle_flags() {
 }
 
 #[test]
+fn interactive_output_is_not_persisted_by_podman() {
+    for payload_fd_count in [0, 1] {
+        let mut plan = minimal_plan();
+        plan.payload_fd_count = payload_fd_count;
+        let args = build_run_args(&plan, Path::new("/tmp/env"));
+        let image_index = args.iter().position(|arg| arg == &plan.image).unwrap();
+        assert!(args[..image_index].contains(&"--log-driver=none".to_owned()));
+        assert!(args[..image_index].contains(&"-it".to_owned()));
+    }
+}
+
+#[test]
 fn args_include_security_flags() {
     let plan = minimal_plan();
     let args = build_run_args(&plan, Path::new("/tmp/env"));

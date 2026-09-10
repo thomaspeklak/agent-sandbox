@@ -10,6 +10,24 @@ Most issues are visible in doctor output.
 
 ---
 
+## Large journal, `user.log`, or `syslog` containing AGS terminal output
+
+Older AGS versions inherited Podman's default container logging driver. With
+`journald`, interactive terminal output (including repeated TUI redraws) was
+persisted in the journal under the `ags-*` container name. Depending on host
+syslog configuration, it could also be copied into `user.log` and `syslog`.
+This can consume significant disk space and retain sensitive session content.
+
+AGS now launches interactive containers with `--log-driver=none`. Attached
+terminal input/output still works, but `podman logs` no longer retains the
+session transcript. This does not disable AGS's own stderr diagnostics or
+Podman's container lifecycle events.
+
+Update AGS, then exit and relaunch existing AGS sessions: the logging driver is
+chosen when each container is created. An image rebuild is not required.
+Existing journal/syslog data is not deleted by this change; use your host's log
+retention and rotation tools to clean it up after preserving needed diagnostics.
+
 ## `error: required mount source missing`
 
 A required mount path in config does not exist.
