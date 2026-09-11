@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.1] - 2026-09-11
+
+### Fixed
+
+- Eliminate npm “Unknown env config” warnings when starting agents in the sandbox. Restart AGS after updating; no image rebuild is needed for this fix.
+- Restore pnpm’s release-age, install-script, and storage settings using its supported configuration format, and align global binary paths between sandbox sessions and agent updates.
+
 ## [0.21.0] - 2026-09-10
 
 ### Added
