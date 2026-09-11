@@ -312,7 +312,7 @@ fn shell_only_config_omits_all_agent_runtime_and_home_mounts() {
             .env
             .inline
             .iter()
-            .any(|(name, _)| name == "PNPM_HOME" || name == "NPM_CONFIG_STORE_DIR")
+            .any(|(name, _)| name == "PNPM_HOME" || name == "PNPM_CONFIG_STORE_DIR")
     );
 }
 
@@ -444,13 +444,15 @@ fn env_has_required_inline_vars() {
     );
     assert_eq!(find_plan_env(&plan, "AGS_SANDBOX"), Some("1".to_owned()));
     assert_eq!(
-        find_plan_env(&plan, "NPM_CONFIG_STORE_DIR"),
+        find_plan_env(&plan, "PNPM_CONFIG_STORE_DIR"),
         Some("/usr/local/pnpm/.store".to_owned())
     );
     assert_eq!(
-        find_plan_env(&plan, "NPM_CONFIG_GLOBAL_BIN_DIR"),
-        Some("/usr/local/pnpm".to_owned())
+        find_plan_env(&plan, "PNPM_CONFIG_GLOBAL_BIN_DIR"),
+        Some("/usr/local/pnpm/bin".to_owned())
     );
+    assert_eq!(find_plan_env(&plan, "NPM_CONFIG_STORE_DIR"), None);
+    assert_eq!(find_plan_env(&plan, "NPM_CONFIG_GLOBAL_BIN_DIR"), None);
     let path = find_plan_env(&plan, "PATH").expect("PATH should be set");
     assert!(
         path.contains("/opt/opencode-home/.opencode/bin"),

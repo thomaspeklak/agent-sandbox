@@ -113,6 +113,13 @@ fn final_image_recreates_and_executes_the_pnpm_launcher() {
 }
 
 #[test]
+fn final_image_uses_pnpm_yaml_for_non_auth_settings() {
+    let containerfile = include_str!("../../../config/Containerfile");
+    assert!(containerfile.contains("ignoreScripts: true\\nstoreDir: /usr/local/pnpm/.store\\nglobalBinDir: /usr/local/pnpm/bin\\n' > /home/dev/.config/pnpm/config.yaml"));
+    assert!(!containerfile.contains("/home/dev/.config/pnpm/rc"));
+}
+
+#[test]
 fn final_image_precreates_xdg_data_home_before_chown() {
     let containerfile = include_str!("../../../config/Containerfile");
     let user_setup = containerfile

@@ -86,7 +86,14 @@ fn podman_run_args_mount_all_reconciliation_volumes_without_relabeling() {
 fn selected_agents_are_installed_with_stable_pnpm_state() {
     let script = all_agents_script();
 
-    assert!(script.contains("store-dir=/usr/local/pnpm/.store"));
+    assert!(script.contains("storeDir: /usr/local/pnpm/.store"));
+    assert!(script.contains("minimumReleaseAge: %s\\nignoreScripts: true"));
+    assert!(script.contains("'1440' > \"$HOME/.config/pnpm/config.yaml\""));
+    assert!(script.contains("PNPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store"));
+    assert!(script.contains("PNPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm/bin"));
+    assert!(!script.contains(" NPM_CONFIG_STORE_DIR="));
+    assert!(!script.contains(" NPM_CONFIG_GLOBAL_BIN_DIR="));
+    assert!(!script.contains("$HOME/.config/pnpm/rc"));
     assert!(script.contains("install_pnpm_candidate pi '@earendil-works/pi-coding-agent'"));
     assert!(script.contains("https://chatgpt.com/codex/install.sh"));
     assert!(script.contains("install_pnpm_candidate gemini '@google/gemini-cli'"));
@@ -144,7 +151,7 @@ fn pnpm_reconciliation_protects_enabled_packages_and_verifies_them_last() {
     assert!(gemini_install < gemini_cleanup);
     assert!(gemini_cleanup < final_pi);
     assert!(gemini_cleanup < final_gemini);
-    assert!(script.contains("global-bin-dir=/usr/local/pnpm/bin"));
+    assert!(script.contains("globalBinDir: /usr/local/pnpm/bin"));
 }
 
 #[test]

@@ -524,7 +524,7 @@ minimum_release_age = 1440 # minutes
   - Older configs with the exact legacy value `@mariozechner/pi-coding-agent` should be updated; `ags update-agents` treats that value as the current default during migration.
 - `minimum_release_age` (u32 minutes, default `1440`)
   - Minimum maturity period for release selection, measured from its published time.
-  - Written to pnpm config (`minimum-release-age`) for Pi and Gemini packages. It also filters non-draft, non-prerelease catalog GitHub sources whose release mode is `latest`, including OpenCode and image tools. Exact-version sources inspect only their requested tag and do not apply the age filter or fall forward.
+  - Written to pnpm's `~/.config/pnpm/config.yaml` (`minimumReleaseAge`) for Pi and Gemini packages. It also filters non-draft, non-prerelease catalog GitHub sources whose release mode is `latest`, including OpenCode and image tools. Exact-version sources inspect only their requested tag and do not apply the age filter or fall forward.
 
 ---
 

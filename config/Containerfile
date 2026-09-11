@@ -122,7 +122,7 @@ RUN useradd -m -u 1000 -s /bin/bash dev && \
     mkdir -p /workspace /home/dev/.local/bin /home/dev/.local/share /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/opencode-home /opt/ags && \
     printf 'ignore-scripts=true\n' > /etc/npmrc && \
     printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
-    printf 'ignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm\n' > /home/dev/.config/pnpm/rc && \
+    printf 'ignoreScripts: true\nstoreDir: /usr/local/pnpm/.store\nglobalBinDir: /usr/local/pnpm/bin\n' > /home/dev/.config/pnpm/config.yaml && \
     printf '#!/bin/sh\nif command -v sccache >/dev/null 2>&1; then exec sccache "$@"; fi\nexec "$@"\n' > /opt/ags/rustc-wrapper && \
     chmod 0755 /opt/ags/rustc-wrapper && \
     chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home /opt/opencode-home

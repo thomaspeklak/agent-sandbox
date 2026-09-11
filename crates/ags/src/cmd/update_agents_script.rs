@@ -443,8 +443,8 @@ rm -rf /opt/claude-home/* /opt/claude-home/.[!.]* /opt/claude-home/..?*"#
         r#"set -e
 mkdir -p "$HOME/.config/pnpm" /usr/local/pnpm /opt/codex-home /opt/claude-home
 {opencode_recovery}
-printf 'minimum-release-age=%s\nignore-scripts=true\nstore-dir=/usr/local/pnpm/.store\nglobal-bin-dir=/usr/local/pnpm/bin\n' '{release_age}' > "$HOME/.config/pnpm/rc"
-export PNPM_HOME=/usr/local/pnpm NPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store NPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm/bin PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:$PATH
+printf 'minimumReleaseAge: %s\nignoreScripts: true\nstoreDir: /usr/local/pnpm/.store\nglobalBinDir: /usr/local/pnpm/bin\n' '{release_age}' > "$HOME/.config/pnpm/config.yaml"
+export PNPM_HOME=/usr/local/pnpm PNPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store PNPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm/bin PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:$PATH
 PNPM_BIN=/usr/local/bin/pnpm
 if ! [ -x "$PNPM_BIN" ] || ! "$PNPM_BIN" --version >/dev/null; then
   echo "sandbox pnpm is unavailable; run 'ags update-image'" >&2

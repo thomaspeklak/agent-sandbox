@@ -28,11 +28,11 @@ fn build_env(
     ];
     if lockdown || cache_mount_enabled(config, PNPM_AGENTS) {
         inline.push((
-            "NPM_CONFIG_STORE_DIR".to_owned(),
+            "PNPM_CONFIG_STORE_DIR".to_owned(),
             PNPM_STORE_DIR.to_owned(),
         ));
         inline.push((
-            "NPM_CONFIG_GLOBAL_BIN_DIR".to_owned(),
+            "PNPM_CONFIG_GLOBAL_BIN_DIR".to_owned(),
             PNPM_GLOBAL_BIN_DIR.to_owned(),
         ));
     }
