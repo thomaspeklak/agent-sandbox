@@ -71,8 +71,8 @@ if [ -n "$version_file" ]; then
       exit 2
       ;;
   esac
-  node_root="$(MISE_DATA_DIR="${MISE_DATA_DIR:-/opt/ags/mise}" MISE_CACHE_DIR=/tmp/ags-mise-cache mise --no-config --offline where "node@$version" 2>/dev/null)" || {
-    echo "[ags] Node $version requested by $version_file is not installed in the AGS mise store." >&2
+  node_root="$(MISE_DATA_DIR="${MISE_DATA_DIR:-/opt/ags/mise}" MISE_CACHE_DIR=/tmp/ags-mise-cache mise --no-config where "node@$version")" || {
+    echo "[ags] Could not resolve installed Node $version requested by $version_file; see mise's error above." >&2
     if [ -n "${AGS_NODE_CONFIG_PATH:-}" ]; then
       printf '[ags] Run `ags node install %q --config %q`, then retry.\n' "$version" "$AGS_NODE_CONFIG_PATH" >&2
     else

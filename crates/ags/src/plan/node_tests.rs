@@ -13,8 +13,10 @@ fn node_wrapper_setup_is_valid_bash() {
 }
 
 #[test]
-fn node_wrapper_uses_offline_mise_and_exact_remediation() {
-    assert!(NODE_WRAPPER_SETUP.contains("mise --no-config --offline where"));
+fn node_wrapper_uses_installed_mise_lookup_and_exact_remediation() {
+    assert!(NODE_WRAPPER_SETUP.contains("mise --no-config where"));
+    assert!(!NODE_WRAPPER_SETUP.contains("--offline"));
+    assert!(!NODE_WRAPPER_SETUP.contains("2>/dev/null"));
     assert!(NODE_WRAPPER_SETUP.contains("ags node install %q"));
     assert!(NODE_WRAPPER_SETUP.contains("AGS_NODE_WORKSPACE_ROOT"));
     assert!(NODE_WRAPPER_SETUP.contains("$node_root/bin/$name"));
@@ -56,15 +58,18 @@ fn agent_bootstrap_marker_uses_baseline_node_once() {
 fn npm_and_its_node_child_use_the_selected_runtime() {
     let temp = tempfile::tempdir().unwrap();
     let bin = temp.path().join("bin");
-    let node_root = temp.path().join("node");
+    let node_root = temp.path().join("installs/node/26.8.2");
     let workspace = temp.path().join("workspace");
     fs::create_dir_all(node_root.join("bin")).unwrap();
     fs::create_dir_all(&workspace).unwrap();
     fs::create_dir_all(&bin).unwrap();
-    fs::write(workspace.join(".nvmrc"), "22\n").unwrap();
+    fs::write(workspace.join(".nvmrc"), "26\n").unwrap();
     fs::write(
         bin.join("mise"),
-        format!("#!/bin/sh\nprintf '%s\\n' {}\n", node_root.display()),
+        format!(
+            "#!/bin/sh\n[ \"$*\" = '--no-config where node@26' ] || {{ echo 'unexpected mise arguments' >&2; exit 2; }}\nprintf '%s\\n' '{}'\n",
+            node_root.display()
+        ),
     )
     .unwrap();
     fs::write(
