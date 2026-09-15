@@ -125,7 +125,7 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
   - Use the Agent CLIs panel in `ags tools`, then run `ags update-agents` to reconcile persistent runtime volumes.
 - `extra_dnf_packages` (string array, optional)
   - Advanced representation of the optional tools installed by automatic builds and `ags update-image`.
-  - AGS installs its runtime, fixed Node 24 baseline, mise, common Unix utilities, and fixed development headers as a non-selectable baseline outside this list.
+  - AGS installs its runtime, fixed Node 24 baseline, mise, common Unix utilities, and fixed development headers as a non-selectable baseline outside this list. The image enables upstream's `jdxcode/mise` COPR repository for mise (a third-party repository, not part of Fedora's default repositories).
   - When omitted, AGS uses the packages owned by catalog tools marked `default: true`.
   - Set it to `[]` to build the fixed baseline without optional tools. Browser mode still requires selecting `socat`, and `--tmux` requires selecting tmux.
   - Repo-local overlays replace the complete base list rather than appending to it.

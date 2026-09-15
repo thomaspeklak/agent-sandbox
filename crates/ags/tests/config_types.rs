@@ -63,6 +63,14 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
         ags::config::BASE_DNF_PACKAGES
     );
     assert!(containerfile.contains("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\""));
+    let copr = containerfile
+        .find("dnf -y copr enable jdxcode/mise")
+        .expect("mise requires its upstream COPR repository");
+    let plugins = containerfile
+        .find("dnf -y install dnf5-plugins")
+        .expect("minimal Fedora needs the DNF5 COPR plugin");
+    let baseline_install = containerfile.find("RUN BASE_DNF_PACKAGES=").unwrap();
+    assert!(plugins < copr && copr < baseline_install);
     assert!(ags::config::BASE_DNF_PACKAGES.contains(&"mise"));
     assert!(baseline.split_whitespace().any(|package| package == "mise"));
     assert!(!containerfile.contains("ARG BR_VERSION"));
