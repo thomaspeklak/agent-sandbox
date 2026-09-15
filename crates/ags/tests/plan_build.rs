@@ -216,6 +216,20 @@ fn infrastructure_mounts_present() {
         .find(|m| m.container == "/home/dev/.config/ags/gitconfig");
     assert!(gc_mount.is_some());
     assert_eq!(gc_mount.unwrap().mode, MountMode::Ro);
+
+    let node_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/opt/ags/mise")
+        .expect("managed Node store mount");
+    assert_eq!(node_mount.mode, MountMode::Ro);
+    assert!(
+        plan.env
+            .inline
+            .iter()
+            .any(|(name, value)| name == "MISE_DATA_DIR" && value == "/opt/ags/mise")
+    );
+    assert!(plan.entrypoint.contains("AGS_NODE_WORKSPACE_ROOT"));
 }
 
 #[test]
@@ -278,6 +292,48 @@ fn disabled_agent_runtime_and_home_mounts_are_excluded() {
         plan.mounts
             .iter()
             .any(|mount| mount.container == "/home/dev/.cargo")
+    );
+}
+
+#[test]
+fn lockdown_omits_managed_node_store_mount() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let secrets = HashMap::new();
+    let plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Shell,
+        BuildLaunchPlanOptions {
+            lockdown: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+    assert!(!plan.mounts.iter().any(|m| m.container == "/opt/ags/mise"));
+    assert!(
+        !plan
+            .env
+            .inline
+            .iter()
+            .any(|(name, _)| name == "MISE_DATA_DIR" || name == "AGS_NODE_WORKSPACE_ROOT")
+    );
+    assert!(!plan.entrypoint.contains("ags-node-runtime"));
+
+    let pi_plan = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        BuildLaunchPlanOptions {
+            lockdown: true,
+            ..default_options(&secrets)
+        },
+    )
+    .unwrap();
+    assert!(
+        !pi_plan.entrypoint.contains("AGS_NODE_AGENT_BOOTSTRAP"),
+        "lockdown has no wrapper to consume a Node bootstrap marker"
     );
 }
 
@@ -679,7 +735,10 @@ fn boot_dirs_in_entrypoint() {
         plan.entrypoint
     );
     assert!(plan.entrypoint.contains("/home/dev/.ssh"));
-    assert!(plan.entrypoint.contains("exec /usr/local/pnpm/bin/pi -e"));
+    assert!(
+        plan.entrypoint
+            .contains("exec env AGS_NODE_AGENT_BOOTSTRAP=1 /usr/local/pnpm/bin/pi -e")
+    );
     assert!(
         !plan.entrypoint.contains("--no-extensions"),
         "pi should not disable extensions: {}",
@@ -773,8 +832,9 @@ fn tmux_stop_when_done_uses_exec() {
     .unwrap();
 
     assert!(
-        plan.entrypoint.contains("exec /usr/local/pnpm/bin/pi -e"),
-        "stop_when_done should exec the agent: {}",
+        plan.entrypoint
+            .contains("exec env AGS_NODE_AGENT_BOOTSTRAP=1 /usr/local/pnpm/bin/pi -e"),
+        "stop_when_done should exec the Node-based agent with the baseline marker: {}",
         plan.entrypoint
     );
     assert!(
@@ -1097,7 +1157,14 @@ fn claude_agent_entrypoint() {
 
     assert!(
         plan.entrypoint.contains("exec claude"),
-        "claude entrypoint should exec claude: {}",
+        "claude entrypoint should exec native claude directly: {}",
+        plan.entrypoint
+    );
+    assert!(
+        !plan
+            .entrypoint
+            .contains("exec env AGS_NODE_AGENT_BOOTSTRAP=1 claude"),
+        "native Claude must not leak a Node bootstrap marker to child commands: {}",
         plan.entrypoint
     );
     assert!(
@@ -1198,7 +1265,14 @@ fn codex_agent_entrypoint() {
 
     assert!(
         plan.entrypoint.contains("exec /usr/local/pnpm/codex"),
-        "codex entrypoint should exec codex: {}",
+        "codex entrypoint should exec native codex directly: {}",
+        plan.entrypoint
+    );
+    assert!(
+        !plan
+            .entrypoint
+            .contains("exec env AGS_NODE_AGENT_BOOTSTRAP=1 /usr/local/pnpm/codex"),
+        "native Codex must not leak a Node bootstrap marker to child commands: {}",
         plan.entrypoint
     );
     assert!(
@@ -1224,8 +1298,9 @@ fn gemini_agent_has_sandbox_mount() {
     let plan = build_plan_from_agent(&toml, workdir.path(), Agent::Gemini);
 
     assert!(
-        plan.entrypoint.contains("exec /usr/local/pnpm/bin/gemini"),
-        "gemini entrypoint: {}",
+        plan.entrypoint
+            .contains("exec env AGS_NODE_AGENT_BOOTSTRAP=1 /usr/local/pnpm/bin/gemini"),
+        "gemini entrypoint must bootstrap its Node launcher with the fixed baseline: {}",
         plan.entrypoint
     );
     let gemini_mount = plan

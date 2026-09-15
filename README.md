@@ -378,11 +378,23 @@ Start here:
 - `ags doctor` — run environment + config health checks
 - `ags update-image [--keep-existing]` — rebuild the container image from `Containerfile` with catalog-selected DNF and verified-download tools, and remove the previous image after a successful rebuild unless it is still referenced by a container or `--keep-existing` is set
 - `ags update-agents` — install/update agent CLIs in persistent volumes
+- `ags node install <version>` / `ags node list` — manage user Node versions through mise in the persistent AGS store
 - `ags tools --packages <catalog.json>` — choose optional sandbox tools by profession and area
 - `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
 - `ags uninstall` — currently reserved/no-op cleanup
 - `ags create-aliases` — create managed wrappers and/or shell alias blocks
 - `ags completions --shell <bash|zsh|fish>` — print shell completion script
+
+### `node` runtime management
+
+```bash
+ags node install 22
+ags node list
+```
+
+Node versions are installed by mise in a throwaway Linux helper container. The store is persistent under `~/.cache/ags/mise` by default and mounted read-only in ordinary runs, so an agent cannot install or alter managed versions. A nearest `.nvmrc` selects an installed version; it must contain exactly a numeric major, minor, or patch selector such as `22`, `22.14`, or `22.14.0` (an optional leading `v` is accepted). `lts/*`, aliases, shell content, project `mise.toml`, hooks, and environment directives are not evaluated. If the selected version is absent, AGS prints an `ags node install <version>` remedy and does not fall back; without `.nvmrc`, the image's fixed Node 24 baseline is used.
+
+These are Linux-container runtimes, not host Node installations: `install`/`list` require local Podman able to run the configured Linux image, and the selected binaries are available only inside ordinary AGS runs. Rebuild an existing image with `ags update-image` before using this feature if it predates mise. `--lockdown` intentionally omits the managed store and wrappers to preserve its ephemeral agent-runtime isolation.
 
 ### `create-aliases` options
 

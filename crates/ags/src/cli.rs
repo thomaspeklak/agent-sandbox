@@ -2,6 +2,8 @@
 mod agent;
 #[path = "cli_help.rs"]
 mod help;
+#[path = "cli_node.rs"]
+mod node;
 #[path = "cli_subcommands.rs"]
 mod subcommands;
 #[path = "cli_tools.rs"]
@@ -17,6 +19,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 pub use agent::Agent;
+pub use node::{NodeCommand, NodeOptions};
 pub use tools::ToolConfigOptions;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,6 +126,7 @@ pub enum SubCommand {
     Completions(CompletionsOptions),
     Config,
     Tools(ToolConfigOptions),
+    Node(NodeOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,6 +137,8 @@ pub enum CliError {
     MissingConfigValue,
     MissingToolPackagesValue,
     MissingToolPackagesPath,
+    MissingNodeCommand,
+    MissingNodeVersion,
     MissingEnvValue,
     MissingOpSecretSetValue,
     MissingShellValue,
@@ -162,6 +168,10 @@ impl fmt::Display for CliError {
                     "missing tool catalog JSON path (use `ags tools <path>` or `ags tools --packages <path>`)",
                 )
             }
+            Self::MissingNodeCommand => {
+                f.write_str("missing Node runtime command (expected `install <version>` or `list`)")
+            }
+            Self::MissingNodeVersion => f.write_str("missing Node version for `node install`"),
             Self::MissingEnvValue => f.write_str("missing value for --env (expected NAME=VALUE)"),
             Self::MissingOpSecretSetValue => f.write_str("missing value for --op-secret-set / -1"),
             Self::MissingShellValue => f.write_str("missing value for --shell"),
@@ -247,6 +257,10 @@ where
         "tools" => {
             let opts = tools::parse_tools_args(iter)?;
             return Ok(Command::Sub(SubCommand::Tools(opts)));
+        }
+        "node" | "runtime" | "runtimes" => {
+            let opts = node::parse_args(iter)?;
+            return Ok(Command::Sub(SubCommand::Node(opts)));
         }
         _ => {}
     }

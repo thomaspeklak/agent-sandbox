@@ -103,7 +103,7 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
 - `containerfile` (path, required)
   - Containerfile path used by `ags update-image` and auto-build fallback.
 - `cache_dir` (path, required)
-  - Host cache dir for ssh-agent env/socket and tool caches.
+  - Host cache dir for ssh-agent env/socket and tool caches. AGS stores mise-managed Node installations below `<cache_dir>/mise`; `ags node install` is the only writer and normal sandbox runs mount that store read-only.
 - `gitconfig_path` (path, required)
   - Host path for generated git signing config used in container.
 - `auth_key` (path, required)
@@ -125,7 +125,7 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
   - Use the Agent CLIs panel in `ags tools`, then run `ags update-agents` to reconcile persistent runtime volumes.
 - `extra_dnf_packages` (string array, optional)
   - Advanced representation of the optional tools installed by automatic builds and `ags update-image`.
-  - AGS installs its runtime, common Unix utilities, and fixed development headers as a non-selectable baseline outside this list.
+  - AGS installs its runtime, fixed Node 24 baseline, mise, common Unix utilities, and fixed development headers as a non-selectable baseline outside this list.
   - When omitted, AGS uses the packages owned by catalog tools marked `default: true`.
   - Set it to `[]` to build the fixed baseline without optional tools. Browser mode still requires selecting `socat`, and `--tmux` requires selecting tmux.
   - Repo-local overlays replace the complete base list rather than appending to it.

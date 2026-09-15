@@ -51,7 +51,7 @@ COPY uv.toml /etc/uv/uv.toml
 
 # Stable AGS runtime and standard utility baseline. These packages are not user
 # choices: the image and its documented workflows may rely on them being present.
-RUN BASE_DNF_PACKAGES="bash ca-certificates coreutils curl dbus-devel diffutils file findutils gcc grep jq less nodejs24-bin patch procps-ng python3 sed sqlite-devel tar tree unzip util-linux wget which xz zip" && \
+RUN BASE_DNF_PACKAGES="bash ca-certificates coreutils curl dbus-devel diffutils file findutils gcc grep jq less mise nodejs24-bin patch procps-ng python3 sed sqlite-devel tar tree unzip util-linux wget which xz zip" && \
     dnf -y install $BASE_DNF_PACKAGES && \
     dnf clean all
 

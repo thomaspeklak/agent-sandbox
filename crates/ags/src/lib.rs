@@ -13,6 +13,7 @@ pub mod host_dialog;
 pub mod host_ui;
 pub mod lifecycle;
 pub mod lockdown;
+pub mod node_runtime;
 pub(crate) mod onepassword;
 pub mod paths;
 pub mod plan;

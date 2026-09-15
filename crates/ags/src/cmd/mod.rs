@@ -4,6 +4,7 @@ pub mod create_aliases;
 pub mod doctor;
 mod doctor_util;
 pub mod install;
+pub mod node;
 pub mod setup;
 pub mod tool_configurator;
 pub mod update;

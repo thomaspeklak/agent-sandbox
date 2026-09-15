@@ -1,4 +1,5 @@
 mod build;
+mod node;
 mod types;
 
 pub use build::{BuildLaunchPlanOptions, ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH, build_launch_plan};

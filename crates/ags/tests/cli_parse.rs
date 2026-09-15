@@ -1,7 +1,7 @@
 use ags::cli::{
     Agent, AliasMode, CliError, Command, CompletionsOptions, CreateAliasesOptions, InstallOptions,
-    Shell, SubCommand, ToolConfigOptions, UpdateAgentsCliOptions, UpdateImageOptions, help_text,
-    parse_args,
+    NodeCommand, NodeOptions, Shell, SubCommand, ToolConfigOptions, UpdateAgentsCliOptions,
+    UpdateImageOptions, help_text, parse_args,
 };
 
 fn args(items: &[&str]) -> Vec<String> {
@@ -193,6 +193,34 @@ fn parses_subcommands() {
         let cmd = parse_args(args(&["ags", arg])).unwrap();
         assert_eq!(cmd, Command::Sub(expected));
     }
+}
+
+#[test]
+fn parses_node_runtime_install_and_list_commands() {
+    assert_eq!(
+        parse_args(args(&["ags", "node", "install", "22"])).unwrap(),
+        Command::Sub(SubCommand::Node(NodeOptions {
+            command: NodeCommand::Install {
+                version: "22".to_owned(),
+            },
+            config_path: None,
+        }))
+    );
+    assert_eq!(
+        parse_args(args(&[
+            "ags",
+            "runtimes",
+            "node",
+            "list",
+            "--config",
+            "/tmp/a.toml"
+        ]))
+        .unwrap(),
+        Command::Sub(SubCommand::Node(NodeOptions {
+            command: NodeCommand::List,
+            config_path: Some("/tmp/a.toml".into()),
+        }))
+    );
 }
 
 #[test]

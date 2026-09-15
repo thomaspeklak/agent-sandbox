@@ -50,6 +50,11 @@
   - `glimpseui` is the intended owner of localhost-to-relay URL resolution for Glimpse-based packages.
 - `assets.rs`
   - Writes embedded Containerfile, tmux, system-wide uv policy, guard, settings, auth-proxy-shim, clipboard, and webview relay assets.
+- `node_runtime.rs`
+  - Validates numeric `.nvmrc` selectors and bounds nearest-file discovery to the workspace.
+- `cmd/node.rs`
+  - Implements the `ags node install|list` helper-container workflow and persistent mise store.
+  - The store is read-only in ordinary agent containers; the install helper is its only AGS writer. Lockdown launch plans omit it and the runtime wrappers to retain ephemeral agent-runtime isolation.
 
 ---
 

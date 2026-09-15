@@ -1,3 +1,5 @@
+use super::node::NODE_WRAPPER_SETUP;
+
 fn build_env(
     config: &ValidatedConfig,
     profile: &AgentProfile,
@@ -26,6 +28,16 @@ fn build_env(
         ("RUSTUP_HOME".to_owned(), "/usr/local/rustup".to_owned()),
         ("AGS_SANDBOX".to_owned(), "1".to_owned()),
     ];
+    if !lockdown {
+        inline.push((
+            "MISE_DATA_DIR".to_owned(),
+            crate::node_runtime::NODE_STORE_CONTAINER.to_owned(),
+        ));
+        inline.push((
+            "MISE_CACHE_DIR".to_owned(),
+            "/tmp/ags-mise-cache".to_owned(),
+        ));
+    }
     if lockdown || cache_mount_enabled(config, PNPM_AGENTS) {
         inline.push((
             "PNPM_CONFIG_STORE_DIR".to_owned(),
@@ -220,6 +232,7 @@ struct EntryPointContext<'a> {
     show_host_services_hint: bool,
     stop_when_done: bool,
     payload_fd_count: usize,
+    node_runtime_enabled: bool,
     bootstrap_path: Option<&'a str>,
 }
 
@@ -234,6 +247,7 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         show_host_services_hint,
         stop_when_done,
         payload_fd_count,
+        node_runtime_enabled,
         bootstrap_path,
     } = ctx;
     let mut script = String::new();
@@ -242,6 +256,13 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         .checked_add(2)
         .filter(|_| payload_fd_count > 0)
         .map(|last_fd| format!("for fd in $(seq 3 {last_fd}); do eval \"exec $fd>&-\"; done; "));
+    if node_runtime_enabled {
+        append_prebootstrap_command(
+            &mut script,
+            NODE_WRAPPER_SETUP,
+            close_payload_fds.as_deref(),
+        );
+    }
     let all_dirs: Vec<String> = boot_dirs
         .iter()
         .chain(profile.extra_boot_dirs.iter())
@@ -300,7 +321,7 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         ));
     }
 
-    let agent_exec = build_agent_exec(profile, browser, browser_mode);
+    let agent_exec = build_agent_exec(profile, browser, browser_mode, node_runtime_enabled);
     let final_exec = |command: String| {
         bootstrap_path.map_or_else(|| command.clone(), |bootstrap| {
             format!(
@@ -375,8 +396,18 @@ fn append_prebootstrap_background_command(
     }
 }
 
-fn build_agent_exec(profile: &AgentProfile, browser: &BrowserConfig, browser_mode: bool) -> String {
-    let mut command = format!("exec {}", profile.command);
+fn build_agent_exec(
+    profile: &AgentProfile,
+    browser: &BrowserConfig,
+    browser_mode: bool,
+    node_runtime_enabled: bool,
+) -> String {
+    let bootstrap = if node_runtime_enabled && profile.node_bootstrap {
+        "exec env AGS_NODE_AGENT_BOOTSTRAP=1"
+    } else {
+        "exec"
+    };
+    let mut command = format!("{bootstrap} {}", profile.command);
     for arg in &profile.command_args {
         command.push_str(&format!(" {}", shell_quote(arg)));
     }

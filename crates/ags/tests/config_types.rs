@@ -63,6 +63,8 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
         ags::config::BASE_DNF_PACKAGES
     );
     assert!(containerfile.contains("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\""));
+    assert!(ags::config::BASE_DNF_PACKAGES.contains(&"mise"));
+    assert!(baseline.split_whitespace().any(|package| package == "mise"));
     assert!(!containerfile.contains("ARG BR_VERSION"));
     assert!(!containerfile.contains("ARG DCG_VERSION"));
     assert!(containerfile.contains("sha256sum -c -"));

@@ -21,7 +21,8 @@ Commands:
   completions    Print shell completion script to stdout
 \
   tools          Choose sandbox tools and agent CLIs
-
+\
+  node           Install or list user-managed Node.js versions
 \
 Run flags:
 \
@@ -100,4 +101,13 @@ Tools flags:
   --packages <path> Tool catalog JSON file (or pass as first positional argument)
 \
   --config <path>   Config file to update (default: ~/.config/ags/config.toml)
+
+\
+Node runtime commands:
+\
+  ags node install <version>  Install a numeric Node version through mise
+\
+  ags node list               List installed user-managed Node versions
+\
+  --config <path>             Use an alternate AGS config file
 ";

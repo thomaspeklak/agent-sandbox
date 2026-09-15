@@ -15,6 +15,7 @@ pub const BASE_DNF_PACKAGES: &[&str] = &[
     "grep",
     "jq",
     "less",
+    "mise",
     "nodejs24-bin",
     "patch",
     "procps-ng",

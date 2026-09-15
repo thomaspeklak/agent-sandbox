@@ -207,7 +207,7 @@ fn bootstrap_wraps_direct_agent_and_closes_fds_for_browser_helper() {
     );
     assert!(
         plan.entrypoint
-            .contains("exec /run/ags/onepassword-bootstrap --fd-count 2 -- /usr/local/pnpm/bin/pi")
+            .contains("exec /run/ags/onepassword-bootstrap --fd-count 2 -- env AGS_NODE_AGENT_BOOTSTRAP=1 /usr/local/pnpm/bin/pi")
     );
     assert!(
         plan.entrypoint
@@ -296,10 +296,9 @@ fn bootstrap_wraps_tmux_process_tree_in_root_stop_when_done_mode() {
         plan.entrypoint
             .contains("exec /run/ags/onepassword-bootstrap --fd-count 1 -- tmux new-session")
     );
-    assert!(
-        plan.entrypoint
-            .contains("#!/usr/bin/env bash\nexec /usr/local/pnpm/bin/pi")
-    );
+    assert!(plan.entrypoint.contains(
+        "#!/usr/bin/env bash\nexec env AGS_NODE_AGENT_BOOTSTRAP=1 /usr/local/pnpm/bin/pi"
+    ));
     assert!(
         !plan.entrypoint.contains("--user=root"),
         "security belongs to Podman args"

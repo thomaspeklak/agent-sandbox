@@ -25,6 +25,9 @@ pub struct AgentProfile {
     pub extra_boot_dirs: Vec<String>,
     /// Shell commands to run in the entrypoint before `exec`.
     pub entrypoint_setup: String,
+    /// The launcher is a Node script, so start it with the fixed image Node
+    /// before enabling project-selected wrappers for its child commands.
+    pub node_bootstrap: bool,
     /// CLI flag for browser skill injection (e.g. "--skill" for pi).
     pub browser_skill_flag: Option<String>,
     /// Path argument for the browser skill flag.
@@ -76,6 +79,7 @@ fn pi_profile(config: &ValidatedConfig, guard_enabled: bool) -> AgentProfile {
     AgentProfile {
         command: pnpm_agent_command("pi"),
         command_args,
+        node_bootstrap: true,
         browser_skill_flag: Some("--skill".to_owned()),
         browser_skill_path: config.browser.pi_skill_path.clone(),
         ..AgentProfile::default()
@@ -144,6 +148,7 @@ fn opencode_boot_dirs() -> Vec<String> {
 fn gemini_profile() -> AgentProfile {
     AgentProfile {
         command: pnpm_agent_command("gemini"),
+        node_bootstrap: true,
         ..AgentProfile::default()
     }
 }

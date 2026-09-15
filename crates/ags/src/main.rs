@@ -14,6 +14,7 @@ fn main() -> ExitCode {
                 SubCommand::Completions(_)
                     | SubCommand::UpdateImage(_)
                     | SubCommand::UpdateDeprecated(_)
+                    | SubCommand::Node(_)
             );
             let code = run_subcommand(sub);
             if skip_notice {
@@ -89,6 +90,7 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 ags::cmd::tool_configurator::run(&config_path, &opts.packages_path),
             );
         }
+        SubCommand::Node(_) => {}
         SubCommand::Setup
         | SubCommand::Doctor
         | SubCommand::UpdateImage(_)
@@ -101,6 +103,7 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
             opts.config_path.as_deref()
         }
         SubCommand::UpdateAgents(opts) => opts.config_path.as_deref(),
+        SubCommand::Node(opts) => opts.config_path.as_deref(),
         _ => None,
     };
     let config = match ags::lifecycle::load_config(config_path) {
@@ -129,6 +132,7 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 &ags::cmd::update_agents::UpdateAgentsOptions::default(),
             ),
         ),
+        SubCommand::Node(ref opts) => try_sub("node", ags::cmd::node::run(&config, opts)),
         SubCommand::Install(_)
         | SubCommand::Uninstall
         | SubCommand::CreateAliases(_)

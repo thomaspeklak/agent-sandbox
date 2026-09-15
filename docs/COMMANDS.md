@@ -9,6 +9,7 @@ This document explains what each `ags` command does and what side effects to exp
 ```bash
 ags [command]
 ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--root] [--lockdown] [--wayland-compositor-passthrough] [--defaults|-D] [--config PATH] [--add-dir PATH ...] [--env NAME=VALUE ...] -- [agent args...]
+ags node <install VERSION|list> [--config PATH]
 ```
 
 Subcommands:
@@ -22,6 +23,7 @@ Subcommands:
 - `create-aliases`
 - `completions`
 - `tools`
+- `node install <version>` / `node list` (the `runtime` and `runtimes` names are accepted aliases)
 
 Use `ags --help` for built-in help text.
 
@@ -97,12 +99,17 @@ ags --agent pi --env BROWSER_URL=http://127.0.0.1:9222
 13. Build launch plan (mounts/env/security/network/entrypoint).
 14. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
 15. Ensure image exists (builds if missing), then run `podman run`.
+16. In ordinary (non-lockdown) runs, mount the persistent AGS mise Node store read-only and install ephemeral Node command wrappers. Each wrapper finds the nearest `.nvmrc` under the initial workspace on every invocation, including noninteractive commands and nested `cd` paths.
 
 ### Notes
 
 - Args after `--` are passed directly to agent CLI.
 - `--defaults` / `-D` prepends AGS-managed default passthrough args for the selected agent harness. Today that means Claude gets `--strict-mcp-config --dangerously-skip-permissions`, Gemini gets `--yolo`, and other agents currently add nothing.
 - `--add-dir <path>` / `-d <path>` adds an extra same-path directory mount for the current run only; repeat it to add multiple directories.
+- User-managed Node versions live under `<cache_dir>/mise`. `ags node install 22` and `ags node list` run mise in the Linux sandbox image; installation is the only workflow that mounts this store read-write. During normal runs it is mounted at `/opt/ags/mise:ro`. This protects the store from writes by the sandboxed agent, but it is not an integrity boundary against its host owner or another process that can write the host cache; install only versions you trust.
+- `.nvmrc` selection accepts only one numeric major/minor/patch selector (for example `22`, `22.14`, or `22.14.0`; optional `v` prefix). AGS does not evaluate `.nvmrc` shell content, aliases such as `lts/*`, or any project `mise.toml`, hooks, or environment directives. A missing requested version fails with `ags node install <version>` remediation; it never falls back to Node 24. Without `.nvmrc`, `/usr/bin/node` from the fixed Node 24 image baseline is used.
+- These are Linux-container runtimes, not host installations. `install` and `list` require local Podman that can run the configured Linux image; a managed runtime is usable only in an ordinary AGS run on a compatible container architecture. Existing images must be rebuilt with `ags update-image` to receive mise.
+- `--lockdown` deliberately omits the store, Node wrappers, and their environment variables. This keeps the lockdown agent runtime ephemeral; it uses only the image baseline and cannot use user-managed `.nvmrc` selection.
 - `--env <NAME=VALUE>` sets a container environment variable for the current run; repeat it to set multiple values. Names use shell identifier syntax, the internal `AGS_` prefix is reserved, values may be empty or contain `=`, and a later assignment to the same name wins. Explicit values override AGS-managed defaults. Because values appear in the host command line, use the secret transports instead for credentials.
 - `--yolo` disables AGS-managed Pi/Claude guard integrations for that run. For Pi, the AGS guard extension sees `AGS_GUARD_YOLO=1` and becomes a no-op; for Claude, AGS omits its PreToolUse guard hook wiring.
 - `--lockdown` minimizes host exposure for the current run. It disables configured secrets and passthrough env, SSH agent wiring, sandbox git config, generic `[[mount]]` entries, `[[tool]]`-derived mounts/secrets, host bridges/sidecars (including config-enabled host UI for that run), and direct mounting of the selected agent home. Instead AGS stages a sanitized ephemeral home/runtime for the selected agent and discards prior/current session history artifacts when the run exits.
@@ -206,6 +213,18 @@ ags --agent shell -- -lc 'br --version && bv --version && dcg --version'
 Use `ags update-agents` next if needed.
 
 ---
+
+## `ags node`
+
+Manage user-installed Node.js versions through mise in a throwaway Linux helper container:
+
+```bash
+ags node install 22
+ags node install 22.14.0
+ags node list
+```
+
+The store persists below `[sandbox].cache_dir` (default `~/.cache/ags/mise`). `install` uses a network-enabled helper with a read-write store mount; `list` uses a network-disabled helper with a read-only store mount. The sandbox image supplies the fixed Node 24 baseline and the Fedora `mise` package. The store is shared by ordinary AGS runs, so its read-only mount prevents sandbox writes but does not protect against a host process that can write the cache. Rebuild an existing image with `ags update-image` if it predates mise. `--lockdown` does not expose this store or `.nvmrc` selection.
 
 ## `ags update-agents`
 

@@ -193,6 +193,9 @@ pub fn build_launch_plan(
                 ensure_dir(&cache_dir.join(suffix))?;
             }
         }
+        // Managed Node installations are mounted separately and read-only
+        // during normal runs. The helper command is the only writer.
+        ensure_dir(&cache_dir.join(crate::node_runtime::NODE_STORE_SUFFIX))?;
     }
 
     let mut mounts = Vec::new();
@@ -332,6 +335,19 @@ pub fn build_launch_plan(
         add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
     }
 
+    // Render managed Node data after every user- or runtime-controlled mount.
+    // The final, exact bind makes the read-only policy win over an accidental
+    // earlier mount at the AGS-owned destination.
+    if !lockdown {
+        let node_store = cache_dir.join(crate::node_runtime::NODE_STORE_SUFFIX);
+        mounts.push(PlanMount {
+            host: node_store,
+            container: crate::node_runtime::NODE_STORE_CONTAINER.to_owned(),
+            mode: MountMode::Ro,
+        });
+        read_roots.push(crate::node_runtime::NODE_STORE_CONTAINER.to_owned());
+    }
+
     // Render the trusted bootstrap after every user- or runtime-controlled
     // mount. The final, exact bind wins even when an earlier destination reaches
     // `/run` through an image symlink such as `/var/run`.
@@ -344,7 +360,7 @@ pub fn build_launch_plan(
     }
 
     // Environment
-    let env = build_env(
+    let mut env = build_env(
         config,
         &profile,
         BuildEnvContext {
@@ -365,6 +381,16 @@ pub fn build_launch_plan(
             lockdown,
         },
     );
+    if !lockdown {
+        env.inline.push((
+            "AGS_NODE_WORKSPACE_ROOT".to_owned(),
+            workdir_mapping.container.clone(),
+        ));
+        env.inline.push((
+            "AGS_NODE_CONFIG_PATH".to_owned(),
+            config.config_file.display().to_string(),
+        ));
+    }
 
     // Network mode
     let network_mode = if effective_browser_mode {
@@ -385,6 +411,7 @@ pub fn build_launch_plan(
         show_host_services_hint: !lockdown,
         stop_when_done,
         payload_fd_count,
+        node_runtime_enabled: !lockdown,
         bootstrap_path,
     });
 
