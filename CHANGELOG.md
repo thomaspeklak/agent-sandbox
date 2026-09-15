@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.22.0] - 2026-09-15
+
+### Added
+
+- Install and list sandbox-compatible Node.js versions with `ags node install` and `ags node list`. Installed versions persist across sessions and are mounted read-only inside ordinary sandboxes.
+- Automatically select installed Node.js versions from the nearest workspace `.nvmrc`, including major-version selectors and `v`-prefixed versions. Missing versions show installation instructions instead of triggering downloads; agent launchers retain their baseline runtime.
+
+### Changed
+
+- Include mise from upstream’s `jdxcode/mise` COPR repository in the sandbox image. Run `ags update-image` after upgrading to enable project-specific Node.js versions. Lockdown sessions continue using the image baseline without managed runtime mounts.
+
 ## [0.21.1] - 2026-09-11
 
 ### Fixed
