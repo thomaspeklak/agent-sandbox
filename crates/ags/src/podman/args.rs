@@ -1,36 +1,72 @@
 use std::path::Path;
 
-use base64::Engine;
-
-use crate::config::LockedToolDownload;
 use crate::plan::LaunchPlan;
 
-pub(crate) fn encode_tool_downloads(downloads: &[LockedToolDownload]) -> String {
-    let json = serde_json::to_vec(downloads).expect("tool download lock must serialize");
-    base64::engine::general_purpose::STANDARD.encode(json)
+/// Registry pull behavior for `podman build`. AGS always passes it explicitly
+/// instead of relying on Podman's default or a bare `--pull`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PullPolicy {
+    Always,
+    Missing,
+    Never,
 }
 
-pub(crate) fn build_image_args(
-    image: &str,
-    containerfile: &Path,
-    context_dir: &Path,
-    build_args: &[(&str, &str)],
-    pull: bool,
-) -> Vec<String> {
+impl PullPolicy {
+    fn flag(self) -> &'static str {
+        match self {
+            Self::Always => "--pull=always",
+            Self::Missing => "--pull=missing",
+            Self::Never => "--pull=never",
+        }
+    }
+}
+
+/// Whether a build may reuse Podman's layer cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerCache {
+    /// Normal builds: `--layers=true`.
+    Reuse,
+    /// Tiny recipes that must execute (OS refresh, rebase): adds `--no-cache`.
+    Rebuild,
+}
+
+/// One `podman build` invocation for an AGS image component.
+#[derive(Debug, Clone)]
+pub struct ImageBuild<'a> {
+    pub containerfile: &'a Path,
+    pub context_dir: &'a Path,
+    pub tag: &'a str,
+    pub iidfile: &'a Path,
+    pub pull: PullPolicy,
+    pub cache: LayerCache,
+    pub build_args: &'a [(&'a str, String)],
+    pub labels: &'a [(&'a str, String)],
+}
+
+pub fn build_image_args(build: &ImageBuild<'_>) -> Vec<String> {
     let mut args = vec![
         "build".to_owned(),
-        "-t".to_owned(),
-        image.to_owned(),
-        "-f".to_owned(),
-        containerfile.display().to_string(),
+        "--layers=true".to_owned(),
+        build.pull.flag().to_owned(),
     ];
-    for (name, value) in build_args {
+    if build.cache == LayerCache::Rebuild {
+        args.push("--no-cache".to_owned());
+    }
+    args.extend([
+        "-f".to_owned(),
+        build.containerfile.display().to_string(),
+        "-t".to_owned(),
+        build.tag.to_owned(),
+        "--iidfile".to_owned(),
+        build.iidfile.display().to_string(),
+    ]);
+    for (name, value) in build.labels {
+        args.extend(["--label".to_owned(), format!("{name}={value}")]);
+    }
+    for (name, value) in build.build_args {
         args.extend(["--build-arg".to_owned(), format!("{name}={value}")]);
     }
-    if pull {
-        args.push("--pull".to_owned());
-    }
-    args.push(context_dir.display().to_string());
+    args.push(build.context_dir.display().to_string());
     args
 }
 

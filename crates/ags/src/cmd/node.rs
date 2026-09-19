@@ -72,7 +72,6 @@ pub fn run(config: &ValidatedConfig, options: &NodeOptions) -> Result<(), NodeEr
         .map_err(|error| NodeError::ImageContext(error.to_string()))?;
     crate::podman::ensure_image(
         &config.sandbox.image,
-        &config.sandbox.containerfile,
         &config.sandbox.extra_dnf_packages,
         &config.sandbox.tool_downloads,
     )

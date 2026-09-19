@@ -101,7 +101,7 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
 - `image` (string, required)
   - Podman image tag used for runs.
 - `containerfile` (path, required)
-  - Containerfile path used by `ags update-image` and auto-build fallback.
+  - Where AGS writes a reference copy of the image recipes: the final-assembly `Containerfile`, with component recipes under `image/` next to it. Builds always use a private snapshot of the recipes embedded in the AGS binary, so editing these copies does not change the image.
 - `cache_dir` (path, required)
   - Host cache dir for ssh-agent env/socket and tool caches. AGS stores mise-managed Node installations below `<cache_dir>/mise`; `ags node install` is the only writer and normal sandbox runs mount that store read-only.
 - `gitconfig_path` (path, required)
@@ -137,7 +137,7 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
   - AGS stores this as a relative path and resolves it from the base or repo-local config layer that declared it, so repo overlays remain portable with their checkout.
   - Each locked tool includes a pinned version, archive format, exact executable member, and architecture-specific HTTPS URL and SHA-256 digest.
   - Config loading fails closed if the lock is missing, malformed, uses an unsafe path or URL, lacks `x86_64` or `aarch64`, or contains an invalid checksum.
-  - Both automatic image builds and `ags update-image` verify the selected artifact before installing only its declared executable.
+  - Both automatic image builds and `ags update-image` verify the selected artifact before installing only its declared executable. Each tool is cached as its own image component, so changing one entry downloads and extracts only that tool.
   - Do not hand-edit this file; update source metadata in the tool catalog and save through `ags tools`.
 - `agent_provider_lock` (path, optional, managed by `ags tools`)
   - Points to the generated `agent-providers.<sha256>.lock.json` containing typed provider policies for selected agent CLIs.

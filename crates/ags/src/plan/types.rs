@@ -75,7 +75,6 @@ impl std::error::Error for PlanError {}
 #[derive(Debug, Clone)]
 pub struct LaunchPlan {
     pub image: String,
-    pub containerfile: PathBuf,
     pub extra_dnf_packages: Vec<String>,
     pub tool_downloads: Vec<LockedToolDownload>,
     pub container_name: String,

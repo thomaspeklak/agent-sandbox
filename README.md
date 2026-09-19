@@ -376,7 +376,7 @@ Start here:
 
 - `ags setup` — generate keys, ensure Pi assets in mounted host path, optional keyring secret setup
 - `ags doctor` — run environment + config health checks
-- `ags update-image [--keep-existing]` — rebuild the container image from `Containerfile` with catalog-selected DNF and verified-download tools, and remove the previous image after a successful rebuild unless it is still referenced by a container or `--keep-existing` is set
+- `ags update-image [--rebase] [--keep-existing]` — check for and apply image updates incrementally (RPM updates, Rust stable, rustup, pnpm, and catalog-selected DNF and verified-download tools), reusing unchanged components, verifying the result offline before publishing it, and removing the previous image unless it is still referenced by a container or `--keep-existing` is set. `--rebase` refreshes the Fedora base within its release and restarts the OS update layers. See [docs/COMMANDS.md](docs/COMMANDS.md#ags-update-image)
 - `ags update-agents` — install/update agent CLIs in persistent volumes
 - `ags node install <version>` / `ags node list` — manage user Node versions through mise in the persistent AGS store
 - `ags tools --packages <catalog.json>` — choose optional sandbox tools by profession and area
@@ -515,7 +515,8 @@ Use `config/config.example.toml` for full schema examples.
 ## Project layout
 
 - `crates/ags/` — Rust CLI implementation
-- `config/Containerfile` — base sandbox image definition
+- `config/Containerfile` — final assembly of the sandbox image from prebuilt components
+- `config/image/` — component recipes (OS baseline and refresh, build foundation, Rust, pnpm, vendor tools, Glimpse) and the offline image verification script
 - `config/tmux.conf` — minimal tmux defaults copied into the sandbox image
 - `config/config.example.toml` — full config template
 - `agent/extensions/guard.ts` — runtime guard extension mounted for Pi

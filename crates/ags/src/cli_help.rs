@@ -8,7 +8,7 @@ Commands:
 \
   doctor         Run health checks on sandbox configuration
 \
-  update-image   Rebuild container image and refresh bundled br/dcg
+  update-image   Check for and apply sandbox image updates
 \
   update-agents  Reconcile selected agents in persistent volumes
 \
@@ -64,6 +64,8 @@ Run flags:
 Update-image flags:
 \
   --keep-existing Keep the previous image after a successful rebuild
+\
+  --rebase        Refresh the Fedora base within its release and restart OS update layers
 \
   --config <path> Config file to build from (default: ~/.config/ags/config.toml)
 

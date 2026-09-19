@@ -43,6 +43,13 @@ pub fn runtime_dir() -> io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Per-user AGS cache directory (`$XDG_CACHE_HOME/ags`). Not created here.
+pub fn ags_cache_root() -> io::Result<PathBuf> {
+    dirs::cache_dir()
+        .map(|dir| dir.join("ags"))
+        .ok_or_else(|| io::Error::other("could not determine the user cache directory"))
+}
+
 /// Ensure a directory exists and is private to the current user.
 pub fn ensure_private_dir(path: &Path) -> io::Result<()> {
     fs::create_dir_all(path)?;

@@ -98,7 +98,7 @@ ags --agent pi --env BROWSER_URL=http://127.0.0.1:9222
 12. If running with `--lockdown`, stage a sanitized per-run agent home/runtime for the selected agent.
 13. Build launch plan (mounts/env/security/network/entrypoint).
 14. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
-15. Ensure image exists (builds if missing), then run `podman run`.
+15. Ensure the image exists (a missing image is created through the `ags update-image` pipeline; an existing image is used without update checks), then run `podman run`.
 16. In ordinary (non-lockdown) runs, mount the persistent AGS mise Node store read-only and install ephemeral Node command wrappers. Each wrapper finds the nearest `.nvmrc` under the initial workspace on every invocation, including noninteractive commands and nested `cd` paths.
 
 ### Notes
@@ -185,24 +185,81 @@ ags doctor
 
 ## `ags update-image`
 
-Rebuilds the sandbox image from the configured `Containerfile`, including the DNF and verified-download tools selected through `ags tools`.
+Checks the sandbox image for updates and applies them incrementally, including the DNF and verified-download tools selected through `ags tools`.
 
 ```bash
 ags update-image
+ags update-image --rebase
 ags update-image --keep-existing
 ags update-image --config /path/to/config.toml
 ```
 
-- Uses the immutable architecture-specific URLs and SHA-256 values in `[sandbox].tool_download_lock`
-- Supports exact executable extraction from `zip`, `tar.gz`, and `tar.xz` archives
-- Verifies every selected archive during image build before installing its declared executable
-- Removes the previously tagged sandbox image after the new build succeeds, unless a container still references it
-- Referenced previous images are retained with a warning listing the blocking container IDs
-- `--keep-existing` keeps the previous image for manual rollback/debugging
-- `--config` selects the base config file used for the build; a trusted repo-local overlay still takes precedence
-- Does **not** update agent CLIs installed in persistent volumes
+- **`ags update-image`** keeps the recorded Fedora base, checks RPMs, Rust stable, rustup, and pnpm for updates, applies changed vendor-tool locks, and reuses every unaffected component.
+- **`--rebase`** refreshes the base image within the same Fedora release (never to another release), starts a new OS update lineage from the package baseline, refreshes the build foundation, and rebuilds the artifacts compiled against it. It restarts the lineage even if the registry returns the same digest, which collapses accumulated RPM update layers.
+- `--keep-existing` keeps the superseded image for manual rollback/debugging.
+- `--config` selects the base config file used for the build; a trusted repo-local overlay still takes precedence.
+- Does **not** update agent CLIs installed in persistent volumes.
+- Launching an agent never checks for updates. Only a missing image is created on launch, through the same path (the same base policy, verification, and publication) as `ags update-image`.
 
 `ags update` remains as a deprecated alias for `ags update-image`.
+
+### How updates stay small
+
+The image is assembled from components that are cached and reused independently. Each component is identified by a content key over exactly the inputs that can change it, so an update rebuilds only what actually changed:
+
+| Change | Rebuilt | Reused |
+| --- | --- | --- |
+| Nothing | nothing; the existing image is retained | everything |
+| New RPM updates | one small OS checkpoint layer on top of the current one, then the final assembly | package baseline, Rust, pnpm, vendor tools, Glimpse |
+| RPM metadata changed but no package changed | nothing | everything (the candidate checkpoint is discarded) |
+| `extra_dnf_packages` changed | package baseline (new OS lineage), final assembly | Rust, pnpm, vendor tools, Glimpse |
+| Same packages in another order or duplicated | nothing | the selection is sorted and de-duplicated |
+| Rust stable release | Rust toolchain, Glimpse, final assembly | OS, pnpm, vendor tools |
+| rustup release only | Rust toolchain (compiler kept), final assembly | Glimpse, OS, pnpm, vendor tools |
+| pnpm release | pnpm, final assembly | OS, Rust, Glimpse, vendor tools |
+| One vendor tool lock entry | that tool, final assembly | the other tools; unchanged archives are neither downloaded nor extracted again |
+| Vendor tool removed | final assembly (its executable is absent from the new image) | the other tools |
+| `uv.toml`, `tmux.conf`, or other late configuration (new AGS release) | final assembly only | every component |
+| `--rebase` | build foundation, Glimpse, OS checkpoint (from the baseline), final assembly; the baseline too if the base digest changed | Rust, pnpm, and vendor tools, whose payloads do not depend on the base |
+
+A normal run prints a compact summary, for example:
+
+```text
+Base:       retained recorded Fedora 44 digest
+OS:         current; checkpoint reused
+Rust:       current; artifact reused
+rustup:     current
+pnpm:       updated to 10.21.0; artifact rebuilt
+Vendor:     7 reused, 1 changed
+Glimpse:    reused
+Image:      verified and published 3f2a9c1d7e40
+```
+
+### Base, packages, and tools
+
+- The base is `registry.fedoraproject.org/fedora:44`. The first run records its digest and image ID, reusing a local copy and pulling only if none exists. Later runs use the recorded image, re-pulling it by digest if it was removed; if that fails, the error suggests `--rebase`.
+- RPM updates are found with `dnf check-upgrade --refresh` (repositories may not be skipped as unavailable) and applied as a checkpoint on top of the previous checkpoint. A checkpoint is kept only if the installed-RPM inventory actually changed.
+- Rust is the current stable release from the official channel manifest. It is installed by an archived, SHA-256-verified `rustup-init` and never self-updates. An unchanged compiler is kept when only rustup changes.
+- pnpm is the exact `latest` release from the npm registry. Pre-releases are refused, and the tarball is verified against the registry's SHA-512 integrity and installed without lifecycle scripts.
+- Vendor tools use the immutable architecture-specific URLs and SHA-256 values in `[sandbox].tool_download_lock`. Archives are downloaded on the host into a private verified store (`~/.cache/ags/image-build/downloads/`). Every stored entry is re-verified before reuse, and mismatched entries are deleted. Only the declared executable is extracted, from `zip`, `tar.gz`, or `tar.xz`. Two tools may not install the same command, and `pnpm` is reserved for the image itself.
+- Malformed or unreachable metadata fails the update with the component's name. The existing image is kept, and AGS never reports it as current.
+
+### Verification, publication, and recovery
+
+- Components are built under private AGS names (`localhost/ags-build-<output-id>/<component>:candidate`); the configured image tag is never a build target.
+- The assembled candidate is verified before publication with networking disabled and without host credentials, mounts, workspaces, or agent volumes. The check covers the `dev` user, paths and policy files, the selected RPMs and tools, mise, Node, pnpm, Rust/Cargo, rustfmt, clippy, Glimpse, and a tiny offline Rust build with and without the `sccache` wrapper.
+- Any failure before publication leaves the configured image and its update state unchanged.
+- Publication writes a pending record, moves the configured tag, confirms it, and then commits the state. If AGS is interrupted in between, the next run completes or discards the publication. If the image was changed outside AGS meanwhile, AGS leaves it untouched and reports it instead.
+- Afterwards only the superseded final image is removed, with `podman image rm --no-prune` and without force. An image still used by a container, or still carrying another tag, is retained with a warning and the command to remove it later. Cleanup problems are warnings, never rollbacks. No global prune is performed.
+
+### State, locking, and migration
+
+- Update state is a small JSON manifest per output image, platform, and Podman storage, stored in `~/.cache/ags/image-state/` (honoring `XDG_CACHE_HOME`). It is independent of `[sandbox].cache_dir`, so configs that build the same image share one state.
+- Updates of the same image are serialized with a lock in the same directory. A second run waits and then re-checks.
+- Missing, corrupt, or unsupported state is a cache miss. Recorded components are re-inspected before reuse, never trusted blindly, and the working image stays in place until a verified replacement is published.
+- The first run after upgrading from the monolithic image builds a new package baseline and every component once; the old image is not imported as an OS checkpoint.
+- Builds read a private snapshot of the recipes embedded in the AGS binary. The `Containerfile` next to your config is a reference copy of the final-assembly recipe (the component recipes are written alongside it under `image/`). Editing it does not change what AGS builds.
+- Superseded component images lose their AGS names and become dangling. `podman image prune` reclaims them when you choose.
 
 Version check (inside sandbox):
 
@@ -270,7 +327,7 @@ ags install --link-self --force
 
 ### What it writes
 
-- `~/.config/ags/Containerfile`
+- `~/.config/ags/Containerfile` (reference copy of the final-assembly recipe; component recipes go in `~/.config/ags/image/`)
 - `~/.config/ags/tmux.conf`
 - `<agent-dir>/extensions/guard.ts`
 - `<agent-dir>/settings.json` (if missing)

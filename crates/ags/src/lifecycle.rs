@@ -350,7 +350,6 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         } else {
             if let Err(e) = crate::podman::ensure_image(
                 &plan.image,
-                &plan.containerfile,
                 &plan.extra_dnf_packages,
                 &plan.tool_downloads,
             ) {

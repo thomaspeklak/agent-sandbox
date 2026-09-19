@@ -11,6 +11,7 @@ pub(crate) mod github_release;
 mod github_release_http;
 pub mod host_dialog;
 pub mod host_ui;
+pub mod image_update;
 pub mod lifecycle;
 pub mod lockdown;
 pub mod node_runtime;

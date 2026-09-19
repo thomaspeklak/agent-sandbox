@@ -26,7 +26,11 @@
   - Converts config + runtime state into final `LaunchPlan`.
 - `podman/*`
   - Turns `LaunchPlan` into `podman run` arguments and executes.
-  - Encodes validated tool-download locks into both explicit and automatic image builds.
+  - Renders `podman build` arguments with explicit layer-cache and pull policies.
+- `image_update/*`
+  - The single image creation/update pipeline shared by `ags update-image` and first launch.
+  - Resolves the recorded Fedora base and upstream metadata, reuses or builds content-keyed components (OS baseline and checkpoints, build foundation, Rust, pnpm, one artifact per vendor tool, Glimpse), assembles and verifies a candidate offline, and publishes it through a pending record under a per-image lock.
+  - Keeps a small per-image state manifest in `~/.cache/ags/image-state/`; see `docs/COMMANDS.md` for the invalidation table.
 - `ssh.rs`
   - Dedicated ssh-agent lifecycle + key loading.
 - `secrets.rs`
@@ -49,7 +53,7 @@
   - Pairs with embedded sandbox helper scripts written by `assets.rs`.
   - `glimpseui` is the intended owner of localhost-to-relay URL resolution for Glimpse-based packages.
 - `assets.rs`
-  - Writes embedded Containerfile, tmux, system-wide uv policy, guard, settings, auth-proxy-shim, clipboard, and webview relay assets.
+  - Writes embedded Containerfile and component recipes (reference copies; image builds use a private snapshot), tmux, system-wide uv policy, guard, settings, auth-proxy-shim, clipboard, and webview relay assets.
 - `node_runtime.rs`
   - Validates numeric `.nvmrc` selectors and bounds nearest-file discovery to the workspace.
 - `cmd/node.rs`

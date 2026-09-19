@@ -1,141 +1,23 @@
-FROM registry.fedoraproject.org/fedora:44 AS glimpse-builder
+# Final sandbox image assembly. AGS builds the expensive inputs separately from
+# the recipes in image/ and passes the resulting local image IDs here, so this
+# recipe only copies finished artifacts and applies late configuration. It never
+# installs packages or compiles tools.
+ARG OS_IMAGE
+ARG RUST_IMAGE
+ARG PNPM_IMAGE
+ARG GLIMPSE_IMAGE
+FROM ${RUST_IMAGE} AS rust
+FROM ${PNPM_IMAGE} AS pnpm
+FROM ${GLIMPSE_IMAGE} AS glimpse
+# AGS replaces the next line with one `FROM <image-id> AS vendor-N` per selected vendor tool.
+# @ags-vendor-stages@
 
-RUN dnf -y install \
-      ca-certificates \
-      curl \
-      gcc \
-      pkgconf-pkg-config && \
-    dnf clean all
+FROM ${OS_IMAGE}
+USER root
 
-ARG RUST_TOOLCHAIN=stable
-RUN mkdir -p /tmp/rustup /tmp/cargo && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-      env CARGO_HOME=/tmp/cargo RUSTUP_HOME=/tmp/rustup \
-      sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --no-modify-path
-
-COPY glimpse-shim/ /src/glimpse-shim/
-RUN cd /src/glimpse-shim && \
-    CARGO_HOME=/tmp/cargo RUSTUP_HOME=/tmp/rustup \
-    /tmp/cargo/bin/cargo build --release && \
-    install -D -m 0755 target/release/glimpse-shim /out/glimpse-shim
-
-FROM registry.fedoraproject.org/fedora:44 AS tooling-builder
-
-# Build-only dependencies for artifacts copied into the configurable final image.
-RUN dnf -y install \
-      ca-certificates \
-      curl \
-      gcc \
-      nodejs24-bin \
-      nodejs24-npm-bin \
-      tar \
-      xz && \
-    dnf clean all
-
-RUN printf 'ignore-scripts=true\n' > /etc/npmrc && \
-    npm install --global --prefix /usr/local --ignore-scripts pnpm@latest && \
-    /usr/local/bin/pnpm --version
-
-ARG RUST_TOOLCHAIN=stable
-RUN mkdir -p /usr/local/rustup /usr/local/cargo && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-      env CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup \
-      sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --no-modify-path && \
-    env CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup \
-      /usr/local/cargo/bin/rustup component add rustfmt clippy && \
-    chmod -R a+rX /usr/local/rustup /usr/local/cargo
-
-FROM registry.fedoraproject.org/fedora:44
-
-COPY uv.toml /etc/uv/uv.toml
-
-# Mise is published in upstream's COPR, not Fedora's default repositories.
-# Minimal Fedora images need the DNF5 plugins for the `copr` subcommand.
-RUN dnf -y install dnf5-plugins && \
-    dnf -y copr enable jdxcode/mise && \
-    dnf clean all
-
-# Stable AGS runtime and standard utility baseline. These packages are not user
-# choices: the image and its documented workflows may rely on them being present.
-RUN BASE_DNF_PACKAGES="bash ca-certificates coreutils curl dbus-devel diffutils file findutils gcc grep jq less mise nodejs24-bin patch procps-ng python3 sed sqlite-devel tar tree unzip util-linux wget which xz zip" && \
-    dnf -y install $BASE_DNF_PACKAGES && \
-    dnf clean all
-
-# Purposeful user-selectable tools. Keep this near the end so tool selection
-# changes reuse the stable baseline and builder stages above.
-ARG EXTRA_DNF_PACKAGES="git gh openssh-clients fd-find ripgrep rsync tmux kitty-terminfo socat make pkgconf-pkg-config sccache"
-RUN if [ -n "$EXTRA_DNF_PACKAGES" ]; then \
-      dnf -y install $EXTRA_DNF_PACKAGES; \
-    fi && \
-    dnf clean all
-
-# Optional tools unavailable in Fedora are supplied as pinned, architecture-aware
-# vendor archives. AGS validates this lock before encoding it as a build argument.
-ARG EXTRA_TOOL_DOWNLOADS_B64="W10="
-RUN set -eu; \
-    lock="$(mktemp)"; entries="$(mktemp)"; \
-    printf '%s' "$EXTRA_TOOL_DOWNLOADS_B64" | base64 -d > "$lock"; \
-    jq -c 'if type == "array" then .[] else error("tool download lock must be an array") end' \
-      "$lock" > "$entries"; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-      x86_64) arch="x86_64" ;; \
-      aarch64|arm64) arch="aarch64" ;; \
-      *) echo "unsupported architecture for downloaded tools: $arch" >&2; exit 1 ;; \
-    esac; \
-    while IFS= read -r tool; do \
-      id="$(printf '%s' "$tool" | jq -er '.id | strings | select(test("^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))')"; \
-      version="$(printf '%s' "$tool" | jq -er '.download.version | strings | select(length > 0)')"; \
-      format="$(printf '%s' "$tool" | jq -er '.download.archive | select(. == "zip" or . == "tar.gz" or . == "tar.xz")')"; \
-      member="$(printf '%s' "$tool" | jq -er '.download.member | strings | select(length > 0 and startswith("/") == false and startswith("-") == false and test("(^|/)\\.\\.?(/|$)|[*?\\[\\]]") == false)')"; \
-      member_match="$(printf '%s' "$tool" | jq -er '.download.member_match // "exact" | select(. == "exact" or . == "unique_basename")')"; \
-      install_as="$(printf '%s' "$tool" | jq -er '.download.install_as | strings | select(test("^[a-z][a-z0-9._-]*$"))')"; \
-      artifact="$(printf '%s' "$tool" | jq -ec --arg arch "$arch" '.download.artifacts[$arch] // error("missing architecture")')"; \
-      url="$(printf '%s' "$artifact" | jq -er '.url | strings | select(startswith("https://"))')"; \
-      sha256="$(printf '%s' "$artifact" | jq -er '.sha256 | strings | select(test("^[A-Fa-f0-9]{64}$"))')"; \
-      work="$(mktemp -d)"; archive="$work/archive"; binary="$work/binary"; \
-      echo "Installing $id $version for $arch"; \
-      curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 300 \
-        --retry 2 --retry-delay 1 "$url" -o "$archive"; \
-      printf '%s  %s\n' "$sha256" "$archive" | sha256sum -c -; \
-      archive_member="$member"; \
-      if [ "$member_match" = "unique_basename" ]; then \
-        members="$work/members"; matches="$work/matches"; \
-        case "$format" in \
-          zip) unzip -Z1 "$archive" > "$members" ;; \
-          tar.gz) tar -tzf "$archive" > "$members" ;; \
-          tar.xz) tar -tJf "$archive" > "$members" ;; \
-        esac; \
-        : > "$matches"; \
-        while IFS= read -r candidate; do \
-          if [ "${candidate##*/}" = "$member" ]; then printf '%s\n' "$candidate" >> "$matches"; fi; \
-        done < "$members"; \
-        test "$(wc -l < "$matches")" -eq 1; \
-        archive_member="$(IFS= read -r candidate < "$matches"; printf '%s' "$candidate")"; \
-      fi; \
-      case "$format" in \
-        zip) unzip -p "$archive" "$archive_member" > "$binary" ;; \
-        tar.gz) tar -xOzf "$archive" -- "$archive_member" > "$binary" ;; \
-        tar.xz) tar -xOJf "$archive" -- "$archive_member" > "$binary" ;; \
-      esac; \
-      test -s "$binary"; \
-      install -D -m 0755 "$binary" "/usr/local/bin/$install_as"; \
-      rm -rf "$work"; \
-    done < "$entries"; \
-    rm -f "$lock" "$entries"
-
-RUN useradd -m -u 1000 -s /bin/bash dev && \
-    mkdir -p /workspace /home/dev/.local/bin /home/dev/.local/share /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/opencode-home /opt/ags && \
-    printf 'ignore-scripts=true\n' > /etc/npmrc && \
-    printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
-    printf 'ignoreScripts: true\nstoreDir: /usr/local/pnpm/.store\nglobalBinDir: /usr/local/pnpm/bin\n' > /home/dev/.config/pnpm/config.yaml && \
-    printf '#!/bin/sh\nif command -v sccache >/dev/null 2>&1; then exec sccache "$@"; fi\nexec "$@"\n' > /opt/ags/rustc-wrapper && \
-    chmod 0755 /opt/ags/rustc-wrapper && \
-    chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home /opt/opencode-home
-
-COPY --from=tooling-builder /usr/local/rustup/ /usr/local/rustup/
-COPY --from=tooling-builder /usr/local/cargo/ /usr/local/cargo/
-COPY --from=tooling-builder /usr/local/lib/node_modules/pnpm/ /usr/local/lib/node_modules/pnpm/
+COPY --from=rust /usr/local/rustup/ /usr/local/rustup/
+COPY --from=rust /usr/local/cargo/ /usr/local/cargo/
+COPY --from=pnpm /usr/local/lib/node_modules/pnpm/ /usr/local/lib/node_modules/pnpm/
 RUN set -eu; \
     pnpm_bin="$(node -p "const pkg = require('/usr/local/lib/node_modules/pnpm/package.json'); typeof pkg.bin === 'string' ? pkg.bin : pkg.bin.pnpm")"; \
     test -n "$pnpm_bin"; \
@@ -144,8 +26,15 @@ RUN set -eu; \
     test -L /usr/local/bin/pnpm; \
     /usr/local/bin/pnpm --version
 
-# Glimpse sandbox shim: build artifacts stay in the builder stage; the final image keeps only the binary.
-COPY --from=glimpse-builder /out/glimpse-shim /opt/ags/glimpse-shim
+# AGS replaces the next line with one COPY per selected vendor tool, so removed
+# tools and renamed destinations never survive from an older image.
+# @ags-vendor-copies@
+
+# Glimpse sandbox shim: only the executable is copied from its artifact.
+COPY --from=glimpse /out/glimpse-shim /opt/ags/glimpse-shim
+
+# Configuration last: changing these files repeats only the steps below.
+COPY uv.toml /etc/uv/uv.toml
 COPY --chown=dev:dev tmux.conf /home/dev/.tmux.conf
 
 USER dev

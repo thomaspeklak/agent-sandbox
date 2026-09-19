@@ -236,6 +236,33 @@ fn parses_update_image_keep_existing_flag() {
 }
 
 #[test]
+fn parses_update_image_rebase_flag() {
+    let cmd = parse_args(args(&[
+        "ags",
+        "update-image",
+        "--rebase",
+        "--keep-existing",
+    ]))
+    .unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::UpdateImage(UpdateImageOptions {
+            keep_existing: true,
+            rebase: true,
+            ..Default::default()
+        }))
+    );
+    let cmd = parse_args(args(&["ags", "update", "--rebase"])).unwrap();
+    assert_eq!(
+        cmd,
+        Command::Sub(SubCommand::UpdateDeprecated(UpdateImageOptions {
+            rebase: true,
+            ..Default::default()
+        }))
+    );
+}
+
+#[test]
 fn parses_deprecated_update_keep_existing_flag() {
     let cmd = parse_args(args(&["ags", "update", "--keep-existing"])).unwrap();
     assert_eq!(
@@ -317,6 +344,8 @@ fn help_shows_update_image_but_not_deprecated_update_alias() {
     assert!(help.contains("update-image"));
     assert!(help.contains("\ntools          Choose sandbox tools and agent CLIs\n"));
     assert!(help.contains("--keep-existing Keep the previous image after a successful rebuild"));
+    assert!(help.contains("--rebase        Refresh the Fedora base within its release"));
+    assert!(help.contains("update-image   Check for and apply sandbox image updates"));
     assert!(help.contains("--psp                Enable podman-socket-proxy for Docker/Testcontainers flows (policy-gated)"));
     assert!(help.contains("--psp-keep           Keep PSP-created containers after session exit (debug; requires --psp)"));
     assert!(help.contains("--wayland-compositor-passthrough"));

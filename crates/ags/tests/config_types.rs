@@ -34,16 +34,20 @@ sign_key = "/tmp/sign"
     assert_eq!(raw.update.minimum_release_age, 1440);
 }
 
+const FINAL_RECIPE: &str = include_str!("../../../config/Containerfile");
+const OS_BASELINE_RECIPE: &str = include_str!("../../../config/image/os-baseline.Containerfile");
+const VENDOR_RECIPE: &str = include_str!("../../../config/image/vendor-tool.Containerfile");
+
 #[test]
-fn generated_config_and_containerfile_use_canonical_package_defaults() {
+fn generated_config_and_os_baseline_use_canonical_package_defaults() {
     let raw: ags::config::RawConfig = toml::from_str(ags::config::DEFAULT_CONFIG).unwrap();
     assert_eq!(
         raw.sandbox.extra_dnf_packages,
         ags::config::DEFAULT_EXTRA_DNF_PACKAGES
     );
 
-    let containerfile = include_str!("../../../config/Containerfile");
-    let argument = containerfile
+    let recipe = OS_BASELINE_RECIPE;
+    let argument = recipe
         .lines()
         .find_map(|line| line.strip_prefix("ARG EXTRA_DNF_PACKAGES=\""))
         .and_then(|value| value.strip_suffix('"'))
@@ -53,7 +57,7 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
         ags::config::DEFAULT_EXTRA_DNF_PACKAGES
     );
 
-    let baseline = containerfile
+    let baseline = recipe
         .lines()
         .find_map(|line| line.strip_prefix("RUN BASE_DNF_PACKAGES=\""))
         .and_then(|value| value.split('"').next())
@@ -62,20 +66,21 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
         baseline.split_whitespace().collect::<Vec<_>>(),
         ags::config::BASE_DNF_PACKAGES
     );
-    assert!(containerfile.contains("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\""));
-    let copr = containerfile
+    let copr = recipe
         .find("dnf -y copr enable jdxcode/mise")
         .expect("mise requires its upstream COPR repository");
-    let plugins = containerfile
+    let plugins = recipe
         .find("dnf -y install dnf5-plugins")
         .expect("minimal Fedora needs the DNF5 COPR plugin");
-    let baseline_install = containerfile.find("RUN BASE_DNF_PACKAGES=").unwrap();
-    assert!(plugins < copr && copr < baseline_install);
+    let strict_repos = recipe
+        .find("skip_if_unavailable=False")
+        .expect("update checks must not skip unavailable repositories");
+    let baseline_install = recipe.find("RUN BASE_DNF_PACKAGES=").unwrap();
+    let extras_install = recipe.find("ARG EXTRA_DNF_PACKAGES=").unwrap();
+    assert!(plugins < copr && copr < strict_repos && strict_repos < baseline_install);
+    assert!(baseline_install < extras_install);
     assert!(ags::config::BASE_DNF_PACKAGES.contains(&"mise"));
     assert!(baseline.split_whitespace().any(|package| package == "mise"));
-    assert!(!containerfile.contains("ARG BR_VERSION"));
-    assert!(!containerfile.contains("ARG DCG_VERSION"));
-    assert!(containerfile.contains("sha256sum -c -"));
 
     let example: ags::config::RawConfig =
         toml::from_str(include_str!("../../../config/config.example.toml")).unwrap();
@@ -86,57 +91,81 @@ fn generated_config_and_containerfile_use_canonical_package_defaults() {
 }
 
 #[test]
-fn verified_download_loop_propagates_installer_failures() {
-    let containerfile = include_str!("../../../config/Containerfile");
-    let download_block = containerfile
-        .split_once("ARG EXTRA_TOOL_DOWNLOADS_B64=\"W10=\"")
-        .and_then(|(_, remainder)| remainder.split_once("RUN useradd"))
-        .map(|(block, _)| block.split_whitespace().collect::<Vec<_>>().join(" "))
-        .expect("verified download RUN block");
+fn final_recipe_only_assembles_prebuilt_components() {
+    for forbidden in [
+        "dnf ",
+        "curl ",
+        "cargo build",
+        "rustup-init",
+        "rustup toolchain",
+        "npm install",
+        "ARG BR_VERSION",
+    ] {
+        assert!(
+            !FINAL_RECIPE.contains(forbidden),
+            "final assembly must not run `{forbidden}`"
+        );
+    }
+    for marker in ["# @ags-vendor-stages@", "# @ags-vendor-copies@"] {
+        assert_eq!(
+            FINAL_RECIPE.lines().filter(|line| *line == marker).count(),
+            1
+        );
+    }
+    let glimpse = FINAL_RECIPE
+        .find("COPY --from=glimpse /out/glimpse-shim /opt/ags/glimpse-shim")
+        .unwrap();
+    let vendor = FINAL_RECIPE.find("\n# @ags-vendor-copies@").unwrap();
+    let uv = FINAL_RECIPE.find("COPY uv.toml /etc/uv/uv.toml").unwrap();
+    let tmux = FINAL_RECIPE.find("COPY --chown=dev:dev tmux.conf").unwrap();
+    assert!(vendor < uv && glimpse < uv && uv < tmux);
+}
 
-    assert!(download_block.contains("RUN set -eu;"));
-    assert!(download_block.contains("while IFS= read -r tool; do"));
-    assert!(download_block.contains("install -D -m 0755 \"$binary\""));
-    assert!(download_block.contains("done < \"$entries\";"));
-    assert!(download_block.contains("unzip -p \"$archive\" \"$archive_member\""));
-    assert!(download_block.contains("tar -xOzf \"$archive\" -- \"$archive_member\""));
-    assert!(download_block.contains("tar -xOJf \"$archive\" -- \"$archive_member\""));
+#[test]
+fn vendor_recipe_verifies_and_extracts_only_the_declared_member() {
+    let block = VENDOR_RECIPE
+        .split_once("RUN set -eu;")
+        .map(|(_, block)| block.split_whitespace().collect::<Vec<_>>().join(" "))
+        .expect("vendor extraction RUN block");
+
+    let verify = block.find("sha256sum -c -").unwrap();
+    let extract = block
+        .find("unzip -p \"$archive\" \"$archive_member\"")
+        .unwrap();
+    assert!(verify < extract);
+    assert!(block.contains("tar -xOzf \"$archive\" -- \"$archive_member\""));
+    assert!(block.contains("tar -xOJf \"$archive\" -- \"$archive_member\""));
+    assert!(block.contains("test \"$(wc -l < \"$found\")\" -eq 1;"));
+    assert!(block.contains("install -D -m 0755 \"$binary\" \"/out/$TOOL_INSTALL_AS\""));
+    assert!(VENDOR_RECIPE.contains("FROM scratch\nCOPY --from=work /out/ /out/"));
 }
 
 #[test]
 fn final_image_recreates_and_executes_the_pnpm_launcher() {
-    let containerfile = include_str!("../../../config/Containerfile");
-
-    assert!(containerfile.contains(
-        "COPY --from=tooling-builder /usr/local/lib/node_modules/pnpm/ /usr/local/lib/node_modules/pnpm/"
+    assert!(FINAL_RECIPE.contains(
+        "COPY --from=pnpm /usr/local/lib/node_modules/pnpm/ /usr/local/lib/node_modules/pnpm/"
     ));
+    assert!(!FINAL_RECIPE.contains("COPY --from=pnpm /usr/local/bin/pnpm"));
+    assert!(FINAL_RECIPE.contains("require('/usr/local/lib/node_modules/pnpm/package.json')"));
     assert!(
-        !containerfile
-            .contains("COPY --from=tooling-builder /usr/local/bin/pnpm /usr/local/bin/pnpm")
+        FINAL_RECIPE.contains("ln -s \"../lib/node_modules/pnpm/$pnpm_bin\" /usr/local/bin/pnpm")
     );
-    assert!(containerfile.contains("require('/usr/local/lib/node_modules/pnpm/package.json')"));
-    assert!(
-        containerfile.contains("ln -s \"../lib/node_modules/pnpm/$pnpm_bin\" /usr/local/bin/pnpm")
-    );
-    assert!(containerfile.contains("test -L /usr/local/bin/pnpm"));
-    assert!(containerfile.contains("/usr/local/bin/pnpm --version"));
+    assert!(FINAL_RECIPE.contains("test -L /usr/local/bin/pnpm"));
+    assert!(FINAL_RECIPE.contains("/usr/local/bin/pnpm --version"));
 }
 
 #[test]
-fn final_image_uses_pnpm_yaml_for_non_auth_settings() {
-    let containerfile = include_str!("../../../config/Containerfile");
+fn os_baseline_uses_pnpm_yaml_for_non_auth_settings() {
+    let containerfile = OS_BASELINE_RECIPE;
     assert!(containerfile.contains("ignoreScripts: true\\nstoreDir: /usr/local/pnpm/.store\\nglobalBinDir: /usr/local/pnpm/bin\\n' > /home/dev/.config/pnpm/config.yaml"));
     assert!(!containerfile.contains("/home/dev/.config/pnpm/rc"));
 }
 
 #[test]
-fn final_image_precreates_xdg_data_home_before_chown() {
-    let containerfile = include_str!("../../../config/Containerfile");
-    let user_setup = containerfile
+fn os_baseline_precreates_xdg_data_home_before_chown() {
+    let (_, user_setup) = OS_BASELINE_RECIPE
         .split_once("RUN useradd")
-        .and_then(|(_, remainder)| remainder.split_once("COPY --from=tooling-builder"))
-        .map(|(block, _)| block)
-        .expect("final image user setup block");
+        .expect("image user setup block");
     let (before_chown, _) = user_setup
         .split_once("chown -R dev:dev /workspace /home/dev")
         .expect("dev home ownership setup");
@@ -146,10 +175,9 @@ fn final_image_precreates_xdg_data_home_before_chown() {
 
 #[test]
 fn image_uses_conservative_system_wide_uv_policy() {
-    let containerfile = include_str!("../../../config/Containerfile");
     let policy = include_str!("../../../config/uv.toml");
 
-    assert!(containerfile.contains("COPY uv.toml /etc/uv/uv.toml"));
+    assert!(FINAL_RECIPE.contains("COPY uv.toml /etc/uv/uv.toml"));
     assert!(policy.contains("exclude-newer = \"1 week\""));
     assert!(policy.contains("index-strategy = \"first-index\""));
     assert!(policy.contains("verify-hashes = true"));

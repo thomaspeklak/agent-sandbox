@@ -61,6 +61,27 @@ ags update-agents
 
 ---
 
+## `ags update-image` failed
+
+Any failure before publication leaves the working image and its update state unchanged: the error says `The existing image and its update state were retained.` Read the named component:
+
+- `Rust stable update check failed`, `rustup …`, `pnpm …`, or `RPM update check failed`: the upstream metadata or package repositories were unreachable or returned unexpected data. Retry when the network is available. AGS never treats a failed check as "up to date".
+- `recorded Fedora base … is unavailable`: the recorded base image was removed locally and its digest can no longer be pulled. Run `ags update-image --rebase` to adopt the current base of the same Fedora release.
+- `verified download of <tool> failed`: the archive did not match the SHA-256 in the tool lock, or could not be fetched. Re-save the tool selection with `ags tools` if the lock is outdated.
+- `candidate image failed verification`: the assembled image did not pass the offline smoke test; the last lines of its output are included. The configured image was not replaced.
+
+If an update was interrupted while publishing, the next `ags update-image` completes or discards it automatically and reports `Recovery:` in its summary. If the configured image was changed outside AGS in the meantime, AGS leaves it untouched, clears the interrupted record, and asks you to run the update again.
+
+Update state and the per-image lock live in `~/.cache/ags/image-state/`. Deleting this directory is safe: the next update rebuilds its records and reuses every component image that still exists.
+
+Superseded component images become dangling and are not removed automatically. Reclaim the space with:
+
+```bash
+podman image prune
+```
+
+---
+
 ## `br` / `bv` / `dcg` missing inside container
 
 If catalog-selected sandbox commands are missing or stale.
