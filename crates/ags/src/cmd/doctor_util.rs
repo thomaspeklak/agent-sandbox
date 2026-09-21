@@ -194,16 +194,6 @@ pub fn secret_tool_has_value(attributes: &std::collections::BTreeMap<String, Str
         .is_ok_and(|o| o.status.success() && !o.stdout.is_empty())
 }
 
-pub fn is_port_open(port: u16) -> bool {
-    use std::net::TcpStream;
-    use std::time::Duration;
-    TcpStream::connect_timeout(
-        &format!("127.0.0.1:{port}").parse().unwrap(),
-        Duration::from_secs(1),
-    )
-    .is_ok()
-}
-
 fn atty_stdout() -> bool {
     unsafe { libc::isatty(libc::STDOUT_FILENO) != 0 }
 }
