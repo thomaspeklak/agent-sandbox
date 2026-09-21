@@ -405,7 +405,7 @@ command_args = []
 - `window_class` (string, default `"ags-browser"`)
   - Passed to Chromium as `--class`; match this class/app ID in Hyprland workspace and grouping rules. Use `hyprctl clients` to verify the value reported by your browser/backend.
 - `debug_port` (u16, legacy)
-  - Accepted for compatibility but ignored on launch. Each browser receives an OS-assigned port, discovered via its `DevToolsActivePort` file and forwarded into its sandbox.
+  - Accepted for compatibility but ignored on launch. Each browser receives an OS-assigned port, discovered via its `DevToolsActivePort` file. Inside each sandbox, the endpoint stays at `http://127.0.0.1:9222`; socat forwards that fixed port to the session's dynamic host port.
 - `pi_skill_path` (string)
   - Injected for Pi runs in browser mode (`--skill <path>`).
 - `command_args` (string array)

@@ -115,7 +115,7 @@ fn sessions_are_isolated_and_cleanup_only_their_own_browser() {
     assert!(std::net::TcpStream::connect(("127.0.0.1", second.port)).is_ok());
     assert_eq!(std::fs::read_dir(&sessions).unwrap().count(), 1);
     let socat = second.socat_command();
-    assert!(socat.contains(&format!("TCP-LISTEN:{}", second.port)));
+    assert!(socat.contains("TCP-LISTEN:9222,"));
     assert!(socat.contains(&format!("TCP:10.0.2.2:{}", second.port)));
     drop(second);
     assert_eq!(std::fs::read_dir(&sessions).unwrap().count(), 0);

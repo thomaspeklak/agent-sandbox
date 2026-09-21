@@ -1112,7 +1112,7 @@ fn entrypoint_browser_mode_has_socat() {
 enabled = true
 command = "google-chrome"
 profile_dir = "/tmp/chrome"
-debug_port = 9222
+debug_port = 43123
 pi_skill_path = "/home/dev/browser-tools"
 "#
     );
@@ -1136,7 +1136,7 @@ pi_skill_path = "/home/dev/browser-tools"
         plan.entrypoint
     );
     assert!(
-        plan.entrypoint.contains("TCP:10.0.2.2:9222"),
+        plan.entrypoint.contains("TCP:10.0.2.2:43123"),
         "browser mode entrypoint should forward through the mapped host-loopback address: {}",
         plan.entrypoint
     );

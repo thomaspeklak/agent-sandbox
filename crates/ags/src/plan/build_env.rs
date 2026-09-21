@@ -289,7 +289,7 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
         append_prebootstrap_background_command(
             &mut script,
             &format!(
-                "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
+                "socat TCP-LISTEN:9222,fork,reuseaddr,bind=127.0.0.1 \
                  TCP:{host}:{port} >/tmp/ags-socat.log 2>&1",
                 host = BROWSER_HOST_LOOPBACK,
                 port = browser.debug_port

@@ -77,12 +77,12 @@ impl fmt::Debug for BrowserSidecar {
 impl BrowserSidecar {
     /// Build the socat proxy command for use inside the container.
     ///
-    /// The container uses socat to forward localhost:{port} to the host's
+    /// The container uses socat to forward localhost:9222 to the host's
     /// browser via the slirp4netns host-loopback address. Podman 6 pasta
     /// compatibility maps the same address explicitly.
     pub fn socat_command(&self) -> String {
         format!(
-            "socat TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1 \
+            "socat TCP-LISTEN:9222,fork,reuseaddr,bind=127.0.0.1 \
              TCP:{host}:{port} >/tmp/ags-socat.log 2>&1 &",
             host = BROWSER_HOST_LOOPBACK,
             port = self.port
