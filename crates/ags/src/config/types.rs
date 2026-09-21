@@ -165,6 +165,7 @@ pub enum SecretSource {
 
 #[derive(Debug, Clone, Default)]
 pub struct BrowserConfig {
+    pub window_class: String,
     pub enabled: bool,
     pub command: String,
     pub profile_dir: PathBuf,

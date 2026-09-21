@@ -61,6 +61,7 @@ impl fmt::Display for BrowserError {
 /// When dropped, the browser process is killed.
 pub struct BrowserSidecar {
     child: Option<Child>,
+    profile: tempfile::TempDir,
     pub port: u16,
 }
 
@@ -104,7 +105,7 @@ impl Drop for BrowserSidecar {
     }
 }
 
-/// Start the browser sidecar if not already running.
+/// Start an isolated browser sidecar for this session.
 ///
 /// Returns `Ok(None)` if browser mode is not requested.
 /// Returns `Ok(Some(sidecar))` with a running browser.
@@ -125,26 +126,22 @@ pub fn start_if_needed(
         return Err(BrowserError::EmptyCommand);
     }
 
-    // Already running? Check if debug port is reachable.
-    if is_debug_port_open(config.debug_port) {
-        return Ok(Some(BrowserSidecar {
-            child: None,
-            port: config.debug_port,
-        }));
-    }
-
     validate_command(&config.command)?;
-
-    fs::create_dir_all(&config.profile_dir).map_err(BrowserError::ProfileDirCreate)?;
-
-    let child = spawn_browser(config)?;
-
-    wait_for_ready(config.debug_port)?;
-
-    Ok(Some(BrowserSidecar {
+    let sessions = config.profile_dir.join("sessions");
+    fs::create_dir_all(&sessions).map_err(BrowserError::ProfileDirCreate)?;
+    let profile = tempfile::Builder::new()
+        .prefix(&format!("{}-", std::process::id()))
+        .tempdir_in(sessions)
+        .map_err(BrowserError::ProfileDirCreate)?;
+    let child = spawn_browser(config, profile.path())?;
+    // Establish ownership before readiness checks so failure also kills the child.
+    let mut sidecar = BrowserSidecar {
         child: Some(child),
-        port: config.debug_port,
-    }))
+        profile,
+        port: 0,
+    };
+    sidecar.port = wait_for_ready(sidecar.profile.path())?;
+    Ok(Some(sidecar))
 }
 
 /// Check if the debug port is already accepting connections.
@@ -174,11 +171,12 @@ fn validate_command(command: &str) -> Result<(), BrowserError> {
 }
 
 /// Spawn the browser as a detached background process.
-fn spawn_browser(config: &BrowserConfig) -> Result<Child, BrowserError> {
+fn spawn_browser(config: &BrowserConfig, profile: &Path) -> Result<Child, BrowserError> {
     Command::new(&config.command)
         .args(&config.command_args)
-        .arg(format!("--remote-debugging-port={}", config.debug_port))
-        .arg(format!("--user-data-dir={}", config.profile_dir.display()))
+        .arg("--remote-debugging-port=0")
+        .arg(format!("--user-data-dir={}", profile.display()))
+        .arg(format!("--class={}", config.window_class))
         .args([
             "--no-first-run",
             "--no-default-browser-check",
@@ -192,17 +190,20 @@ fn spawn_browser(config: &BrowserConfig) -> Result<Child, BrowserError> {
 }
 
 /// Poll the debug port until the browser is ready or timeout.
-fn wait_for_ready(port: u16) -> Result<(), BrowserError> {
+fn wait_for_ready(profile: &Path) -> Result<u16, BrowserError> {
     use std::ops::ControlFlow;
     crate::util::poll_until(READY_TIMEOUT, POLL_INTERVAL, || {
-        if is_debug_port_open(port) {
-            ControlFlow::Break(())
+        let port = fs::read_to_string(profile.join("DevToolsActivePort"))
+            .ok()
+            .and_then(|text| text.lines().next()?.parse::<u16>().ok());
+        if let Some(port) = port.filter(|port| *port != 0 && is_debug_port_open(*port)) {
+            ControlFlow::Break(port)
         } else {
             ControlFlow::Continue(())
         }
     })
     .ok_or(BrowserError::ReadyTimeout {
-        port,
+        port: 0,
         timeout: READY_TIMEOUT,
     })
 }

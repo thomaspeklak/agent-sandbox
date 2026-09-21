@@ -971,6 +971,30 @@ command_args = ["--no-sandbox"]
 }
 
 #[test]
+fn browser_window_class_is_configurable() {
+    let cfg = parse_minimal(
+        r#"
+[browser]
+enabled = true
+command = "chrome"
+profile_dir = "/tmp/chrome"
+window_class = "ags-work"
+"#,
+    );
+    assert_eq!(cfg.browser.window_class, "ags-work");
+    let err = parse_err(
+        r#"
+[browser]
+enabled = true
+command = "chrome"
+profile_dir = "/tmp/chrome"
+window_class = ""
+"#,
+    );
+    assert!(err.contains("window_class"));
+}
+
+#[test]
 fn browser_path_command_expanded() {
     let cfg = parse_minimal(
         r#"
@@ -998,8 +1022,8 @@ debug_port = 9222
 }
 
 #[test]
-fn browser_enabled_missing_port_rejected() {
-    let err = parse_err(
+fn browser_enabled_missing_port_uses_dynamic_port() {
+    let cfg = parse_minimal(
         r#"
 [browser]
 enabled = true
@@ -1007,7 +1031,8 @@ command = "chrome"
 profile_dir = "/tmp/chrome"
 "#,
     );
-    assert!(err.contains("debug_port"), "got: {err}");
+    assert_eq!(cfg.browser.debug_port, 0);
+    assert_eq!(cfg.browser.window_class, "ags-browser");
 }
 
 #[test]

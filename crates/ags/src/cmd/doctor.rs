@@ -6,7 +6,7 @@ use crate::config::{ClipboardMode, MountWhen, ValidatedConfig};
 
 use super::doctor_util::{
     Checker, check_optional_cmd, check_required_cmd, file_non_empty, git_config_get, is_pid_alive,
-    is_port_open, list_agent_keys, pub_key_path, read_agent_env, socket_exists,
+    list_agent_keys, pub_key_path, read_agent_env, socket_exists,
 };
 
 #[path = "doctor_secrets.rs"]
@@ -389,14 +389,11 @@ fn check_browser(ck: &mut Checker, config: &ValidatedConfig) {
         return;
     }
     check_binary(ck, &config.browser.command, "browser command", false);
-    let port = config.browser.debug_port;
-    if is_port_open(port) {
-        ck.ok(&format!(
-            "browser debug endpoint reachable on localhost:{port}"
-        ));
-    } else {
-        ck.warn("browser debug endpoint not running (normal until browser mode start)");
-    }
+    ck.ok("browser debug port is allocated separately for each session");
+    ck.ok(&format!(
+        "browser window class: {}",
+        config.browser.window_class
+    ));
     if !config.browser.pi_skill_path.is_empty() {
         ck.ok(&format!(
             "browser pi skill path configured: {}",

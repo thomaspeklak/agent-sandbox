@@ -138,7 +138,7 @@ auto_allow_domains = []  # e.g. ["mcp.linear.app", "github.com"]
 enabled = false
 command = "your-browser-command"
 profile_dir = "~/.cache/ags/browser-profile"
-debug_port = 9222
+window_class = "ags-browser" # Stable class/app ID for compositor rules; ports are per-session
 pi_skill_path = "/home/dev/example-browser-skill"
 command_args = []
 

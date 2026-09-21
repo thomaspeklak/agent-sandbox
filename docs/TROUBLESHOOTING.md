@@ -412,7 +412,7 @@ Symptoms:
 - `[browser].enabled = true`
 - `[browser].command` exists and executable
 - `[browser].profile_dir` is valid
-- `[browser].debug_port` is non-zero and free
+- `[browser].profile_dir` is writable; AGS creates an isolated session profile and discovers the OS-assigned debug port from Chromium's `DevToolsActivePort` file
 
 ### Fix
 

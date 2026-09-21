@@ -434,17 +434,15 @@ fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {
     require_non_empty(&raw.profile_dir, "[browser].profile_dir")?;
     let profile_dir = expand_path(&raw.profile_dir, "[browser].profile_dir")?;
 
-    if raw.debug_port == 0 {
-        return Err(ConfigError::Validation(
-            "[browser].debug_port must be set when browser is enabled".into(),
-        ));
-    }
+    let window_class = raw.window_class.as_deref().unwrap_or("ags-browser");
+    require_non_empty(window_class, "[browser].window_class")?;
 
     Ok(BrowserConfig {
         enabled: true,
         command,
         profile_dir,
         debug_port: raw.debug_port,
+        window_class: window_class.to_owned(),
         pi_skill_path: raw.pi_skill_path.clone(),
         command_args: raw.command_args.clone(),
     })

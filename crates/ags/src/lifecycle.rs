@@ -35,7 +35,7 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
     }
     // Config loading is intentionally after source/lockdown validation but
     // before all other preflight work. It never invokes `op`.
-    let config = match load_config(opts.config_path.as_deref()) {
+    let mut config = match load_config(opts.config_path.as_deref()) {
         Ok(c) => c,
         Err(code) => return code,
     };
@@ -153,7 +153,12 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
     let mut _browser_guard = None;
     if !opts.lockdown && opts.browser {
         match crate::browser::start_if_needed(true, &config.browser) {
-            Ok(sidecar) => _browser_guard = sidecar,
+            Ok(sidecar) => {
+                if let Some(ref browser) = sidecar {
+                    config.browser.debug_port = browser.port;
+                }
+                _browser_guard = sidecar;
+            }
             Err(e) => {
                 eprintln!("error: browser: {e}");
                 return ExitCode::FAILURE;

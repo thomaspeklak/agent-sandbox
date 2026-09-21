@@ -15,6 +15,7 @@ fn unused_port() -> u16 {
 fn make_config(enabled: bool, port: u16) -> BrowserConfig {
     BrowserConfig {
         enabled,
+        window_class: "ags-browser".to_owned(),
         command: String::new(),
         profile_dir: PathBuf::from("/tmp/ags-browser-test-profile"),
         debug_port: port,
@@ -68,52 +69,70 @@ fn start_fails_when_absolute_command_not_executable() {
     assert!(msg.contains("not executable"), "unexpected error: {msg}");
 }
 
-#[test]
-fn start_detects_already_running_browser() {
-    // Bind a TCP listener to simulate an already-running browser debug port
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-
-    let mut config = make_config(true, port);
-    config.command = "unused-because-already-running".to_owned();
-
-    let result = browser::start_if_needed(true, &config);
-    assert!(result.is_ok());
-    let sidecar = result.unwrap();
-    assert!(
-        sidecar.is_some(),
-        "should return sidecar for running browser"
-    );
-
-    let sidecar = sidecar.unwrap();
-    assert_eq!(sidecar.port, port);
-
-    // Keep listener alive for the duration of the test
-    drop(listener);
+fn fake_browser() -> (tempfile::TempDir, BrowserConfig) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("browser");
+    std::fs::write(
+        &script,
+        r#"#!/usr/bin/python3
+import sys, socket, pathlib, time
+args = dict(arg.split('=', 1) for arg in sys.argv[1:] if '=' in arg)
+assert args['--class'] == 'ags-browser'
+assert args['--remote-debugging-port'] == '0'
+profile = pathlib.Path(args['--user-data-dir'])
+sock = socket.socket()
+sock.bind(('127.0.0.1', 0))
+sock.listen()
+(profile / 'DevToolsActivePort').write_text(str(sock.getsockname()[1]) + '\n')
+while True:
+    conn, _ = sock.accept()
+    conn.close()
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut config = make_config(true, 9222);
+    config.command = script.display().to_string();
+    config.profile_dir = dir.path().join("profiles");
+    (dir, config)
 }
 
 #[test]
-fn socat_command_format() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
+fn sessions_are_isolated_and_cleanup_only_their_own_browser() {
+    let (_dir, mut config) = fake_browser();
+    let occupied = TcpListener::bind("127.0.0.1:0").unwrap();
+    config.debug_port = occupied.local_addr().unwrap().port();
+    let first = browser::start_if_needed(true, &config).unwrap().unwrap();
+    let second = browser::start_if_needed(true, &config).unwrap().unwrap();
+    assert_ne!(first.port, second.port);
+    assert_ne!(first.port, config.debug_port);
+    let sessions = config.profile_dir.join("sessions");
+    assert_eq!(std::fs::read_dir(&sessions).unwrap().count(), 2);
+    let first_port = first.port;
+    drop(first);
+    assert!(std::net::TcpStream::connect(("127.0.0.1", first_port)).is_err());
+    assert!(std::net::TcpStream::connect(("127.0.0.1", second.port)).is_ok());
+    assert_eq!(std::fs::read_dir(&sessions).unwrap().count(), 1);
+    let socat = second.socat_command();
+    assert!(socat.contains(&format!("TCP-LISTEN:{}", second.port)));
+    assert!(socat.contains(&format!("TCP:10.0.2.2:{}", second.port)));
+    drop(second);
+    assert_eq!(std::fs::read_dir(&sessions).unwrap().count(), 0);
+    assert!(config.profile_dir.exists());
+}
 
-    let mut config = make_config(true, port);
-    config.command = "unused".to_owned();
-
-    let result = browser::start_if_needed(true, &config).unwrap().unwrap();
-    let socat = result.socat_command();
-
-    assert!(
-        socat.contains(&format!("TCP-LISTEN:{port}")),
-        "socat should listen on port: {socat}"
+#[test]
+fn readiness_failure_cleans_up_profile() {
+    let (_dir, mut config) = fake_browser();
+    config.command = "/bin/true".to_owned();
+    assert!(browser::start_if_needed(true, &config).is_err());
+    assert_eq!(
+        std::fs::read_dir(config.profile_dir.join("sessions"))
+            .unwrap()
+            .count(),
+        0
     );
-    assert!(
-        socat.contains(&format!("TCP:10.0.2.2:{port}")),
-        "socat should forward to the mapped host-loopback address: {socat}"
-    );
-    assert!(socat.contains("fork"), "socat should fork: {socat}");
-
-    drop(listener);
 }
 
 #[test]

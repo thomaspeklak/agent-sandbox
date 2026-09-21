@@ -118,6 +118,8 @@ pub struct RawSecret {
 #[derive(Debug, Default, Deserialize)]
 pub struct RawBrowser {
     #[serde(default)]
+    pub window_class: Option<String>,
+    #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
     pub command: String,

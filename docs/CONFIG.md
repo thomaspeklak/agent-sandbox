@@ -388,7 +388,7 @@ Controls optional browser sidecar used with `--browser`.
 enabled = true
 command = "google-chrome"
 profile_dir = "~/.cache/ags/chrome-profile"
-debug_port = 9222
+window_class = "ags-browser"
 pi_skill_path = "/home/dev/browser-tools"
 command_args = []
 ```
@@ -400,13 +400,18 @@ command_args = []
   - Required when enabled.
   - Can be a PATH command (`google-chrome`) or executable path.
 - `profile_dir` (path)
-  - Required when enabled.
-- `debug_port` (u16)
-  - Required and non-zero when enabled.
+  - Required when enabled. Base directory for isolated `sessions/<pid>-<random>` profiles.
+  - Session profiles are deleted on normal exit, including their cookies and login state. Existing files in the base directory are untouched and are not copied into sessions.
+- `window_class` (string, default `"ags-browser"`)
+  - Passed to Chromium as `--class`; match this class/app ID in Hyprland workspace and grouping rules. Use `hyprctl clients` to verify the value reported by your browser/backend.
+- `debug_port` (u16, legacy)
+  - Accepted for compatibility but ignored on launch. Each browser receives an OS-assigned port, discovered via its `DevToolsActivePort` file and forwarded into its sandbox.
 - `pi_skill_path` (string)
   - Injected for Pi runs in browser mode (`--skill <path>`).
 - `command_args` (string array)
-  - Extra args passed to browser command.
+  - Extra args passed to browser command. AGS appends its managed profile, port, and class arguments.
+
+Each run owns its own browser and closes it on normal exit without affecting other sessions. Forced termination can leave a browser and session profile behind; there is no cross-session browser reuse.
 
 ---
 
