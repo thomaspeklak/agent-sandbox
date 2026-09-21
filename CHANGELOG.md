@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.0] - 2026-09-21
+
+### Added
+
+- Configure the Chromium window class with `[browser].window_class` for integration with desktop window-management rules.
+
+### Changed
+
+- Isolate browser mode by launching a dedicated browser with an ephemeral profile and dynamically allocated host debugging port for each AGS session. The sandbox DevTools endpoint remains `http://127.0.0.1:9222`.
+- Browser cookies and login state no longer persist between normal sessions, and concurrent sessions no longer share or terminate each other’s browser.
+
 ## [0.22.0] - 2026-09-15
 
 ### Added
