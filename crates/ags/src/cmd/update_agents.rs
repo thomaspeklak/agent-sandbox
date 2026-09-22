@@ -213,7 +213,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     println!(
         "Existing sandboxes keep their runtimes; latest, previous, and in-use generations are retained."
     );
-    match generation.cleanup(cache_dir) {
+    match generation.cleanup() {
         Ok(report) => {
             for path in report.removed {
                 println!("  cleaned: {}", path.display());

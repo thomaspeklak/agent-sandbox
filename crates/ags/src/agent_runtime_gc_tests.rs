@@ -61,13 +61,12 @@ fn pending_launch_survives_two_updates_and_is_cleaned_after_last_lease_drops() {
 }
 
 #[test]
-fn incomplete_legacy_unrelated_and_symlinked_trees_are_not_deleted() {
+fn incomplete_unrelated_and_symlinked_trees_are_not_deleted() {
     let temp = tempfile::tempdir().unwrap();
     let incomplete = Update::begin(temp.path()).unwrap();
     let incomplete_path = incomplete.path.clone();
     let root = incomplete.root.clone();
     drop(incomplete);
-    fs::create_dir(temp.path().join("pnpm-home")).unwrap();
     fs::create_dir(root.join("other-data")).unwrap();
     let external = tempfile::tempdir().unwrap();
     fs::write(external.path().join("valuable"), "keep").unwrap();
@@ -82,9 +81,125 @@ fn incomplete_legacy_unrelated_and_symlinked_trees_are_not_deleted() {
             .is_empty()
     );
     assert!(incomplete_path.exists());
-    assert!(temp.path().join("pnpm-home").exists());
     assert!(root.join("other-data").exists());
     assert!(external.path().join("valuable").exists());
+}
+
+#[test]
+fn legacy_references_keep_all_old_install_dirs_then_cleanup_removes_only_those_dirs() {
+    let temp = tempfile::tempdir().unwrap();
+    for suffix in RUNTIME_DIRS
+        .iter()
+        .copied()
+        .chain(["npm-global", "cargo-home", "ags-hooks"])
+    {
+        fs::create_dir(temp.path().join(suffix)).unwrap();
+        fs::write(temp.path().join(suffix).join("data"), "keep").unwrap();
+    }
+    let latest = publish(temp.path());
+    let references = BTreeSet::from([temp.path().to_owned()]);
+    assert!(
+        latest
+            .cleanup_unlocked(&references)
+            .unwrap()
+            .removed
+            .is_empty()
+    );
+    for suffix in RUNTIME_DIRS {
+        assert!(temp.path().join(suffix).is_dir());
+    }
+    let report = latest.cleanup_unlocked(&BTreeSet::new()).unwrap();
+    assert_eq!(report.removed.len(), RUNTIME_DIRS.len());
+    for suffix in RUNTIME_DIRS {
+        assert!(!temp.path().join(suffix).exists());
+    }
+    for suffix in ["npm-global", "cargo-home", "ags-hooks"] {
+        assert!(temp.path().join(suffix).join("data").exists());
+    }
+    assert!(latest.path.exists());
+    assert!(
+        latest
+            .cleanup_unlocked(&BTreeSet::new())
+            .unwrap()
+            .removed
+            .is_empty()
+    );
+}
+
+#[test]
+fn legacy_launch_before_first_update_is_leased_until_last_owner_drops() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("pnpm-home")).unwrap();
+    let pending = pin(temp.path()).unwrap();
+    assert_eq!(pending.path, temp.path());
+    let clone = pending.clone();
+    let latest = publish(temp.path());
+    assert!(
+        latest
+            .cleanup_unlocked(&BTreeSet::new())
+            .unwrap()
+            .removed
+            .is_empty()
+    );
+    drop(pending);
+    assert!(
+        latest
+            .cleanup_unlocked(&BTreeSet::new())
+            .unwrap()
+            .removed
+            .is_empty()
+    );
+    drop(clone);
+    assert_eq!(
+        latest.cleanup_unlocked(&BTreeSet::new()).unwrap().removed,
+        vec![temp.path().join("pnpm-home")]
+    );
+}
+
+#[test]
+fn legacy_symlinks_and_unexpected_files_are_not_deleted() {
+    let temp = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    fs::write(external.path().join("valuable"), "keep").unwrap();
+    std::os::unix::fs::symlink(external.path(), temp.path().join("pnpm-home")).unwrap();
+    fs::write(temp.path().join("codex-install"), "unexpected file").unwrap();
+    let latest = publish(temp.path());
+    assert!(
+        latest
+            .cleanup_unlocked(&BTreeSet::new())
+            .unwrap()
+            .removed
+            .is_empty()
+    );
+    assert!(temp.path().join("pnpm-home").is_symlink());
+    assert!(temp.path().join("codex-install").is_file());
+    assert!(external.path().join("valuable").exists());
+}
+
+#[test]
+fn relocated_runtime_root_does_not_redirect_legacy_deletion_and_usage_is_detected() {
+    let cache = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    fs::create_dir(external.path().join("runtimes")).unwrap();
+    fs::create_dir(external.path().join("pnpm-home")).unwrap();
+    fs::create_dir(cache.path().join("pnpm-home")).unwrap();
+    std::os::unix::fs::symlink(external.path().join("runtimes"), cache.path().join(ROOT)).unwrap();
+    let first = publish(cache.path());
+    let first_path = first.path.clone();
+    drop(first);
+    drop(publish(cache.path()));
+    let latest = publish(cache.path());
+    let container = serde_json::from_value(serde_json::json!({
+        "Name": "relocated", "State": {"Status": "running"},
+        "Mounts": [{"Source": first_path.join("pnpm-home")}]
+    }))
+    .unwrap();
+    let references = super::super::referenced_roots(cache.path(), &container);
+    assert!(references.contains(&first_path));
+    latest.cleanup_unlocked(&references).unwrap();
+    assert!(first_path.exists());
+    assert!(external.path().join("pnpm-home").exists());
+    assert!(!cache.path().join("pnpm-home").exists());
 }
 
 #[test]

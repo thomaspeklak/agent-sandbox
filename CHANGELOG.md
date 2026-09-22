@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Keep running agent sessions intact during `ags update-agents`: install and verify a fresh runtime generation, atomically select it for new sandboxes, and mount published runtimes read-only. Report generations referenced by running and stopped Podman containers. Automatically clean completed generations except the latest, previous, and those referenced by containers or pending-launch leases; leave legacy and incomplete installations untouched.
+- Keep running agent sessions intact during `ags update-agents`: install and verify a fresh runtime generation, atomically select it for new sandboxes, and mount published runtimes read-only. Report generations referenced by running and stopped Podman containers. Automatically clean completed generations except the latest, previous, and those referenced by containers or pending-launch leases; also remove unreferenced legacy runtime directories while preserving user caches, settings, and incomplete installations.
 
 ## [0.23.0] - 2026-09-21
 

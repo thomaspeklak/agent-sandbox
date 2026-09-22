@@ -84,6 +84,81 @@ fn failed_cleanup_inspection_does_not_delete_any_generation_or_undo_update() {
     assert_ne!(selected(&root.join("cache")).unwrap(), second);
 }
 
+fn clear_reference(root: &Path, name: &str) {
+    fs::write(
+        root.join(format!("{name}.json")),
+        serde_json::to_vec(&serde_json::json!([{
+            "Name": name, "State": {"Status": "running"}, "Mounts": []
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn legacy_cleanup_waits_for_last_container_and_leaves_user_caches_untouched() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    setup(root);
+    let cache = root.join("cache");
+    for suffix in [
+        "codex-install",
+        "claude-install",
+        "opencode-install",
+        "npm-global",
+        "cargo-home",
+        "ags-hooks",
+    ] {
+        fs::create_dir(cache.join(suffix)).unwrap();
+        fs::write(cache.join(suffix).join("data"), "keep").unwrap();
+    }
+    successful_update(root);
+    clear_reference(root, "running");
+    successful_update(root); // The stopped old container must still protect legacy files.
+    assert!(cache.join("pnpm-home/legacy").exists());
+    assert!(cache.join("claude-install/data").exists());
+    clear_reference(root, "stopped");
+    let output = update(root, "cleanup");
+    assert!(output.status.success());
+    assert!(cache.join("pnpm-home/legacy").exists()); // Inspection failure: no deletion.
+    successful_update(root);
+    for suffix in ags::agent_runtime::RUNTIME_DIRS {
+        assert!(!cache.join(suffix).exists());
+    }
+    for suffix in ["npm-global", "cargo-home", "ags-hooks"] {
+        assert!(cache.join(suffix).join("data").exists());
+    }
+}
+
+#[test]
+fn pending_legacy_launch_is_protected_across_first_generation_update() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    setup(root);
+    clear_reference(root, "running");
+    clear_reference(root, "stopped");
+    let cache = root.join("cache");
+    let pending = ags::agent_runtime::pin(&cache).unwrap();
+    assert_eq!(pending.path, cache);
+    successful_update(root);
+    assert!(cache.join("pnpm-home/legacy").exists());
+    drop(pending);
+    successful_update(root);
+    assert!(!cache.join("pnpm-home").exists());
+}
+
+#[test]
+fn late_legacy_container_reference_is_honored_by_cleanup() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    setup(root);
+    clear_reference(root, "running");
+    clear_reference(root, "stopped");
+    reference(root, "late-stopped.json", &root.join("cache"), "exited");
+    successful_update(root);
+    assert!(root.join("cache/pnpm-home/legacy").exists());
+}
+
 #[test]
 fn pending_launch_survives_updates_until_its_lease_is_released() {
     let temp = tempfile::tempdir().unwrap();

@@ -74,6 +74,7 @@ pub fn mount_source(cache: &Path, selected: &Path, suffix: &str) -> PathBuf {
 pub struct Update {
     // OS lock is released even if the updater crashes. Never unlink the lock file.
     _lock: File,
+    cache: PathBuf,
     root: PathBuf,
     pub path: PathBuf,
 }
@@ -107,6 +108,7 @@ impl Update {
         }
         Ok(Self {
             _lock: lock,
+            cache: cache.canonicalize()?,
             root,
             path,
         })
@@ -206,6 +208,7 @@ fn podman_output(args: &[&str]) -> io::Result<String> {
 fn referenced_roots(cache: &Path, container: &ContainerUse) -> BTreeSet<PathBuf> {
     let cache = cache.canonicalize().unwrap_or_else(|_| cache.to_owned());
     let root = cache.join(ROOT);
+    let root = root.canonicalize().unwrap_or(root);
     let mut roots = BTreeSet::new();
     for mount in &container.mounts {
         if !mount.source.is_absolute() {

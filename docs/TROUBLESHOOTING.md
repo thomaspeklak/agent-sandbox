@@ -329,7 +329,7 @@ Ensure the agent is selected in the Agent CLIs panel. A disabled agent is reject
 
 ## Agent sessions and updates
 
-`ags update-agents` installs into a new generation, verifies it, and selects it for new sandboxes. Running and stopped containers keep their concrete runtime mounts; the command reports their generation references using Podman inspection. Cleanup retains the latest, previous, and all container-referenced generations, plus any generation leased by a pending launch. Other completed generations are automatically removed after a successful update. Legacy installs and incomplete builds are left untouched.
+`ags update-agents` installs into a new generation, verifies it, and selects it for new sandboxes. Running and stopped containers keep their concrete runtime mounts; the command reports their generation references using Podman inspection. Cleanup retains the latest, previous, and all container-referenced generations, plus any generation leased by a pending launch. Other completed generations are automatically removed after a successful update. Legacy runtime directories are also removed once no running/stopped container or updated-AGS launch lease references them. Incomplete builds and general caches remain untouched. Upgrade the host AGS command before updating; old launchers cannot coordinate with cleanup or use deleted legacy installs.
 
 If an older in-place update already broke a session, generation-based updates cannot repair that process: restart its sandbox after updating. New agent processes inside an existing sandbox still use that sandbox's pinned generation. Use a new sandbox for the new version.
 

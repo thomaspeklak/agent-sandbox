@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::{ROOT, Update, inspect_usage, read_selection, selected};
+use super::{ROOT, RUNTIME_DIRS, Update, inspect_usage, read_selection, selected};
 
 #[derive(Debug)]
 struct Lock(File);
@@ -33,28 +33,23 @@ impl Drop for Lock {
 #[derive(Debug)]
 pub struct Lease {
     pub path: PathBuf,
-    _lock: Option<Lock>,
+    _lock: Lock,
 }
 
 pub fn pin(cache: &Path) -> io::Result<Arc<Lease>> {
     let root = cache.join(ROOT);
-    if !root.exists() {
-        // Legacy directories are never garbage collected.
-        return Ok(Arc::new(Lease {
-            path: cache.to_owned(),
-            _lock: None,
-        }));
-    }
+    // Register legacy selections too, including launches before the first update.
+    fs::create_dir_all(&root)?;
     let gate = Lock::open(&root.join("cleanup.lock"))?;
     gate.0.lock_shared()?;
     let path = selected(cache)?;
-    let lock = if path != cache {
-        let lock = Lock::open(&path.join(".lease"))?;
-        lock.0.lock_shared()?;
-        Some(lock)
+    let lease_path = if path != cache {
+        path.join(".lease")
     } else {
-        None
+        root.join("legacy.lease")
     };
+    let lock = Lock::open(&lease_path)?;
+    lock.0.lock_shared()?;
     Ok(Arc::new(Lease { path, _lock: lock }))
 }
 
@@ -67,10 +62,10 @@ pub struct CleanupReport {
 impl Update {
     /// Call after publishing. Refresh Podman's references under the selection gate;
     /// the pre-install snapshot is not sufficient for safe deletion.
-    pub fn cleanup(&self, cache: &Path) -> io::Result<CleanupReport> {
+    pub fn cleanup(&self) -> io::Result<CleanupReport> {
         let gate = Lock::open(&self.root.join("cleanup.lock"))?;
         gate.0.lock()?;
-        let uses = inspect_usage(cache)?;
+        let uses = inspect_usage(&self.cache)?;
         let referenced = uses.into_iter().flat_map(|(_, roots)| roots).collect();
         self.cleanup_unlocked(&referenced)
     }
@@ -115,9 +110,49 @@ impl Update {
                 Err(error) => return Err(io::Error::other(error)),
             }
         }
+        self.cleanup_legacy(referenced, &mut report)?;
         report.removed.sort();
         report.retained.sort();
         Ok(report)
+    }
+
+    fn cleanup_legacy(
+        &self,
+        referenced: &BTreeSet<PathBuf>,
+        report: &mut CleanupReport,
+    ) -> io::Result<()> {
+        // Treat the old install layout as one generation. Never remove the cache
+        // root, npm-global, authentication/settings, or unrelated user caches.
+        let cache = &self.cache;
+        let mut paths = Vec::new();
+        for suffix in RUNTIME_DIRS {
+            let path = cache.join(suffix);
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.is_dir() => paths.push(path),
+                Ok(_) => {} // Do not follow symlinks or delete unexpected files.
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        if paths.is_empty() {
+            return Ok(());
+        }
+        if referenced.contains(cache) {
+            report.retained.extend(paths);
+            return Ok(());
+        }
+        let lease = Lock::open(&self.root.join("legacy.lease"))?;
+        match lease.0.try_lock() {
+            Ok(()) => {
+                for path in paths {
+                    fs::remove_dir_all(&path)?;
+                    report.removed.push(path);
+                }
+            }
+            Err(std::fs::TryLockError::WouldBlock) => report.retained.extend(paths),
+            Err(error) => return Err(io::Error::other(error)),
+        }
+        Ok(())
     }
 }
 
