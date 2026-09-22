@@ -1,4 +1,7 @@
 //! End-to-end orchestration tests use a fake Podman; no daemon or downloads needed.
+#[path = "support/generation_cleanup.rs"]
+mod generation_cleanup;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -28,12 +31,20 @@ enabled_agents = ["pi"]
 set -eu
 printf '%s\n' "$*" >> "$TEST_ROOT/calls"
 case "$1" in
-  ps) [ "${FAIL_AT:-}" != inspect ] || exit 3; printf 'running\nstopped\n' ;;
+  ps)
+    [ "${FAIL_AT:-}" != inspect ] || exit 3
+    if [ "${FAIL_AT:-}" = cleanup ] && [ -f "$TEST_ROOT/verified" ]; then exit 8; fi
+    printf 'running\nstopped\n' ;;
   container) cat "$TEST_ROOT/$3.json" ;;
   run)
     case "$*" in
       *:rw*) [ "${FAIL_AT:-}" != install ] || exit 4 ;;
-      *:ro*) [ "${FAIL_AT:-}" != verify ] || exit 5 ;;
+      *:ro*)
+        [ "${FAIL_AT:-}" != verify ] || exit 5
+        touch "$TEST_ROOT/verified"
+        for name in running stopped; do
+          if [ -f "$TEST_ROOT/late-$name.json" ]; then cp "$TEST_ROOT/late-$name.json" "$TEST_ROOT/$name.json"; fi
+        done ;;
       *) exit 6 ;;
     esac ;;
   *) exit 7 ;;
@@ -58,6 +69,7 @@ esac
 }
 
 fn update(root: &Path, fail_at: &str) -> Output {
+    let _ = fs::remove_file(root.join("verified"));
     Command::new(env!("CARGO_BIN_EXE_ags"))
         .current_dir(root)
         .env("PATH", format!("{}:/usr/bin:/bin", root.display()))

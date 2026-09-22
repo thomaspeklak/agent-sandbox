@@ -329,11 +329,11 @@ Ensure the agent is selected in the Agent CLIs panel. A disabled agent is reject
 
 ## Agent sessions and updates
 
-`ags update-agents` installs into a new generation, verifies it, and selects it for new sandboxes. Running and stopped containers keep their concrete runtime mounts; the command reports their generation references using Podman inspection. Old generations and legacy installs are retained, not overwritten or automatically deleted.
+`ags update-agents` installs into a new generation, verifies it, and selects it for new sandboxes. Running and stopped containers keep their concrete runtime mounts; the command reports their generation references using Podman inspection. Cleanup retains the latest, previous, and all container-referenced generations, plus any generation leased by a pending launch. Other completed generations are automatically removed after a successful update. Legacy installs and incomplete builds are left untouched.
 
 If an older in-place update already broke a session, generation-based updates cannot repair that process: restart its sandbox after updating. New agent processes inside an existing sandbox still use that sandbox's pinned generation. Use a new sandbox for the new version.
 
-If the updater cannot inspect containers or acquire the update lock, resolve the Podman error or wait for the other update; do not delete the lock file. A failed install or version check leaves the previous selection intact. See [runtime generations](COMMANDS.md#running-session-safety) for retention and disk usage details.
+If the updater cannot inspect containers or acquire the update lock, resolve the Podman error or wait for the other update; do not delete lock files. If inspection fails during post-update cleanup, the update remains published but cleanup is skipped with a warning. A failed install or version check leaves the previous selection intact. See [runtime generations](COMMANDS.md#running-session-safety) for retention and disk usage details.
 
 ## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, `/usr/local/dist/pnpm.mjs` is missing, or Pi loads from `.npm-global`
 

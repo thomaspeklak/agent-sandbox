@@ -185,8 +185,9 @@ pub fn build_launch_plan(
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);
     let cache_dir = &config.sandbox.cache_dir;
-    let runtime_root = crate::agent_runtime::selected(cache_dir)
+    let runtime_lease = crate::agent_runtime::pin(cache_dir)
         .map_err(|error| PlanError::AgentRuntime(error.to_string()))?;
+    let runtime_root = runtime_lease.path.clone();
 
     if !lockdown {
         ensure_dir(cache_dir)?;
@@ -433,6 +434,7 @@ pub fn build_launch_plan(
     });
 
     Ok(LaunchPlan {
+        runtime_lease: Some(runtime_lease),
         image: config.sandbox.image.clone(),
         containerfile: config.sandbox.containerfile.clone(),
         extra_dnf_packages: config.sandbox.extra_dnf_packages.clone(),

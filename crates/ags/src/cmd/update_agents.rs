@@ -211,8 +211,21 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         generation.path.display()
     );
     println!(
-        "Existing sandboxes keep their runtimes. Previous generations and legacy installs are retained."
+        "Existing sandboxes keep their runtimes; latest, previous, and in-use generations are retained."
     );
+    match generation.cleanup(cache_dir) {
+        Ok(report) => {
+            for path in report.removed {
+                println!("  cleaned: {}", path.display());
+            }
+            for path in report.retained {
+                println!("  kept: {}", path.display());
+            }
+        }
+        Err(error) => {
+            eprintln!("warning: runtime update succeeded but cleanup did not complete: {error}")
+        }
+    }
     if let Some(agent) = enabled_agents.first() {
         println!(
             "Verify with: {}",

@@ -147,12 +147,13 @@ fn stage_agent_runtime(
     stage_root: &Path,
     extra_mounts: &mut Vec<PlanMount>,
 ) -> Result<(), LockdownError> {
-    let runtime = crate::agent_runtime::selected(&config.sandbox.cache_dir).map_err(|source| {
+    let lease = crate::agent_runtime::pin(&config.sandbox.cache_dir).map_err(|source| {
         LockdownError::StageIo {
             path: config.sandbox.cache_dir.clone(),
             source,
         }
     })?;
+    let runtime = &lease.path;
     match agent {
         Agent::Pi | Agent::Gemini => {
             let src = runtime.join("pnpm-home");

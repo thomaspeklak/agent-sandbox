@@ -16,6 +16,12 @@ fn launch_pins_one_generation_read_only_but_keeps_user_data_writable() {
     second.publish().unwrap();
     let new_plan = build_plan_from(&toml, workdir.path());
     for (plan, generation) in [(&old_plan, &first_path), (&new_plan, &second.path)] {
+        assert_eq!(&plan.runtime_lease.as_ref().unwrap().path, generation);
+        let lease_file = fs::File::open(generation.join(".lease")).unwrap();
+        assert!(matches!(
+            lease_file.try_lock(),
+            Err(fs::TryLockError::WouldBlock)
+        ));
         assert_eq!(
             find_plan_env(plan, "DISABLE_AUTOUPDATER").as_deref(),
             Some("1")

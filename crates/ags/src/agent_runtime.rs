@@ -1,6 +1,5 @@
-//! Immutable agent installations. Published generations are never updated or deleted.
-//! Container mount sources (not process names/PIDs) identify users, including stopped
-//! containers. Retention also protects launches whose plans have not reached Podman yet.
+//! Immutable agent installations. Container mount sources identify users, including
+//! stopped containers. Cleanup retains current/previous generations and launch leases.
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -8,6 +7,10 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use serde::Deserialize;
+
+#[path = "agent_runtime_gc.rs"]
+mod gc;
+pub use gc::{CleanupReport, Lease, pin};
 
 pub const ROOT: &str = "agent-runtimes";
 pub const RUNTIME_DIRS: &[&str] = &[
@@ -17,11 +20,15 @@ pub const RUNTIME_DIRS: &[&str] = &[
     "claude-install",
 ];
 
-/// Read the selection once per launch so every mount belongs to the same generation.
+/// Read the selection for status reporting. Use `pin` when accessing runtime files
+/// or building a launch: an unleased path can be collected after later updates.
 /// Only an absent pointer permits legacy fallback; corrupt selections fail closed.
 pub fn selected(cache: &Path) -> io::Result<PathBuf> {
-    let root = cache.join(ROOT);
-    let pointer = root.join("current");
+    Ok(read_selection(&cache.join(ROOT), "current")?.unwrap_or_else(|| cache.to_owned()))
+}
+
+fn read_selection(root: &Path, selector: &str) -> io::Result<Option<PathBuf>> {
+    let pointer = root.join(selector);
     match fs::symlink_metadata(&pointer) {
         Ok(metadata) if metadata.is_file() => {}
         Ok(_) => {
@@ -29,7 +36,7 @@ pub fn selected(cache: &Path) -> io::Result<PathBuf> {
                 "agent runtime selection is not a regular file",
             ));
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(cache.to_owned()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     }
     let name = fs::read_to_string(pointer)?;
@@ -53,7 +60,7 @@ pub fn selected(cache: &Path) -> io::Result<PathBuf> {
             return Err(io::Error::other(format!("agent generation lacks {suffix}")));
         }
     }
-    Ok(generation)
+    Ok(Some(generation))
 }
 
 pub fn mount_source(cache: &Path, selected: &Path, suffix: &str) -> PathBuf {
@@ -92,6 +99,9 @@ impl Update {
             .prefix("generation-")
             .tempdir_in(&root)?
             .keep();
+        // Interrupted installers can outlive their host updater. Keep incomplete
+        // trees out of GC, even before Podman has created their container.
+        fs::write(path.join(".installing"), "")?;
         for suffix in RUNTIME_DIRS.iter().copied().chain(["npm-global"]) {
             fs::create_dir(path.join(suffix))?;
         }
@@ -104,15 +114,25 @@ impl Update {
 
     /// Call only after installation and smoke tests succeed.
     pub fn publish(&self) -> io::Result<()> {
+        if let Some(previous) = read_selection(&self.root, "current")?
+            && previous != self.path
+        {
+            self.write_selection("previous", &previous)?;
+        }
+        match fs::remove_file(self.path.join(".installing")) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        self.write_selection("current", &self.path)
+    }
+
+    fn write_selection(&self, selector: &str, path: &Path) -> io::Result<()> {
         let mut pointer = tempfile::NamedTempFile::new_in(&self.root)?;
-        writeln!(
-            pointer,
-            "{}",
-            self.path.file_name().unwrap().to_string_lossy()
-        )?;
+        writeln!(pointer, "{}", path.file_name().unwrap().to_string_lossy())?;
         pointer.as_file().sync_all()?;
         pointer
-            .persist(self.root.join("current"))
+            .persist(self.root.join(selector))
             .map_err(|error| error.error)?;
         File::open(&self.root)?.sync_all()
     }
@@ -156,6 +176,11 @@ pub fn inspect_usage(cache: &Path) -> io::Result<Vec<(ContainerUse, BTreeSet<Pat
     for id in ids.split_whitespace() {
         let json = podman_output(&["container", "inspect", id])?;
         let containers: Vec<ContainerUse> = serde_json::from_str(&json)?;
+        if containers.len() != 1 {
+            return Err(io::Error::other(format!(
+                "expected one inspected container for {id}"
+            )));
+        }
         for container in containers {
             let roots = referenced_roots(cache, &container);
             if !roots.is_empty() {

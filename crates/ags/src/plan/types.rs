@@ -77,6 +77,8 @@ impl std::error::Error for PlanError {}
 /// Complete description of a container launch, ready for podman rendering.
 #[derive(Debug, Clone)]
 pub struct LaunchPlan {
+    /// Protects selected runtime files until all plan owners finish launching/running.
+    pub runtime_lease: Option<std::sync::Arc<crate::agent_runtime::Lease>>,
     pub image: String,
     pub containerfile: PathBuf,
     pub extra_dnf_packages: Vec<String>,
