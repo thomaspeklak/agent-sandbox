@@ -10,6 +10,8 @@ use crate::config::{
 use crate::github_release::resolve_github_release_source;
 use crate::util::shell_quote;
 
+#[path = "update_agents_identity.rs"]
+mod identity;
 #[path = "update_agents_script.rs"]
 mod script;
 use script::{build_install_script, resolve_pi_spec};
@@ -52,7 +54,8 @@ impl std::error::Error for UpdateAgentsError {}
 /// Reconcile selected agents in persistent volumes via a throwaway container.
 pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), UpdateAgentsError> {
     let cache_dir = &config.sandbox.cache_dir;
-    let image = &config.sandbox.image;
+    let image =
+        identity::image_id(&config.sandbox.image).map_err(UpdateAgentsError::InstallFailed)?;
     let enabled_agents = &config.sandbox.enabled_agents;
 
     let generation = crate::agent_runtime::Update::begin(cache_dir)
@@ -76,7 +79,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
             );
         }
     }
-    println!("Building runtime: {}", generation.path.display());
+    println!("Building runtime candidate: {}", generation.path.display());
     let pnpm_home = generation.path.join("pnpm-home");
     let codex_install = generation.path.join("codex-install");
     let opencode_install = generation.path.join("opencode-install");
@@ -141,7 +144,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         verification_script.push_str(&format!("timeout 60 {} --version\n", shell_quote(launcher)));
     }
 
-    println!("Installing agent CLIs in a new runtime generation...");
+    println!("Checking agent updates in an isolated runtime candidate...");
     println!(
         "  enabled: {}",
         agent_list(enabled_agents).unwrap_or_else(|| "none (shell only)".to_owned())
@@ -167,7 +170,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     }
 
     let mut run_args = build_podman_run_args(
-        image,
+        &image,
         &pnpm_home,
         &codex_install,
         &opencode_install,
@@ -175,8 +178,23 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         &npm_global,
         &install_script,
     );
+    // Cache downloads across checks, but import via reflinks/copies: never link a
+    // live runtime to the package manager's writable content store.
+    let store = cache_dir.join("agent-downloads/pnpm-store");
+    fs::create_dir_all(&store)
+        .and_then(|_| fs::create_dir_all(pnpm_home.join(".store")))
+        .map_err(|error| UpdateAgentsError::HostDirCreate(error.to_string()))?;
+    let mut install_args = run_args.clone();
+    let image_index = install_args.len() - 4;
+    install_args.splice(
+        image_index..image_index,
+        [
+            "-v".to_owned(),
+            format!("{}:/usr/local/pnpm/.store:rw", store.display()),
+        ],
+    );
     let status = Command::new("podman")
-        .args(&run_args)
+        .args(&install_args)
         .status()
         .map_err(|error| UpdateAgentsError::InstallFailed(error.to_string()))?;
 
@@ -193,6 +211,18 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
             run_args[index] = format!("{}:ro", run_args[index].strip_suffix(":rw").unwrap());
         }
     }
+    // Only the inventory output is writable during verification, never runtime files.
+    let inventory_dir =
+        tempfile::tempdir().map_err(|error| UpdateAgentsError::InstallFailed(error.to_string()))?;
+    let image_index = run_args.len() - 4;
+    run_args.splice(
+        image_index..image_index,
+        [
+            "-v".to_owned(),
+            format!("{}:/run/ags-update:rw", inventory_dir.path().display()),
+        ],
+    );
+    verification_script.push_str(&identity::inventory_script(enabled_agents));
     *run_args.last_mut().unwrap() = verification_script;
     let status = Command::new("podman")
         .args(&run_args)
@@ -203,13 +233,34 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
             "runtime verification exited with {status}"
         )));
     }
-    generation.publish().map_err(|error| {
-        UpdateAgentsError::InstallFailed(format!("cannot publish generation: {error}"))
+    let inventory = fs::read(inventory_dir.path().join("inventory.json")).map_err(|error| {
+        UpdateAgentsError::InstallFailed(format!("cannot read runtime inventory: {error}"))
     })?;
-    println!(
-        "\nDone. New sandboxes will use {}.",
-        generation.path.display()
-    );
+    let manifest = crate::agent_runtime::RuntimeManifest::from_inventory(
+        image,
+        identity::request_identity(config, pi_spec),
+        &inventory,
+    )
+    .map_err(|error| {
+        UpdateAgentsError::InstallFailed(format!("invalid runtime inventory: {error}"))
+    })?;
+    match generation.finish(manifest).map_err(|error| {
+        UpdateAgentsError::InstallFailed(format!("cannot publish runtime: {error}"))
+    })? {
+        crate::agent_runtime::Publication::Unchanged => {
+            println!("\nAlready up to date. Current and previous generations are unchanged.");
+        }
+        crate::agent_runtime::Publication::Published(shared) => {
+            println!(
+                "\nDone. New sandboxes will use {}.",
+                generation.path.display()
+            );
+            println!(
+                "Shared {} unchanged files ({} bytes of file content).",
+                shared.files, shared.bytes
+            );
+        }
+    }
     println!(
         "Existing sandboxes keep their runtimes; latest, previous, and in-use generations are retained."
     );

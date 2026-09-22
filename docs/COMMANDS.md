@@ -228,7 +228,7 @@ The store persists below `[sandbox].cache_dir` (default `~/.cache/ags/mise`). `i
 
 ## `ags update-agents`
 
-Builds and verifies a new immutable agent runtime generation using temporary containers, then atomically selects it for new sandboxes.
+Builds and verifies an isolated runtime candidate using temporary containers. It publishes a new immutable generation only when the verified runtime identity changes.
 
 ```bash
 ags update-agents
@@ -240,7 +240,17 @@ ags update-agents --config /path/to/config.toml
 - Installs or updates enabled Pi, Codex, Gemini, OpenCode, and Claude runtimes.
 - Omits disabled agents from the new generation without removing files used by existing sessions.
 - Preserves agent authentication and settings under the configured `[[agent_mount]]` host paths.
-- Uses a private pnpm store per generation; never updates or prunes another generation.
+- Uses an installer-only pnpm download store at `<cache_dir>/agent-downloads/pnpm-store`, rather than retaining a copy in every generation. Imports use copy-on-write clones or copies, never hard links to the writable store.
+
+### No-op updates and disk sharing
+
+Each verified generation records a runtime manifest: exact sandbox image ID, enabled agents/providers, runtime file hashes, permissions, symlinks, and installed pnpm dependency contents. pnpm's random installation-directory IDs and generated bookkeeping timestamps do not change runtime identity. A dependency-only change still counts as an update, even if the agent's own version is unchanged.
+
+If the candidate matches the intact selected generation, AGS reports **Already up to date**, discards the candidate, and leaves both `current` and `previous` unchanged. Cleanup still runs. Existing generations without a manifest are rebuilt once. The image is resolved to an immutable ID and used for both installation and verification.
+
+**Currently this is a verified-candidate comparison, not a registry-only preflight:** installers still run to resolve eligible versions and dependencies; temporary disk space and installer/download work may still be needed. This avoids assuming that matching top-level version numbers imply identical dependencies or binaries.
+
+For changed candidates, identical regular files are hard-linked from the intact selected generation **only after installation and verification containers have exited**. Exact file hashes and permissions must match. No installer receives a tree linked to a running generation; legacy installs and the writable package-manager store are never sharing sources. Published mounts remain read-only. Filesystems that cannot hard-link retain independent copies. Deleting an old generation merely drops its links; retained generations keep their files. Do not modify published runtime files manually: shared files are immutable by design.
 
 ### Running-session safety
 
@@ -248,9 +258,9 @@ Generations live under `<cache_dir>/agent-runtimes/generation-*`. The `current` 
 
 Before installation, `update-agents` runs `podman ps --all --quiet --no-trunc` and `podman container inspect` for each container. It reports runtime generations referenced by actual mount sources and container status, including stopped containers that can be restarted. Legacy runtime mounts are reported too. Inspection errors abort the update rather than treating unknown usage as unused.
 
-An OS file lock serializes updates for the same cache. Installation happens in a fresh generation; a second container checks each enabled CLI with a bounded `--version` smoke test against read-only runtime mounts. Only successful verification publishes the selection. Failed/interrupted builds remain unselected, and do not advance the previous-generation pointer. Authentication and session data are not copied into generations.
+An OS file lock serializes updates for the same cache. Installation happens in a fresh generation; a second container checks each enabled CLI with a bounded `--version` smoke test against read-only runtime mounts. Only successful verification and a changed runtime manifest publish the selection. Failed/interrupted builds remain unselected, and do not advance the previous-generation pointer. Authentication and session data are not copied into generations.
 
-**Automatic cleanup:** after a successful update, AGS retains the latest generation, the previous successfully published generation, and every generation referenced by a running or stopped container. Other completed generations are deleted. Container references are inspected again immediately before cleanup; the pre-install snapshot is not reused. Inspection failures skip cleanup and emit a warning without undoing the successful update.
+**Automatic cleanup:** after a successful update or no-op check, AGS retains the latest generation, the previous successfully published generation, and every generation referenced by a running or stopped container. Other completed generations are deleted. Container references are inspected again immediately before cleanup; the pre-install snapshot is not reused. Inspection failures skip cleanup and emit a warning without undoing the successful update.
 
 Pending launches hold a shared lease on their selected generation, so even a launch delayed across several updates is protected. Cleanup takes a short selection lock and only deletes generations whose lease it can lock exclusively. These leases do not block publication or cleanup of other generations. A launch-plan lease normally lasts until its Podman command exits; container inspection protects detached or stopped containers afterward.
 
@@ -268,7 +278,7 @@ Security hardening and runtime hygiene:
 - Agent provider policies come from `agent_provider_lock`. When omitted, AGS uses its reviewed embedded five-agent defaults; `ags tools` writes a content-addressed lock for a custom selection.
 - Interrupted installations never replace the selected generation; the next update builds afresh.
 - Codex releases are stored in the generation's `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
-- pnpm uses a generation-local store at `/usr/local/pnpm/.store`.
+- The shared pnpm download store is mounted at `/usr/local/pnpm/.store` only during installation and pruned by pnpm. Verification and ordinary sandboxes do not mount this writable cache.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.
 - Legacy shared npm-global files are left untouched for existing sessions. Managed agent launchers use explicit paths, and managed runtime paths precede npm-global on the sandbox PATH.
 

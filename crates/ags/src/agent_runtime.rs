@@ -11,6 +11,9 @@ use serde::Deserialize;
 #[path = "agent_runtime_gc.rs"]
 mod gc;
 pub use gc::{CleanupReport, Lease, pin};
+#[path = "agent_runtime_manifest.rs"]
+mod manifest;
+pub use manifest::{Publication, RuntimeManifest};
 
 pub const ROOT: &str = "agent-runtimes";
 pub const RUNTIME_DIRS: &[&str] = &[

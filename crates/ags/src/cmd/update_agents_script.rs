@@ -443,7 +443,7 @@ rm -rf /opt/claude-home/* /opt/claude-home/.[!.]* /opt/claude-home/..?*"#
         r#"set -e
 mkdir -p "$HOME/.config/pnpm" /usr/local/pnpm /opt/codex-home /opt/claude-home
 {opencode_recovery}
-printf 'minimumReleaseAge: %s\nignoreScripts: true\nstoreDir: /usr/local/pnpm/.store\nglobalBinDir: /usr/local/pnpm/bin\n' '{release_age}' > "$HOME/.config/pnpm/config.yaml"
+printf 'minimumReleaseAge: %s\nignoreScripts: true\nstoreDir: /usr/local/pnpm/.store\nglobalBinDir: /usr/local/pnpm/bin\npackageImportMethod: clone-or-copy\nenableGlobalVirtualStore: false\n' '{release_age}' > "$HOME/.config/pnpm/config.yaml"
 export PNPM_HOME=/usr/local/pnpm PNPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store PNPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm/bin PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:$PATH
 PNPM_BIN=/usr/local/bin/pnpm
 if ! [ -x "$PNPM_BIN" ] || ! "$PNPM_BIN" --version >/dev/null; then

@@ -60,7 +60,8 @@ pub struct CleanupReport {
 }
 
 impl Update {
-    /// Call after publishing. Refresh Podman's references under the selection gate;
+    /// Call after publishing or discarding an identical candidate. Refresh Podman's
+    /// references under the selection gate;
     /// the pre-install snapshot is not sufficient for safe deletion.
     pub fn cleanup(&self) -> io::Result<CleanupReport> {
         let gate = Lock::open(&self.root.join("cleanup.lock"))?;
@@ -74,11 +75,6 @@ impl Update {
         let current = read_selection(&self.root, "current")?.ok_or_else(|| {
             io::Error::other("cannot clean runtimes without a current generation")
         })?;
-        if current != self.path {
-            return Err(io::Error::other(
-                "cleanup requires the successfully published generation",
-            ));
-        }
         let previous = read_selection(&self.root, "previous")?;
         let mut keep = referenced.clone();
         keep.insert(current);

@@ -163,7 +163,7 @@ cargo run -p ags -- update-image
 cargo run -p ags -- update-agents
 ```
 
-Agent updates build a fresh, verified runtime generation. Running sandboxes keep their pinned runtime; new sandboxes use the update. `update-agents` reports generations referenced by running and stopped containers. Cleanup retains the latest, previous, and all in-use generations; see [runtime generations and retention](docs/COMMANDS.md#running-session-safety).
+Agent updates verify an isolated candidate and publish a generation only when runtime contents or identity change. No-op checks leave latest/previous unchanged; changed generations share identical immutable files. Running sandboxes keep their pinned runtime; new sandboxes use the update. `update-agents` reports generations referenced by running and stopped containers. Cleanup retains the latest, previous, and all in-use generations; see [runtime generations and retention](docs/COMMANDS.md#running-session-safety).
 
 ### 5) Verify
 

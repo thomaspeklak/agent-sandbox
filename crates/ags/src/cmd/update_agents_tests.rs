@@ -87,6 +87,8 @@ fn selected_agents_are_installed_with_stable_pnpm_state() {
     let script = all_agents_script();
 
     assert!(script.contains("storeDir: /usr/local/pnpm/.store"));
+    assert!(script.contains("packageImportMethod: clone-or-copy"));
+    assert!(script.contains("enableGlobalVirtualStore: false"));
     assert!(script.contains("minimumReleaseAge: %s\\nignoreScripts: true"));
     assert!(script.contains("'1440' > \"$HOME/.config/pnpm/config.yaml\""));
     assert!(script.contains("PNPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store"));

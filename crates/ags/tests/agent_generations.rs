@@ -1,6 +1,8 @@
 //! End-to-end orchestration tests use a fake Podman; no daemon or downloads needed.
 #[path = "support/generation_cleanup.rs"]
 mod generation_cleanup;
+#[path = "support/generation_identity.rs"]
+mod generation_identity;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -31,16 +33,35 @@ enabled_agents = ["pi"]
 set -eu
 printf '%s\n' "$*" >> "$TEST_ROOT/calls"
 case "$1" in
+  image)
+    if [ -f "$TEST_ROOT/image-id" ]; then cat "$TEST_ROOT/image-id"; else printf 'sha256:%064d\n' 0; fi ;;
   ps)
     [ "${FAIL_AT:-}" != inspect ] || exit 3
     if [ "${FAIL_AT:-}" = cleanup ] && [ -f "$TEST_ROOT/verified" ]; then exit 8; fi
     printf 'running\nstopped\n' ;;
   container) cat "$TEST_ROOT/$3.json" ;;
   run)
+    runtime= inventory=
+    for arg in "$@"; do
+      case "$arg" in
+        *:/usr/local/pnpm:rw) runtime="${arg%:/usr/local/pnpm:rw}" ;;
+        *:/usr/local/pnpm:ro) runtime="${arg%:/usr/local/pnpm:ro}" ;;
+        *:/run/ags-update:rw) inventory="${arg%:/run/ags-update:rw}" ;;
+      esac
+    done
     case "$*" in
-      *:rw*) [ "${FAIL_AT:-}" != install ] || exit 4 ;;
-      *:ro*)
+      *:/usr/local/pnpm:rw*)
+        [ "${FAIL_AT:-}" != install ] || exit 4
+        mkdir -p "$runtime/bin"
+        printf '%s' "$FAKE_VERSION" > "$runtime/bin/pi"
+        chmod 755 "$runtime/bin/pi"
+        printf 'unchanged dependency' > "$runtime/shared.js"
+        chmod 644 "$runtime/shared.js" ;;
+      *:/usr/local/pnpm:ro*)
         [ "${FAIL_AT:-}" != verify ] || exit 5
+        pi_hash=$(sha256sum "$runtime/bin/pi" | cut -d ' ' -f 1)
+        dep_hash=$(sha256sum "$runtime/shared.js" | cut -d ' ' -f 1)
+        printf '[{"key":"pi","path":"pnpm-home/bin/pi","kind":"file","mode":493,"size":%s,"raw":"%s","digest":"%s"},{"key":"dep","path":"pnpm-home/shared.js","kind":"file","mode":420,"size":20,"raw":"%s","digest":"%s"}]' "${#FAKE_VERSION}" "$pi_hash" "$pi_hash" "$dep_hash" "$dep_hash" > "$inventory/inventory.json"
         touch "$TEST_ROOT/verified"
         for name in running stopped; do
           if [ -f "$TEST_ROOT/late-$name.json" ]; then cp "$TEST_ROOT/late-$name.json" "$TEST_ROOT/$name.json"; fi
@@ -70,11 +91,20 @@ esac
 
 fn update(root: &Path, fail_at: &str) -> Output {
     let _ = fs::remove_file(root.join("verified"));
+    let count = fs::read_to_string(root.join("update-count"))
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0)
+        + 1;
+    fs::write(root.join("update-count"), count.to_string()).unwrap();
+    let version =
+        fs::read_to_string(root.join("pinned-version")).unwrap_or_else(|_| count.to_string());
     Command::new(env!("CARGO_BIN_EXE_ags"))
         .current_dir(root)
         .env("PATH", format!("{}:/usr/bin:/bin", root.display()))
         .env("TEST_ROOT", root)
         .env("FAIL_AT", fail_at)
+        .env("FAKE_VERSION", version)
         .args(["update-agents", "--config"])
         .arg(root.join("config.toml"))
         .output()
