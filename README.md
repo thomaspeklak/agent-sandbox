@@ -163,6 +163,8 @@ cargo run -p ags -- update-image
 cargo run -p ags -- update-agents
 ```
 
+Agent updates build a fresh, verified runtime generation. Running sandboxes keep their pinned runtime; new sandboxes use the update. `update-agents` reports generations referenced by running and stopped containers. Old generations are retained for session safety; see [runtime generations and retention](docs/COMMANDS.md#running-session-safety).
+
 ### 5) Verify
 
 ```bash

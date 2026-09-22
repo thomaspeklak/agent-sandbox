@@ -8,6 +8,8 @@ use crate::config::{LockedToolDownload, MountMode};
 pub enum PlanError {
     /// Working directory could not be resolved.
     WorkdirResolve(String),
+    /// A published agent runtime selection is corrupt or inaccessible.
+    AgentRuntime(String),
     /// Failed to create a required directory on the host.
     DirCreate {
         path: PathBuf,
@@ -33,6 +35,7 @@ impl fmt::Display for PlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::WorkdirResolve(msg) => write!(f, "workdir resolve error: {msg}"),
+            Self::AgentRuntime(msg) => write!(f, "agent runtime selection failed: {msg}"),
             Self::DirCreate { path, source } => {
                 write!(f, "failed to create {}: {source}", path.display())
             }

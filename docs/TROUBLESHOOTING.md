@@ -327,6 +327,14 @@ Ensure the agent is selected in the Agent CLIs panel. A disabled agent is reject
 
 ---
 
+## Agent sessions and updates
+
+`ags update-agents` installs into a new generation, verifies it, and selects it for new sandboxes. Running and stopped containers keep their concrete runtime mounts; the command reports their generation references using Podman inspection. Old generations and legacy installs are retained, not overwritten or automatically deleted.
+
+If an older in-place update already broke a session, generation-based updates cannot repair that process: restart its sandbox after updating. New agent processes inside an existing sandbox still use that sandbox's pinned generation. Use a new sandbox for the new version.
+
+If the updater cannot inspect containers or acquire the update lock, resolve the Podman error or wait for the other update; do not delete the lock file. A failed install or version check leaves the previous selection intact. See [runtime generations](COMMANDS.md#running-session-safety) for retention and disk usage details.
+
 ## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, `/usr/local/dist/pnpm.mjs` is missing, or Pi loads from `.npm-global`
 
 Cause:
@@ -343,7 +351,7 @@ ags update-image
 ags update-agents
 ```
 
-With pnpm 11, Pi and Gemini launchers are in `/usr/local/pnpm/bin`. OpenCode is installed outside pnpm at `/opt/opencode-home/.opencode/bin/opencode` in its dedicated persistent `opencode-install` volume. Codex uses its official standalone installer and remains at `/usr/local/pnpm/codex`. Runtime `pnpm` comes from the sandbox image at `/usr/local/bin/pnpm`, so stale persistent shims cannot shadow it. `update-agents` also removes old pnpm/npm-global Codex installs, the legacy `opencode-ai` package, and old npm-global agent shims from the sandbox cache.
+With pnpm 11, Pi and Gemini launchers are in `/usr/local/pnpm/bin`. OpenCode is installed outside pnpm at `/opt/opencode-home/.opencode/bin/opencode` in its dedicated persistent `opencode-install` volume. Codex uses its official standalone installer and remains at `/usr/local/pnpm/codex`. Runtime `pnpm` comes from the sandbox image at `/usr/local/bin/pnpm`, so stale persistent shims cannot shadow it. `update-agents` builds a fresh runtime generation rather than modifying existing installs. Start a new sandbox to use it; running sandboxes retain their original runtime. Legacy shared npm-global files are not removed automatically.
 
 ---
 

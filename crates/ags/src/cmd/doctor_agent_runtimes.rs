@@ -9,7 +9,14 @@ use crate::cmd::doctor_util::Checker;
 
 pub(super) fn check_agent_runtimes(ck: &mut Checker, config: &ValidatedConfig) {
     ck.section("Agent CLIs");
-    let cache = &config.sandbox.cache_dir;
+    let runtime = match crate::agent_runtime::selected(&config.sandbox.cache_dir) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            ck.warn(&format!("agent runtime selection invalid: {error}"));
+            return;
+        }
+    };
+    let cache = runtime.as_path();
     for agent in &config.sandbox.enabled_agents {
         let binary = match agent {
             Agent::Pi => cache.join("pnpm-home/bin/pi"),

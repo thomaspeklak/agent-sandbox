@@ -62,7 +62,7 @@ The catalog defines each known agent with a stable `id`, display metadata, and a
 
 `ags tools` only edits configuration and its generated locks. It may fetch GitHub release metadata and small checksum files while resolving selected sources, but it does not invoke a host package manager, download executable archives, inspect host `PATH`, mount host binaries, or modify user-authored `[[tool]]` and `[[secret]]` entries. Executable archives are downloaded only while building the sandbox image or reconciling OpenCode, use HTTPS, and must pass the pinned SHA-256 check. The only `[[tool]]` entries the picker removes are obsolete entries marked as owned by an older version of the configurator. Libraries, headers, certificate bundles, AGS runtimes, and standard utilities such as curl are not presented as tools. Deselecting a tool prevents AGS from requesting its optional image component explicitly; another selected component may still provide the same executable as a dependency.
 
-Agent CLIs are not installed in the base image. `ags update-agents` installs selected agents into persistent runtime volumes and removes deselected runtimes while preserving their host authentication and settings. Shell is always available and is not shown in the agent checklist.
+Agent CLIs are not installed in the base image. `ags update-agents` installs selected agents into a new persistent runtime generation, omitting deselected agents while preserving host authentication, settings, and existing sessions. Shell is always available and is not shown in the agent checklist.
 
 ---
 
@@ -228,7 +228,7 @@ The store persists below `[sandbox].cache_dir` (default `~/.cache/ags/mise`). `i
 
 ## `ags update-agents`
 
-Reconciles selected agent CLIs in persistent volumes using a temporary container.
+Builds and verifies a new immutable agent runtime generation using temporary containers, then atomically selects it for new sandboxes.
 
 ```bash
 ags update-agents
@@ -238,23 +238,33 @@ ags update-agents --config /path/to/config.toml
 ### What it reconciles
 
 - Installs or updates enabled Pi, Codex, Gemini, OpenCode, and Claude runtimes.
-- Removes packages, launchers, and dedicated install files for disabled agents.
+- Omits disabled agents from the new generation without removing files used by existing sessions.
 - Preserves agent authentication and settings under the configured `[[agent_mount]]` host paths.
-- Prunes unused packages from the shared pnpm store after reconciliation.
+- Uses a private pnpm store per generation; never updates or prunes another generation.
+
+### Running-session safety
+
+Generations live under `<cache_dir>/agent-runtimes/generation-*`. The `current` file is an atomically replaced selection, not a container mount. Each new sandbox resolves it once and mounts concrete generation directories read-only. Existing sandboxes, including new agent processes started inside them, keep their original runtime.
+
+Before installation, `update-agents` runs `podman ps --all --quiet --no-trunc` and `podman container inspect` for each container. It reports runtime generations referenced by actual mount sources and container status, including stopped containers that can be restarted. Legacy runtime mounts are reported too. Inspection errors abort the update rather than treating unknown usage as unused.
+
+An OS file lock serializes updates for the same cache. Installation happens in a fresh generation; a second container checks each enabled CLI with a bounded `--version` smoke test against read-only runtime mounts. Only successful verification publishes the selection. Failed/interrupted builds remain unselected. Authentication and session data are not copied into generations.
+
+**Retention:** old, legacy, and unpublished generations are deliberately retained; there is no automatic garbage collection. This also protects launches that have selected a generation but have not yet created their container. Disk usage grows with updates. Do not manually remove a generation while containers reference it or launches are in progress. The first generation-based update leaves legacy installation directories untouched.
 
 The enabled set comes from `[sandbox].enabled_agents`; installer settings such as `pi_spec` come from `[update]`.
 Use `--config <path>` when the selection was saved to a non-default config.
 
 Security hardening and runtime hygiene:
 
-- pnpm installs run with `ignore-scripts=true`. OpenCode does not use pnpm: AGS resolves its saved catalog source, downloads the architecture-specific release archive, verifies its SHA-256, validates the staged binary version, and atomically activates `/opt/opencode-home/.opencode/bin/opencode` with rollback recovery. The former `opencode-ai` package is removed only as migration cleanup.
+- pnpm installs run with `ignore-scripts=true`. OpenCode does not use pnpm: AGS resolves its saved catalog source, downloads the architecture-specific release archive, verifies its SHA-256, and validates the staged binary version.
 - `minimum_release_age` applies to pnpm package selection and catalog `latest` GitHub Release selection. Exact catalog versions never fall forward.
 - Agent provider policies come from `agent_provider_lock`. When omitted, AGS uses its reviewed embedded five-agent defaults; `ags tools` writes a content-addressed lock for a custom selection.
-- Interrupted OpenCode transactions are recovered from its persistent volume before GitHub release resolution or any other agent update.
-- Codex releases are stored in a dedicated persistent `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
-- pnpm uses a stable store under `/usr/local/pnpm/.store`.
+- Interrupted installations never replace the selected generation; the next update builds afresh.
+- Codex releases are stored in the generation's `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
+- pnpm uses a generation-local store at `/usr/local/pnpm/.store`.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.
-- `update-agents` removes old npm-global agent shims so they cannot shadow the pnpm-managed AGS agents.
+- Legacy shared npm-global files are left untouched for existing sessions. Managed agent launchers use explicit paths, and managed runtime paths precede npm-global on the sandbox PATH.
 
 ---
 

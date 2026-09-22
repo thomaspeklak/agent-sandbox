@@ -1,3 +1,6 @@
+#[path = "support/generation_plan.rs"]
+mod generation_plan;
+
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;

@@ -111,6 +111,7 @@ fn add_infrastructure_mounts(
     mounts: &mut Vec<PlanMount>,
     config: &ValidatedConfig,
     cache_dir: &Path,
+    runtime_root: &Path,
 ) {
     // Gitconfig
     mounts.push(PlanMount {
@@ -125,9 +126,13 @@ fn add_infrastructure_mounts(
             continue;
         }
         mounts.push(PlanMount {
-            host: cache_dir.join(suffix),
+            host: crate::agent_runtime::mount_source(cache_dir, runtime_root, suffix),
             container: container_path.to_string(),
-            mode: MountMode::Rw,
+            mode: if runtime_root != cache_dir && crate::agent_runtime::RUNTIME_DIRS.contains(suffix) {
+                MountMode::Ro
+            } else {
+                MountMode::Rw
+            },
         });
     }
 }

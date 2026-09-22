@@ -55,11 +55,34 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     let image = &config.sandbox.image;
     let enabled_agents = &config.sandbox.enabled_agents;
 
-    let pnpm_home = cache_dir.join("pnpm-home");
-    let codex_install = cache_dir.join("codex-install");
-    let opencode_install = cache_dir.join("opencode-install");
-    let claude_install = cache_dir.join("claude-install");
-    let npm_global = cache_dir.join("npm-global");
+    let generation = crate::agent_runtime::Update::begin(cache_dir)
+        .map_err(|error| UpdateAgentsError::InstallFailed(error.to_string()))?;
+    let selected = crate::agent_runtime::selected(cache_dir)
+        .map_err(|error| UpdateAgentsError::InstallFailed(error.to_string()))?;
+    println!("Selected runtime: {}", selected.display());
+    let uses = crate::agent_runtime::inspect_usage(cache_dir).map_err(|error| {
+        UpdateAgentsError::InstallFailed(format!("cannot inspect runtime usage: {error}"))
+    })?;
+    if uses.is_empty() {
+        println!("No existing containers reference runtime directories in this cache.");
+    }
+    for (container, roots) in &uses {
+        for root in roots {
+            println!(
+                "  retained: {} — {} ({})",
+                root.display(),
+                container.name,
+                container.state.status
+            );
+        }
+    }
+    println!("Building runtime: {}", generation.path.display());
+    let pnpm_home = generation.path.join("pnpm-home");
+    let codex_install = generation.path.join("codex-install");
+    let opencode_install = generation.path.join("opencode-install");
+    let claude_install = generation.path.join("claude-install");
+    // Isolate legacy-shim cleanup too; never mutate the shared npm user cache.
+    let npm_global = generation.path.join("npm-global");
 
     for dir in [
         &pnpm_home,
@@ -104,7 +127,21 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     )
     .map_err(UpdateAgentsError::InstallFailed)?;
 
-    println!("Reconciling agent CLIs in persistent volumes...");
+    let mut verification_script =
+        String::from("set -e\nexport DISABLE_AUTOUPDATER=1 OPENCODE_DISABLE_AUTOUPDATE=true\n");
+    for agent in enabled_agents {
+        let launcher = match agent {
+            Agent::Pi => "/usr/local/pnpm/bin/pi",
+            Agent::Gemini => "/usr/local/pnpm/bin/gemini",
+            Agent::Codex => "/usr/local/pnpm/codex",
+            Agent::Claude => "/opt/claude-home/.local/bin/claude",
+            Agent::Opencode => "/opt/opencode-home/.opencode/bin/opencode",
+            Agent::Shell => continue,
+        };
+        verification_script.push_str(&format!("timeout 60 {} --version\n", shell_quote(launcher)));
+    }
+
+    println!("Installing agent CLIs in a new runtime generation...");
     println!(
         "  enabled: {}",
         agent_list(enabled_agents).unwrap_or_else(|| "none (shell only)".to_owned())
@@ -114,7 +151,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         .filter(|agent| !enabled_agents.contains(agent))
         .collect::<Vec<_>>();
     if let Some(disabled) = agent_list(&disabled_agents) {
-        println!("  removing: {disabled}");
+        println!("  omitted from new generation: {disabled}");
     }
     if pi_spec == opts.pi_spec.as_deref().unwrap_or(&config.update.pi_spec) {
         println!("  PI spec: {pi_spec}");
@@ -129,16 +166,17 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         println!("  OpenCode release: v{}", download.version);
     }
 
+    let mut run_args = build_podman_run_args(
+        image,
+        &pnpm_home,
+        &codex_install,
+        &opencode_install,
+        &claude_install,
+        &npm_global,
+        &install_script,
+    );
     let status = Command::new("podman")
-        .args(build_podman_run_args(
-            image,
-            &pnpm_home,
-            &codex_install,
-            &opencode_install,
-            &claude_install,
-            &npm_global,
-            &install_script,
-        ))
+        .args(&run_args)
         .status()
         .map_err(|error| UpdateAgentsError::InstallFailed(error.to_string()))?;
 
@@ -148,7 +186,33 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         )));
     }
 
-    println!("\nDone. Agent CLI volumes reconciled.");
+    // Verify from a fresh container with read-only mounts, matching normal launches.
+    // A CLI that requires writes to its install directory must not be published.
+    for index in 1..run_args.len() {
+        if run_args[index - 1] == "-v" {
+            run_args[index] = format!("{}:ro", run_args[index].strip_suffix(":rw").unwrap());
+        }
+    }
+    *run_args.last_mut().unwrap() = verification_script;
+    let status = Command::new("podman")
+        .args(&run_args)
+        .status()
+        .map_err(|error| UpdateAgentsError::InstallFailed(error.to_string()))?;
+    if !status.success() {
+        return Err(UpdateAgentsError::InstallFailed(format!(
+            "runtime verification exited with {status}"
+        )));
+    }
+    generation.publish().map_err(|error| {
+        UpdateAgentsError::InstallFailed(format!("cannot publish generation: {error}"))
+    })?;
+    println!(
+        "\nDone. New sandboxes will use {}.",
+        generation.path.display()
+    );
+    println!(
+        "Existing sandboxes keep their runtimes. Previous generations and legacy installs are retained."
+    );
     if let Some(agent) = enabled_agents.first() {
         println!(
             "Verify with: {}",

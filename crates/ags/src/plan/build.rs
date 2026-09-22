@@ -185,12 +185,18 @@ pub fn build_launch_plan(
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);
     let cache_dir = &config.sandbox.cache_dir;
+    let runtime_root = crate::agent_runtime::selected(cache_dir)
+        .map_err(|error| PlanError::AgentRuntime(error.to_string()))?;
 
     if !lockdown {
         ensure_dir(cache_dir)?;
         for (suffix, _, _, owners) in CACHE_MOUNTS {
             if cache_mount_enabled(config, owners) {
-                ensure_dir(&cache_dir.join(suffix))?;
+                ensure_dir(&crate::agent_runtime::mount_source(
+                    cache_dir,
+                    &runtime_root,
+                    suffix,
+                ))?;
             }
         }
         // Managed Node installations are mounted separately and read-only
@@ -210,7 +216,7 @@ pub fn build_launch_plan(
     });
 
     if !lockdown {
-        add_infrastructure_mounts(&mut mounts, config, cache_dir);
+        add_infrastructure_mounts(&mut mounts, config, cache_dir, &runtime_root);
     }
 
     let wayland = if lockdown || !wayland_passthrough {
@@ -390,6 +396,17 @@ pub fn build_launch_plan(
             "AGS_NODE_CONFIG_PATH".to_owned(),
             config.config_file.display().to_string(),
         ));
+    }
+
+    if runtime_root != *cache_dir {
+        // Runtime upgrades belong to update-agents, not individual CLI processes.
+        for (name, value) in [
+            ("DISABLE_AUTOUPDATER", "1"),
+            ("OPENCODE_DISABLE_AUTOUPDATE", "true"),
+        ] {
+            env.inline.retain(|(key, _)| key != name);
+            env.inline.push((name.to_owned(), value.to_owned()));
+        }
     }
 
     // Network mode

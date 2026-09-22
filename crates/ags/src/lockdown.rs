@@ -147,19 +147,25 @@ fn stage_agent_runtime(
     stage_root: &Path,
     extra_mounts: &mut Vec<PlanMount>,
 ) -> Result<(), LockdownError> {
+    let runtime = crate::agent_runtime::selected(&config.sandbox.cache_dir).map_err(|source| {
+        LockdownError::StageIo {
+            path: config.sandbox.cache_dir.clone(),
+            source,
+        }
+    })?;
     match agent {
         Agent::Pi | Agent::Gemini => {
-            let src = config.sandbox.cache_dir.join("pnpm-home");
+            let src = runtime.join("pnpm-home");
             stage_runtime_mount(&src, PNPM_RUNTIME_CONTAINER, stage_root, extra_mounts)?;
         }
         Agent::Opencode => {
-            let src = config.sandbox.cache_dir.join("opencode-install");
+            let src = runtime.join("opencode-install");
             stage_runtime_mount(&src, OPENCODE_INSTALL_HOME, stage_root, extra_mounts)?;
         }
         Agent::Codex => {
-            let pnpm_src = config.sandbox.cache_dir.join("pnpm-home");
+            let pnpm_src = runtime.join("pnpm-home");
             stage_runtime_mount(&pnpm_src, PNPM_RUNTIME_CONTAINER, stage_root, extra_mounts)?;
-            let codex_src = config.sandbox.cache_dir.join("codex-install");
+            let codex_src = runtime.join("codex-install");
             stage_runtime_mount(
                 &codex_src,
                 CODEX_RUNTIME_CONTAINER,
@@ -168,7 +174,7 @@ fn stage_agent_runtime(
             )?;
         }
         Agent::Claude => {
-            let src = config.sandbox.cache_dir.join("claude-install");
+            let src = runtime.join("claude-install");
             stage_runtime_mount(&src, CLAUDE_RUNTIME_CONTAINER, stage_root, extra_mounts)?;
             if guard_enabled {
                 stage_claude_guard_mount(stage_root, extra_mounts).map_err(|source| {
