@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Avoid rotating agent runtime generations on no-op updates: compare verified file/dependency manifests and image identity, discard identical candidates, and still run cleanup. Share unchanged immutable files through post-verification hard links; keep the writable pnpm download store separate.
-- Keep running agent sessions intact during `ags update-agents`: install and verify a fresh runtime generation, atomically select it for new sandboxes, and mount published runtimes read-only. Report generations referenced by running and stopped Podman containers. Automatically clean completed generations except the latest, previous, and those referenced by containers or pending-launch leases; also remove unreferenced legacy runtime directories while preserving user caches and settings. Collect abandoned incomplete candidates after a startup grace period while installer-held leases protect live work.
+- Keep running agent sessions intact during `ags update-agents`: install and verify a fresh runtime generation, atomically select it for new sandboxes, and mount published runtimes read-only. Report generations referenced by running and stopped Podman containers. Automatically clean completed generations except the latest, previous, and those referenced by containers or pending-launch leases; also remove unreferenced legacy runtime directories while preserving user caches and settings. Ordinary update failures immediately discard their candidate and sweep older stale candidates; crash-abandoned candidates are collected after a startup grace period while installer-held leases protect live work.
 
 ## [0.23.0] - 2026-09-21
 

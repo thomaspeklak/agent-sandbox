@@ -164,18 +164,59 @@ fn update_reports_all_container_references_and_publishes_only_verified_generatio
 }
 
 #[test]
+fn first_failed_update_leaves_no_incomplete_candidate() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    setup(root);
+    let output = update(root, "install");
+    assert!(!output.status.success());
+    let runtime_root = root.join("cache").join(ags::agent_runtime::ROOT);
+    assert_eq!(
+        fs::read_dir(runtime_root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("generation-"))
+            .count(),
+        0
+    );
+}
+
+#[test]
 fn failed_inspection_install_or_verification_preserves_selection() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     setup(root);
     assert!(update(root, "").status.success());
-    let original = ags::agent_runtime::selected(&root.join("cache")).unwrap();
+    let cache = root.join("cache");
+    let original = ags::agent_runtime::selected(&cache).unwrap();
     for phase in ["inspect", "install", "verify"] {
+        let runtime_root = cache.join(ags::agent_runtime::ROOT);
+        let before = fs::read_dir(&runtime_root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("generation-")
+            })
+            .count();
         let output = update(root, phase);
         assert!(!output.status.success(), "{phase}");
-        assert_eq!(
-            ags::agent_runtime::selected(&root.join("cache")).unwrap(),
-            original
-        );
+        assert_eq!(ags::agent_runtime::selected(&cache).unwrap(), original);
+        let after = fs::read_dir(&runtime_root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("generation-")
+            })
+            .count();
+        assert_eq!(after, before, "failed {phase} accumulated a candidate");
     }
 }

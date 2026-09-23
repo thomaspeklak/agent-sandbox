@@ -53,13 +53,30 @@ impl std::error::Error for UpdateAgentsError {}
 
 /// Reconcile selected agents in persistent volumes via a throwaway container.
 pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), UpdateAgentsError> {
-    let cache_dir = &config.sandbox.cache_dir;
     let image =
         identity::image_id(&config.sandbox.image).map_err(UpdateAgentsError::InstallFailed)?;
-    let enabled_agents = &config.sandbox.enabled_agents;
-
-    let generation = crate::agent_runtime::Update::begin(cache_dir)
+    let generation = crate::agent_runtime::Update::begin(&config.sandbox.cache_dir)
         .map_err(|error| UpdateAgentsError::InstallFailed(error.to_string()))?;
+    let result = run_candidate(config, opts, &image, &generation);
+    if result.is_err() {
+        match generation.cleanup_after_failure() {
+            Ok(report) => print_cleanup_report(report),
+            Err(error) => eprintln!(
+                "warning: agent update failed and incomplete-runtime cleanup did not complete: {error}"
+            ),
+        }
+    }
+    result
+}
+
+fn run_candidate(
+    config: &ValidatedConfig,
+    opts: &UpdateAgentsOptions,
+    image: &str,
+    generation: &crate::agent_runtime::Update,
+) -> Result<(), UpdateAgentsError> {
+    let cache_dir = &config.sandbox.cache_dir;
+    let enabled_agents = &config.sandbox.enabled_agents;
     let selected = crate::agent_runtime::selected(cache_dir)
         .map_err(|error| UpdateAgentsError::InstallFailed(error.to_string()))?;
     println!("Selected runtime: {}", selected.display());
@@ -170,7 +187,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
     }
 
     let mut run_args = build_podman_run_args(
-        &image,
+        image,
         &pnpm_home,
         &codex_install,
         &opencode_install,
@@ -237,7 +254,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         UpdateAgentsError::InstallFailed(format!("cannot read runtime inventory: {error}"))
     })?;
     let manifest = crate::agent_runtime::RuntimeManifest::from_inventory(
-        image,
+        image.to_owned(),
         identity::request_identity(config, pi_spec),
         &inventory,
     )
@@ -265,14 +282,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         "Existing sandboxes keep their runtimes; latest, previous, and in-use generations are retained."
     );
     match generation.cleanup() {
-        Ok(report) => {
-            for path in report.removed {
-                println!("  cleaned: {}", path.display());
-            }
-            for path in report.retained {
-                println!("  kept: {}", path.display());
-            }
-        }
+        Ok(report) => print_cleanup_report(report),
         Err(error) => {
             eprintln!("warning: runtime update succeeded but cleanup did not complete: {error}")
         }
@@ -286,6 +296,15 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateAgentsOptions) -> Result<(), U
         println!("No agent CLIs are enabled; `ags --agent shell` remains available.");
     }
     Ok(())
+}
+
+fn print_cleanup_report(report: crate::agent_runtime::CleanupReport) {
+    for path in report.removed {
+        println!("  cleaned: {}", path.display());
+    }
+    for path in report.retained {
+        println!("  kept: {}", path.display());
+    }
 }
 
 fn verification_command(agent: Agent, config_file: &std::path::Path) -> String {

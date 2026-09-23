@@ -76,6 +76,27 @@ impl Update {
         self.cleanup_unlocked(&referenced)
     }
 
+    /// A normally returned error means Podman never started or its foreground
+    /// container has exited. Discard this invocation's unselected candidate at
+    /// once, then sweep older abandoned candidates using a fresh inspection.
+    pub fn cleanup_after_failure(&self) -> io::Result<CleanupReport> {
+        let gate = Lock::open(&self.root.join("cleanup.lock"))?;
+        gate.0.lock()?;
+        let mut report = CleanupReport::default();
+        if read_selection(&self.root, "current")?.as_ref() != Some(&self.path)
+            && self.path.try_exists()?
+        {
+            fs::remove_dir_all(&self.path)?;
+            report.removed.push(self.path.clone());
+        }
+        let uses = inspect_usage(&self.cache)?;
+        let referenced = uses.into_iter().flat_map(|(_, roots)| roots).collect();
+        self.cleanup_incomplete_unlocked(&referenced, &mut report)?;
+        report.removed.sort();
+        report.retained.sort();
+        Ok(report)
+    }
+
     fn cleanup_unlocked(&self, referenced: &BTreeSet<PathBuf>) -> io::Result<CleanupReport> {
         let current = read_selection(&self.root, "current")?.ok_or_else(|| {
             io::Error::other("cannot clean runtimes without a current generation")
@@ -118,6 +139,33 @@ impl Update {
         report.removed.sort();
         report.retained.sort();
         Ok(report)
+    }
+
+    fn cleanup_incomplete_unlocked(
+        &self,
+        referenced: &BTreeSet<PathBuf>,
+        report: &mut CleanupReport,
+    ) -> io::Result<()> {
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir()
+                || !entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("generation-")
+            {
+                continue;
+            }
+            let path = entry.path();
+            if referenced.contains(&path) {
+                if path.join(".installing").try_exists()? {
+                    report.retained.push(path);
+                }
+                continue;
+            }
+            self.handle_incomplete(&path, report)?;
+        }
+        Ok(())
     }
 
     /// Returns true when the path was an incomplete candidate (removed or kept).

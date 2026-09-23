@@ -99,12 +99,12 @@ impl Update {
                 "cannot lock agent updates (another update may be running): {error}"
             ))
         })?;
-        // Persist immediately: interruption must not remove files an installer might
-        // still have open. Unpublished generations are harmless and never selected.
-        let path = tempfile::Builder::new()
+        // Keep TempDir ownership until initialization completes so an ordinary
+        // setup error cannot itself leave an incomplete candidate behind.
+        let candidate = tempfile::Builder::new()
             .prefix("generation-")
-            .tempdir_in(&root)?
-            .keep();
+            .tempdir_in(&root)?;
+        let path = candidate.path();
         // Installer containers share-lock this marker. Cleanup only collects an
         // unlocked, unreferenced marker after the crash-startup grace period.
         let marker = path.join(".installing");
@@ -114,10 +114,12 @@ impl Update {
         for suffix in RUNTIME_DIRS.iter().copied().chain(["npm-global"]) {
             fs::create_dir(path.join(suffix))?;
         }
+        let cache = cache.canonicalize()?;
+        let path = candidate.keep();
         Ok(Self {
             _lock: lock,
             _candidate_lease: candidate_lease,
-            cache: cache.canonicalize()?,
+            cache,
             root,
             path,
         })

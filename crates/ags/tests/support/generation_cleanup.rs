@@ -190,6 +190,32 @@ fn stale_incomplete_candidate_is_cleaned_but_fresh_one_is_retained() {
 }
 
 #[test]
+fn failed_update_discards_its_candidate_and_sweeps_older_stale_incomplete() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    setup(root);
+    let selected = successful_update(root);
+    let stale = root.join("cache/agent-runtimes/generation-old-failure");
+    fs::create_dir_all(&stale).unwrap();
+    fs::write(stale.join(".installing"), "").unwrap();
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(11 * 60);
+    fs::File::open(stale.join(".installing"))
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(old))
+        .unwrap();
+    let output = update(root, "install");
+    assert!(!output.status.success());
+    assert!(!stale.exists());
+    assert_eq!(
+        ags::agent_runtime::selected(&root.join("cache")).unwrap(),
+        selected
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains(&format!("cleaned: {}", stale.display()))
+    );
+}
+
+#[test]
 fn pending_launch_survives_updates_until_its_lease_is_released() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
