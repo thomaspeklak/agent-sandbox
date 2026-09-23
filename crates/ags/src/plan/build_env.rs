@@ -38,16 +38,26 @@ fn build_env(
             "/tmp/ags-mise-cache".to_owned(),
         ));
     }
-    if lockdown || cache_mount_enabled(config, PNPM_AGENTS) {
-        inline.push((
-            "PNPM_CONFIG_STORE_DIR".to_owned(),
-            PNPM_STORE_DIR.to_owned(),
-        ));
-        inline.push((
-            "PNPM_CONFIG_GLOBAL_BIN_DIR".to_owned(),
-            PNPM_GLOBAL_BIN_DIR.to_owned(),
-        ));
-    }
+    let (pnpm_home, pnpm_store, pnpm_cache) = if lockdown {
+        (LOCKDOWN_PNPM_HOME, LOCKDOWN_PNPM_STORE, LOCKDOWN_PNPM_CACHE)
+    } else {
+        (
+            PNPM_USER_HOME,
+            workspace_cache::STORE_CONTAINER,
+            workspace_cache::CACHE_CONTAINER,
+        )
+    };
+    inline.extend([
+        ("PNPM_HOME".to_owned(), pnpm_home.to_owned()),
+        ("PNPM_CONFIG_GLOBAL_BIN_DIR".to_owned(), pnpm_home.to_owned()),
+        ("PNPM_CONFIG_STORE_DIR".to_owned(), pnpm_store.to_owned()),
+        ("PNPM_CONFIG_CACHE_DIR".to_owned(), pnpm_cache.to_owned()),
+        ("PNPM_CONFIG_PACKAGE_IMPORT_METHOD".to_owned(), "clone-or-copy".to_owned()),
+        ("PNPM_CONFIG_VIRTUAL_STORE_TYPE".to_owned(), "project".to_owned()),
+        ("PNPM_CONFIG_ENABLE_GLOBAL_VIRTUAL_STORE".to_owned(), "false".to_owned()),
+        ("PNPM_CONFIG_VERIFY_STORE_INTEGRITY".to_owned(), "true".to_owned()),
+        ("PNPM_CONFIG_SIDE_EFFECTS_CACHE".to_owned(), "false".to_owned()),
+    ]);
     if lockdown {
         inline.push(("AGS_LOCKDOWN".to_owned(), "1".to_owned()));
     } else {
@@ -263,10 +273,17 @@ fn build_entrypoint(ctx: EntryPointContext<'_>) -> String {
             close_payload_fds.as_deref(),
         );
     }
+    let pnpm_dirs: &[&str] = if node_runtime_enabled {
+        &[PNPM_USER_HOME]
+    } else {
+        &[LOCKDOWN_PNPM_HOME, LOCKDOWN_PNPM_STORE, LOCKDOWN_PNPM_CACHE]
+    };
     let all_dirs: Vec<String> = boot_dirs
         .iter()
-        .chain(profile.extra_boot_dirs.iter())
-        .map(|d| shell_quote(d))
+        .map(String::as_str)
+        .chain(profile.extra_boot_dirs.iter().map(String::as_str))
+        .chain(pnpm_dirs.iter().copied())
+        .map(shell_quote)
         .collect();
 
     if !all_dirs.is_empty() {

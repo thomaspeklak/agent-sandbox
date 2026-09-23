@@ -335,6 +335,12 @@ If an older in-place update already broke a session, generation-based updates ca
 
 If the updater cannot inspect containers or acquire the update lock, resolve the Podman error or wait for the other update; do not delete lock files. If inspection fails during post-update cleanup, the update remains published but cleanup is skipped with a warning. A failed install or version check leaves the previous selection intact. See [runtime generations](COMMANDS.md#running-session-safety) for retention and disk usage details.
 
+## Project pnpm reports `ERR_PNPM_UNEXPECTED_STORE` after upgrading
+
+Normal sandboxes now use a writable per-worktree store at `/var/cache/ags/pnpm/store`; `/usr/local/pnpm` is reserved for the immutable managed-agent runtime. Existing `node_modules` may record the former `/usr/local/pnpm/.store` location.
+
+Stop processes using that worktree, then reinstall its project dependencies using the project's normal pnpm command. AGS intentionally does not rewrite pnpm bookkeeping, delete `node_modules`, or alter lockfile integrity during launch. Other worktrees have separate caches and need migration only when used. Run `ags update-image` to install the pinned pnpm version and image defaults; launch-time configuration supplies the storage split for new AGS sessions.
+
 ## pnpm reports `ERR_PNPM_UNEXPECTED_STORE`, `MODULE_NOT_FOUND` under `/usr/local/pnpm`, `/usr/local/dist/pnpm.mjs` is missing, or Pi loads from `.npm-global`
 
 Cause:

@@ -32,6 +32,24 @@ fn noop_keeps_current_previous_and_does_not_leave_a_candidate_behind() {
 }
 
 #[test]
+fn unchanged_update_reuses_updater_cache_without_exposing_it_to_verification() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    setup(root);
+    run(root, "1");
+    run(root, "1");
+    assert_eq!(fs::read_to_string(root.join("downloads")).unwrap(), "1");
+    assert!(
+        root.join("cache/agent-downloads/pnpm-store/package-content")
+            .exists()
+    );
+    let calls = fs::read_to_string(root.join("calls")).unwrap();
+    assert!(calls.contains(":/var/cache/ags/agent-pnpm-store:rw"));
+    assert!(calls.contains(":/var/cache/ags/agent-pnpm-cache:rw"));
+    assert!(calls.contains("--network=none"));
+}
+
+#[test]
 fn noop_still_cleans_unreferenced_legacy_runtime() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();

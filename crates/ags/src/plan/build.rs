@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::workspace_cache::{self, WorkspacePnpmCache};
 use crate::BROWSER_HOST_LOOPBACK;
 use crate::agent::{self, AgentProfile, OPENCODE_INSTALL_HOME};
 use crate::auth_proxy::host::AuthProxyGuard;
@@ -22,9 +23,11 @@ use crate::webview_relay::WebviewRelayGuard;
 const CONTAINER_HOME: &str = "/home/dev";
 const CONTAINER_GITCONFIG: &str = "/home/dev/.config/ags/gitconfig";
 const CONTAINER_SSH_SOCK: &str = "/ssh-agent";
-const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/opt/opencode-home/.opencode/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin";
-const PNPM_STORE_DIR: &str = "/usr/local/pnpm/.store";
-const PNPM_GLOBAL_BIN_DIR: &str = "/usr/local/pnpm/bin";
+const CONTAINER_PATH: &str = "/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/opt/opencode-home/.opencode/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.local/share/pnpm-user:/home/dev/.npm-global/bin";
+const PNPM_USER_HOME: &str = "/home/dev/.local/share/pnpm-user";
+const LOCKDOWN_PNPM_HOME: &str = "/tmp/ags-pnpm/global";
+const LOCKDOWN_PNPM_STORE: &str = "/tmp/ags-pnpm/store";
+const LOCKDOWN_PNPM_CACHE: &str = "/tmp/ags-pnpm/cache";
 const HOST_SERVICES_HOST: &str = "host.containers.internal";
 const HOST_SERVICES_HINT: &str =
     "[ags] Host services: use host.containers.internal (localhost is container-local)";
@@ -86,7 +89,7 @@ const PNPM_AGENTS: &[Agent] = &[Agent::Pi, Agent::Codex, Agent::Gemini];
 /// Cache volume mappings: (host suffix, container path, env var, agent owners).
 /// Empty owners are general caches; an empty env var emits no environment variable.
 const CACHE_MOUNTS: &[(&str, &str, &str, &[Agent])] = &[
-    ("pnpm-home", "/usr/local/pnpm", "PNPM_HOME", PNPM_AGENTS),
+    ("pnpm-home", "/usr/local/pnpm", "", PNPM_AGENTS),
     ("codex-install", "/opt/codex-home", "", &[Agent::Codex]),
     (
         "opencode-install",
@@ -185,6 +188,11 @@ pub fn build_launch_plan(
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);
     let cache_dir = &config.sandbox.cache_dir;
+    let workspace_pnpm_cache = if lockdown {
+        None
+    } else {
+        Some(workspace_cache::prepare(cache_dir, &workdir_mapping.host)?)
+    };
     let runtime_lease = crate::agent_runtime::pin(cache_dir)
         .map_err(|error| PlanError::AgentRuntime(error.to_string()))?;
     let runtime_root = runtime_lease.path.clone();
@@ -217,7 +225,15 @@ pub fn build_launch_plan(
     });
 
     if !lockdown {
-        add_infrastructure_mounts(&mut mounts, config, cache_dir, &runtime_root);
+        add_infrastructure_mounts(
+            &mut mounts,
+            config,
+            cache_dir,
+            &runtime_root,
+            workspace_pnpm_cache
+                .as_ref()
+                .expect("normal launch has workspace cache"),
+        );
     }
 
     let wayland = if lockdown || !wayland_passthrough {
@@ -341,6 +357,8 @@ pub fn build_launch_plan(
         add_pub_key_mount(&mut mounts, &config.sandbox.auth_key, "ags-agent-auth");
         add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
     }
+
+    validate_protected_cache_mounts(&mounts, cache_dir)?;
 
     // Render managed Node data after every user- or runtime-controlled mount.
     // The final, exact bind makes the read-only policy win over an accidental

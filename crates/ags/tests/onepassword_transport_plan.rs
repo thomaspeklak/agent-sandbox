@@ -219,6 +219,7 @@ fn bootstrap_wraps_direct_agent_and_closes_fds_for_browser_helper() {
 fn webview_relay_child_closes_payload_descriptors_before_exec() {
     let root = tempfile::tempdir().unwrap();
     let workdir = tempfile::tempdir().unwrap();
+    let relay = tempfile::tempdir().unwrap();
     let config = parse_toml_str(&config_toml(root.path()), Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
     let bootstrap = bootstrap_asset(root.path());
@@ -230,7 +231,7 @@ fn webview_relay_child_closes_payload_descriptors_before_exec() {
             payload_fd_count: 2,
             bootstrap_path: Some(ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH),
             bootstrap_host_path: Some(&bootstrap),
-            webview_relay_runtime_dir: Some(root.path()),
+            webview_relay_runtime_dir: Some(relay.path()),
             ..options(&secrets)
         },
     )

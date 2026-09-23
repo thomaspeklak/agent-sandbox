@@ -58,7 +58,7 @@ const agents = {agents};
 let dependencies = {{}};
 if (agents.some(agent => agent === 'pi' || agent === 'gemini')) {{
   const output = require('node:child_process').execFileSync('/usr/local/bin/pnpm', ['list', '-g', '--depth=0', '--json'], {{
-    env: {{ ...process.env, PNPM_HOME: '/usr/local/pnpm', PNPM_CONFIG_GLOBAL_BIN_DIR: '/usr/local/pnpm/bin' }},
+    env: {{ ...process.env, PNPM_HOME: '/usr/local/pnpm', PNPM_CONFIG_STORE_DIR: '/tmp/ags-pnpm-verification-store', PNPM_CONFIG_GLOBAL_BIN_DIR: '/usr/local/pnpm/bin' }},
     encoding: 'utf8'
   }});
   for (const project of JSON.parse(output)) Object.assign(dependencies, project.dependencies || {{}});

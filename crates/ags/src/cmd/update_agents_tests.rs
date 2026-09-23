@@ -89,12 +89,17 @@ fn podman_run_args_mount_all_reconciliation_volumes_without_relabeling() {
 fn selected_agents_are_installed_with_stable_pnpm_state() {
     let script = all_agents_script();
 
-    assert!(script.contains("storeDir: /usr/local/pnpm/.store"));
+    assert!(script.contains("storeDir: /var/cache/ags/agent-pnpm-store"));
+    assert!(script.contains("cacheDir: /var/cache/ags/agent-pnpm-cache"));
     assert!(script.contains("packageImportMethod: clone-or-copy"));
+    assert!(script.contains("virtualStoreType: project"));
     assert!(script.contains("enableGlobalVirtualStore: false"));
+    assert!(script.contains("verifyStoreIntegrity: true"));
+    assert!(script.contains("sideEffectsCache: false"));
     assert!(script.contains("minimumReleaseAge: %s\\nignoreScripts: true"));
     assert!(script.contains("'1440' > \"$HOME/.config/pnpm/config.yaml\""));
-    assert!(script.contains("PNPM_CONFIG_STORE_DIR=/usr/local/pnpm/.store"));
+    assert!(script.contains("PNPM_CONFIG_STORE_DIR=/var/cache/ags/agent-pnpm-store"));
+    assert!(script.contains("PNPM_CONFIG_CACHE_DIR=/var/cache/ags/agent-pnpm-cache"));
     assert!(script.contains("PNPM_CONFIG_GLOBAL_BIN_DIR=/usr/local/pnpm/bin"));
     assert!(!script.contains(" NPM_CONFIG_STORE_DIR="));
     assert!(!script.contains(" NPM_CONFIG_GLOBAL_BIN_DIR="));
@@ -105,6 +110,7 @@ fn selected_agents_are_installed_with_stable_pnpm_state() {
     assert!(script.contains("exec /opt/claude-home/.local/bin/claude \"$@\""));
     assert!(!script.contains("pnpm self-update"));
     assert!(!script.contains("install_pnpm_candidate opencode"));
+    assert!(!script.contains("store prune"));
 }
 
 #[test]

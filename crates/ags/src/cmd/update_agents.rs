@@ -198,8 +198,9 @@ fn run_candidate(
     // Cache downloads across checks, but import via reflinks/copies: never link a
     // live runtime to the package manager's writable content store.
     let store = cache_dir.join("agent-downloads/pnpm-store");
+    let pnpm_cache = cache_dir.join("agent-downloads/pnpm-cache");
     fs::create_dir_all(&store)
-        .and_then(|_| fs::create_dir_all(pnpm_home.join(".store")))
+        .and_then(|_| fs::create_dir_all(&pnpm_cache))
         .map_err(|error| UpdateAgentsError::HostDirCreate(error.to_string()))?;
     let mut install_args = run_args.clone();
     let image_index = install_args.len() - 4;
@@ -207,7 +208,12 @@ fn run_candidate(
         image_index..image_index,
         [
             "-v".to_owned(),
-            format!("{}:/usr/local/pnpm/.store:rw", store.display()),
+            format!("{}:/var/cache/ags/agent-pnpm-store:rw", store.display()),
+            "-v".to_owned(),
+            format!(
+                "{}:/var/cache/ags/agent-pnpm-cache:rw",
+                pnpm_cache.display()
+            ),
         ],
     );
     let status = Command::new("podman")
@@ -235,6 +241,7 @@ fn run_candidate(
     run_args.splice(
         image_index..image_index,
         [
+            "--network=none".to_owned(),
             "-v".to_owned(),
             format!("{}:/run/ags-update:rw", inventory_dir.path().display()),
         ],

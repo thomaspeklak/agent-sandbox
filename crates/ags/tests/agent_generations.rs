@@ -41,17 +41,26 @@ case "$1" in
     printf 'running\nstopped\n' ;;
   container) cat "$TEST_ROOT/$3.json" ;;
   run)
-    runtime= inventory=
+    runtime= inventory= updater_store= updater_cache=
     for arg in "$@"; do
       case "$arg" in
         *:/usr/local/pnpm:rw) runtime="${arg%:/usr/local/pnpm:rw}" ;;
         *:/usr/local/pnpm:ro) runtime="${arg%:/usr/local/pnpm:ro}" ;;
         *:/run/ags-update:rw) inventory="${arg%:/run/ags-update:rw}" ;;
+        *:/var/cache/ags/agent-pnpm-store:rw) updater_store="${arg%:/var/cache/ags/agent-pnpm-store:rw}" ;;
+        *:/var/cache/ags/agent-pnpm-cache:rw) updater_cache="${arg%:/var/cache/ags/agent-pnpm-cache:rw}" ;;
       esac
     done
     case "$*" in
       *:/usr/local/pnpm:rw*)
         [ "${FAIL_AT:-}" != install ] || exit 4
+        [ -n "$updater_store" ] && [ -n "$updater_cache" ]
+        mkdir -p "$updater_store" "$updater_cache"
+        if [ ! -f "$updater_store/package-content" ]; then
+          touch "$updater_store/package-content"
+          downloads=$(cat "$TEST_ROOT/downloads" 2>/dev/null || printf 0)
+          printf '%s' "$((downloads + 1))" > "$TEST_ROOT/downloads"
+        fi
         mkdir -p "$runtime/bin"
         printf '%s' "$FAKE_VERSION" > "$runtime/bin/pi"
         chmod 755 "$runtime/bin/pi"
@@ -59,6 +68,8 @@ case "$1" in
         chmod 644 "$runtime/shared.js" ;;
       *:/usr/local/pnpm:ro*)
         [ "${FAIL_AT:-}" != verify ] || exit 5
+        [ -z "$updater_store" ] && [ -z "$updater_cache" ]
+        case "$*" in *--network=none*) ;; *) exit 9 ;; esac
         pi_hash=$(sha256sum "$runtime/bin/pi" | cut -d ' ' -f 1)
         dep_hash=$(sha256sum "$runtime/shared.js" | cut -d ' ' -f 1)
         printf '[{"key":"pi","path":"pnpm-home/bin/pi","kind":"file","mode":493,"size":%s,"raw":"%s","digest":"%s"},{"key":"dep","path":"pnpm-home/shared.js","kind":"file","mode":420,"size":20,"raw":"%s","digest":"%s"}]' "${#FAKE_VERSION}" "$pi_hash" "$pi_hash" "$dep_hash" "$dep_hash" > "$inventory/inventory.json"

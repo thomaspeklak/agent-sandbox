@@ -112,12 +112,26 @@ fn add_infrastructure_mounts(
     config: &ValidatedConfig,
     cache_dir: &Path,
     runtime_root: &Path,
+    workspace_pnpm_cache: &WorkspacePnpmCache,
 ) {
     // Gitconfig
     mounts.push(PlanMount {
         host: config.sandbox.gitconfig_path.clone(),
         container: CONTAINER_GITCONFIG.to_owned(),
         mode: MountMode::Ro,
+    });
+
+    // Development pnpm data is writable, worktree-scoped, and never aliases
+    // either the immutable agent runtime or the updater-only download cache.
+    mounts.push(PlanMount {
+        host: workspace_pnpm_cache.store.clone(),
+        container: workspace_cache::STORE_CONTAINER.to_owned(),
+        mode: MountMode::Rw,
+    });
+    mounts.push(PlanMount {
+        host: workspace_pnpm_cache.cache.clone(),
+        container: workspace_cache::CACHE_CONTAINER.to_owned(),
+        mode: MountMode::Rw,
     });
 
     // Cache volumes
@@ -135,6 +149,30 @@ fn add_infrastructure_mounts(
             },
         });
     }
+}
+
+fn validate_protected_cache_mounts(
+    mounts: &[PlanMount],
+    cache_dir: &Path,
+) -> Result<(), PlanError> {
+    let cache = fs::canonicalize(cache_dir).map_err(|source| PlanError::DirCreate {
+        path: cache_dir.to_owned(),
+        source,
+    })?;
+    let protected = ["agent-runtimes", "agent-downloads", "workspace-caches"].map(|suffix| {
+        let path = cache.join(suffix);
+        fs::canonicalize(&path).unwrap_or(path)
+    });
+    for mount in mounts.iter().filter(|mount| mount.mode == MountMode::Rw) {
+        let host = fs::canonicalize(&mount.host).unwrap_or_else(|_| mount.host.clone());
+        if let Some(path) = protected.iter().find(|path| path.starts_with(&host)) {
+            return Err(PlanError::ProtectedCacheExposure {
+                mount: host,
+                protected: path.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn expand_config_mounts(

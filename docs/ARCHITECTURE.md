@@ -62,6 +62,9 @@
 
 ### Run mode
 
+- Immutable agent-generation mounts are read-only.
+- Normal package-manager writes use a per-worktree pnpm store/cache; lockdown uses ephemeral storage.
+- The updater-only pnpm download cache is mounted only in installer containers and is absent from verification and runtime containers.
 - User calls `ags --agent <name> ...`.
 - Config is validated.
 - Secrets are resolved and written to an env file.

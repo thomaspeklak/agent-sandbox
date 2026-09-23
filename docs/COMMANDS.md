@@ -252,6 +252,24 @@ If the candidate matches the intact selected generation, AGS reports **Already u
 
 For changed candidates, identical regular files are hard-linked from the intact selected generation **only after installation and verification containers have exited**. Exact file hashes and permissions must match. No installer receives a tree linked to a running generation; legacy installs and the writable package-manager store are never sharing sources. Published mounts remain read-only. Filesystems that cannot hard-link retain independent copies. Deleting an old generation merely drops its links; retained generations keep their files. Do not modify published runtime files manually: shared files are immutable by design.
 
+### Development pnpm storage
+
+Normal sandboxes—including shell-only, Claude-only, and OpenCode-only configurations—receive writable pnpm store and metadata-cache mounts scoped to the canonical Git worktree:
+
+```text
+<cache_dir>/workspace-caches/<worktree-identity>/pnpm-store
+<cache_dir>/workspace-caches/<worktree-identity>/pnpm-cache
+        → /var/cache/ags/pnpm/{store,cache}
+```
+
+The identity includes the canonical worktree path and its Git metadata inode. Subdirectories of one worktree share a cache; separate worktrees do not. Recreating a checkout at the same path creates a fresh identity. Only the two cache subdirectories enter the sandbox; coordination metadata and other worktrees remain outside its mounts.
+
+`PNPM_HOME` and pnpm's global bin directory use the separate, container-local `/home/dev/.local/share/pnpm-user`. The managed agent paths remain ahead of it on `PATH`, and AGS launches managed agents through explicit generation paths. Project virtual stores remain inside each project, imports use `clone-or-copy`, integrity verification is enabled, and the side-effects cache is disabled. Lockdown sessions mount no persistent development cache and use `/tmp/ags-pnpm/*` instead.
+
+Existing project `node_modules` trees may record the former `/usr/local/pnpm/.store` location and produce `ERR_PNPM_UNEXPECTED_STORE`. When the worktree is idle, reinstall its dependencies; AGS does not rewrite pnpm metadata or delete `node_modules` during launch. Rebuild the sandbox image with `ags update-image` to pick up the pinned pnpm version and matching defaults.
+
+Development caches and updater caches are separate trust domains: neither seeds the other, and no hard links are created across those boundaries. Published generations remain usable if either cache is deleted or unavailable. AGS rejects a writable workdir or configured mount whose host path is an ancestor of `agent-runtimes`, `agent-downloads`, or `workspace-caches`; otherwise the same protected files could be reached through a writable alias despite their dedicated mount policy.
+
 ### Running-session safety
 
 Generations live under `<cache_dir>/agent-runtimes/generation-*`. The `current` file is an atomically replaced selection, not a container mount. Each new sandbox resolves it once and mounts concrete generation directories read-only. Existing sandboxes, including new agent processes started inside them, keep their original runtime.
@@ -282,7 +300,7 @@ Security hardening and runtime hygiene:
 - Agent provider policies come from `agent_provider_lock`. When omitted, AGS uses its reviewed embedded five-agent defaults; `ags tools` writes a content-addressed lock for a custom selection.
 - Interrupted installations never replace the selected generation; the next update builds afresh.
 - Codex releases are stored in the generation's `codex-install` directory while its launcher remains at `/usr/local/pnpm/codex`.
-- The shared pnpm download store is mounted at `/usr/local/pnpm/.store` only during installation and pruned by pnpm. Verification and ordinary sandboxes do not mount this writable cache.
+- The updater-only pnpm store/cache are mounted at `/var/cache/ags/agent-pnpm-{store,cache}` only during installation. They persist without automatic `pnpm store prune`; verification runs with no network and mounts neither cache. Ordinary sandboxes cannot access these writable caches.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.
 - Legacy shared npm-global files are left untouched for existing sessions. Managed agent launchers use explicit paths, and managed runtime paths precede npm-global on the sandbox PATH.
 

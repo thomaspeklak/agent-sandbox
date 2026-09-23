@@ -120,12 +120,16 @@ fn final_image_recreates_and_executes_the_pnpm_launcher() {
     );
     assert!(containerfile.contains("test -L /usr/local/bin/pnpm"));
     assert!(containerfile.contains("/usr/local/bin/pnpm --version"));
+    assert!(containerfile.contains("ARG PNPM_VERSION=11.27.1"));
+    assert!(containerfile.contains("\"pnpm@$PNPM_VERSION\""));
 }
 
 #[test]
 fn final_image_uses_pnpm_yaml_for_non_auth_settings() {
     let containerfile = include_str!("../../../config/Containerfile");
-    assert!(containerfile.contains("ignoreScripts: true\\nstoreDir: /usr/local/pnpm/.store\\nglobalBinDir: /usr/local/pnpm/bin\\n' > /home/dev/.config/pnpm/config.yaml"));
+    assert!(containerfile.contains("ignoreScripts: true\\nstoreDir: /var/cache/ags/pnpm/store\\ncacheDir: /var/cache/ags/pnpm/cache\\nglobalBinDir: /home/dev/.local/share/pnpm-user"));
+    assert!(containerfile.contains("virtualStoreType: project\\nenableGlobalVirtualStore: false"));
+    assert!(containerfile.contains("verifyStoreIntegrity: true\\nsideEffectsCache: false"));
     assert!(!containerfile.contains("/home/dev/.config/pnpm/rc"));
 }
 

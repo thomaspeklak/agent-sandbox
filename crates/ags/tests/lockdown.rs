@@ -411,6 +411,24 @@ fn lockdown_plan_filters_mounts_and_env() {
             .iter()
             .any(|(k, v)| k == "AGS_LOCKDOWN" && v == "1")
     );
+    assert!(
+        plan.mounts
+            .iter()
+            .all(|mount| !mount.container.starts_with("/var/cache/ags/pnpm"))
+    );
+    for (name, value) in [
+        ("PNPM_HOME", "/tmp/ags-pnpm/global"),
+        ("PNPM_CONFIG_STORE_DIR", "/tmp/ags-pnpm/store"),
+        ("PNPM_CONFIG_CACHE_DIR", "/tmp/ags-pnpm/cache"),
+    ] {
+        assert!(
+            plan.env
+                .inline
+                .iter()
+                .any(|(key, actual)| key == name && actual == value)
+        );
+    }
+    assert!(plan.entrypoint.contains("/tmp/ags-pnpm/store"));
     assert!(plan.security.tmpfs.iter().any(|v| v.starts_with("/tmp:")));
     assert!(
         plan.security

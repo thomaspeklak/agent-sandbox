@@ -32,8 +32,9 @@ RUN dnf -y install \
       xz && \
     dnf clean all
 
+ARG PNPM_VERSION=11.27.1
 RUN printf 'ignore-scripts=true\n' > /etc/npmrc && \
-    npm install --global --prefix /usr/local --ignore-scripts pnpm@latest && \
+    npm install --global --prefix /usr/local --ignore-scripts "pnpm@$PNPM_VERSION" && \
     /usr/local/bin/pnpm --version
 
 ARG RUST_TOOLCHAIN=stable
@@ -125,13 +126,13 @@ RUN set -eu; \
     rm -f "$lock" "$entries"
 
 RUN useradd -m -u 1000 -s /bin/bash dev && \
-    mkdir -p /workspace /home/dev/.local/bin /home/dev/.local/share /home/dev/.cache /home/dev/.config/pnpm /usr/local/pnpm /opt/claude-home /opt/opencode-home /opt/ags && \
+    mkdir -p /workspace /home/dev/.local/bin /home/dev/.local/share/pnpm-user /home/dev/.cache /home/dev/.config/pnpm /var/cache/ags/pnpm/store /var/cache/ags/pnpm/cache /usr/local/pnpm /opt/claude-home /opt/opencode-home /opt/ags && \
     printf 'ignore-scripts=true\n' > /etc/npmrc && \
     printf 'ignore-scripts=true\n' > /home/dev/.npmrc && \
-    printf 'ignoreScripts: true\nstoreDir: /usr/local/pnpm/.store\nglobalBinDir: /usr/local/pnpm/bin\n' > /home/dev/.config/pnpm/config.yaml && \
+    printf 'ignoreScripts: true\nstoreDir: /var/cache/ags/pnpm/store\ncacheDir: /var/cache/ags/pnpm/cache\nglobalBinDir: /home/dev/.local/share/pnpm-user\npackageImportMethod: clone-or-copy\nvirtualStoreType: project\nenableGlobalVirtualStore: false\nverifyStoreIntegrity: true\nsideEffectsCache: false\n' > /home/dev/.config/pnpm/config.yaml && \
     printf '#!/bin/sh\nif command -v sccache >/dev/null 2>&1; then exec sccache "$@"; fi\nexec "$@"\n' > /opt/ags/rustc-wrapper && \
     chmod 0755 /opt/ags/rustc-wrapper && \
-    chown -R dev:dev /workspace /home/dev /usr/local/pnpm /opt/claude-home /opt/opencode-home
+    chown -R dev:dev /workspace /home/dev /var/cache/ags /usr/local/pnpm /opt/claude-home /opt/opencode-home
 
 COPY --from=tooling-builder /usr/local/rustup/ /usr/local/rustup/
 COPY --from=tooling-builder /usr/local/cargo/ /usr/local/cargo/
@@ -152,9 +153,9 @@ USER dev
 WORKDIR /workspace
 
 ENV HOME=/home/dev
-ENV PNPM_HOME=/usr/local/pnpm
+ENV PNPM_HOME=/home/dev/.local/share/pnpm-user
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/home/dev/.cargo
 ENV RUSTC_WRAPPER=/opt/ags/rustc-wrapper
 ENV NPM_CONFIG_PREFIX=/home/dev/.npm-global
-ENV PATH=/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.npm-global/bin
+ENV PATH=/home/dev/.local/bin:/home/dev/.cargo/bin:/home/dev/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/pnpm:/usr/local/pnpm/bin:/home/dev/.local/share/pnpm-user:/home/dev/.npm-global/bin

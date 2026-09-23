@@ -341,6 +341,18 @@ fn lockdown_omits_managed_node_store_mount() {
 }
 
 #[test]
+fn writable_ancestor_mount_cannot_expose_runtime_or_package_caches() {
+    let toml = minimal_config_toml();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let workdir = config.sandbox.cache_dir.parent().unwrap();
+    let secrets = HashMap::new();
+    let error =
+        build_launch_plan(&config, workdir, Agent::Shell, default_options(&secrets)).unwrap_err();
+    assert!(matches!(error, PlanError::ProtectedCacheExposure { .. }));
+    assert!(error.to_string().contains("protected AGS storage"));
+}
+
+#[test]
 fn shell_only_config_omits_all_agent_runtime_and_home_mounts() {
     let toml = minimal_config_toml().replace(
         "extra_dnf_packages = [\"ansible-lint\", \"shellcheck\"]",
@@ -366,13 +378,48 @@ fn shell_only_config_omits_all_agent_runtime_and_home_mounts() {
             "agent mount should be absent in shell-only mode: {container}"
         );
     }
-    assert!(
-        !plan
-            .env
-            .inline
-            .iter()
-            .any(|(name, _)| name == "PNPM_HOME" || name == "PNPM_CONFIG_STORE_DIR")
+    assert_eq!(
+        find_plan_env(&plan, "PNPM_HOME").as_deref(),
+        Some("/home/dev/.local/share/pnpm-user")
     );
+    assert_eq!(
+        find_plan_env(&plan, "PNPM_CONFIG_STORE_DIR").as_deref(),
+        Some("/var/cache/ags/pnpm/store")
+    );
+    for container in ["/var/cache/ags/pnpm/store", "/var/cache/ags/pnpm/cache"] {
+        let mount = plan
+            .mounts
+            .iter()
+            .find(|mount| mount.container == container)
+            .unwrap();
+        assert_eq!(mount.mode, MountMode::Rw);
+        assert!(mount.host.to_string_lossy().contains("workspace-caches"));
+    }
+}
+
+#[test]
+fn every_agent_mode_uses_the_same_worktree_scoped_development_cache() {
+    let toml = minimal_config_toml();
+    let workdir = tempfile::tempdir().unwrap();
+    let mut stores = Vec::new();
+    for agent in [
+        Agent::Pi,
+        Agent::Claude,
+        Agent::Codex,
+        Agent::Gemini,
+        Agent::Opencode,
+        Agent::Shell,
+    ] {
+        let plan = build_plan_from_agent(&toml, workdir.path(), agent);
+        let store = plan
+            .mounts
+            .iter()
+            .find(|mount| mount.container == "/var/cache/ags/pnpm/store")
+            .expect("development store mount");
+        assert_eq!(store.mode, MountMode::Rw);
+        stores.push(store.host.clone());
+    }
+    assert!(stores.windows(2).all(|pair| pair[0] == pair[1]));
 }
 
 #[test]
@@ -504,11 +551,11 @@ fn env_has_required_inline_vars() {
     assert_eq!(find_plan_env(&plan, "AGS_SANDBOX"), Some("1".to_owned()));
     assert_eq!(
         find_plan_env(&plan, "PNPM_CONFIG_STORE_DIR"),
-        Some("/usr/local/pnpm/.store".to_owned())
+        Some("/var/cache/ags/pnpm/store".to_owned())
     );
     assert_eq!(
         find_plan_env(&plan, "PNPM_CONFIG_GLOBAL_BIN_DIR"),
-        Some("/usr/local/pnpm/bin".to_owned())
+        Some("/home/dev/.local/share/pnpm-user".to_owned())
     );
     assert_eq!(find_plan_env(&plan, "NPM_CONFIG_STORE_DIR"), None);
     assert_eq!(find_plan_env(&plan, "NPM_CONFIG_GLOBAL_BIN_DIR"), None);
@@ -533,7 +580,26 @@ fn env_has_required_inline_vars() {
         find_plan_env(&plan, "AGS_HOST_SERVICES_HINT")
             .is_some_and(|v| v.contains("localhost is container-local"))
     );
-    assert!(find_plan_env(&plan, "PNPM_HOME").is_some());
+    assert_eq!(
+        find_plan_env(&plan, "PNPM_HOME"),
+        Some("/home/dev/.local/share/pnpm-user".to_owned())
+    );
+    assert_eq!(
+        find_plan_env(&plan, "PNPM_CONFIG_CACHE_DIR").as_deref(),
+        Some("/var/cache/ags/pnpm/cache")
+    );
+    assert_eq!(
+        find_plan_env(&plan, "PNPM_CONFIG_PACKAGE_IMPORT_METHOD").as_deref(),
+        Some("clone-or-copy")
+    );
+    assert_eq!(
+        find_plan_env(&plan, "PNPM_CONFIG_VIRTUAL_STORE_TYPE").as_deref(),
+        Some("project")
+    );
+    assert_eq!(
+        find_plan_env(&plan, "PNPM_CONFIG_SIDE_EFFECTS_CACHE").as_deref(),
+        Some("false")
+    );
     assert!(find_plan_env(&plan, "CARGO_HOME").is_some());
 }
 

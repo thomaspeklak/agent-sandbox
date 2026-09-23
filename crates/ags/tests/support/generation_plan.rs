@@ -39,6 +39,22 @@ fn launch_pins_one_generation_read_only_but_keeps_user_data_writable() {
             assert_eq!(mount.mode, MountMode::Ro);
             assert!(!mount.host.to_string_lossy().contains("/current/"));
         }
+        for target in ["/var/cache/ags/pnpm/store", "/var/cache/ags/pnpm/cache"] {
+            let mount = plan
+                .mounts
+                .iter()
+                .find(|mount| mount.container == target)
+                .unwrap();
+            assert_eq!(mount.mode, MountMode::Rw);
+            assert!(!mount.host.starts_with(generation));
+            assert!(!mount.host.to_string_lossy().contains("agent-downloads"));
+        }
+        assert!(plan.mounts.iter().all(|mount| {
+            !mount
+                .host
+                .to_string_lossy()
+                .contains("agent-downloads/pnpm")
+        }));
         for target in ["/home/dev/.pi", "/home/dev/.npm-global"] {
             let mount = plan
                 .mounts

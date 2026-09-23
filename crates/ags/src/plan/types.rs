@@ -10,6 +10,8 @@ pub enum PlanError {
     WorkdirResolve(String),
     /// A published agent runtime selection is corrupt or inaccessible.
     AgentRuntime(String),
+    /// A writable mount would expose protected AGS storage through an ancestor.
+    ProtectedCacheExposure { mount: PathBuf, protected: PathBuf },
     /// Failed to create a required directory on the host.
     DirCreate {
         path: PathBuf,
@@ -35,6 +37,12 @@ impl fmt::Display for PlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::WorkdirResolve(msg) => write!(f, "workdir resolve error: {msg}"),
+            Self::ProtectedCacheExposure { mount, protected } => write!(
+                f,
+                "writable mount {} would expose protected AGS storage {}; choose a narrower workdir/mount",
+                mount.display(),
+                protected.display()
+            ),
             Self::AgentRuntime(msg) => write!(f, "agent runtime selection failed: {msg}"),
             Self::DirCreate { path, source } => {
                 write!(f, "failed to create {}: {source}", path.display())
