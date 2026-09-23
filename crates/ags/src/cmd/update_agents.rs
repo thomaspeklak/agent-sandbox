@@ -410,6 +410,12 @@ fn build_podman_run_args(
     npm_global: &Path,
     script: &str,
 ) -> Vec<String> {
+    let generation = pnpm_home
+        .parent()
+        .expect("pnpm runtime directory has a generation parent");
+    let leased_script = format!(
+        "exec 9</run/ags-update-candidate/.installing\nflock --shared 9 || exit 1\n{script}"
+    );
     vec![
         "run".to_owned(),
         "--rm".to_owned(),
@@ -426,10 +432,15 @@ fn build_podman_run_args(
         format!("{}:/opt/claude-home:rw", claude_install.display()),
         "-v".to_owned(),
         format!("{}:/home/dev/.npm-global:rw", npm_global.display()),
+        "-v".to_owned(),
+        format!(
+            "{}:/run/ags-update-candidate/.installing:rw",
+            generation.join(".installing").display()
+        ),
         image.to_owned(),
         "bash".to_owned(),
         "-c".to_owned(),
-        script.to_owned(),
+        leased_script,
     ]
 }
 

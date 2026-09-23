@@ -5,8 +5,13 @@ use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use super::{ROOT, RUNTIME_DIRS, Update, inspect_usage, read_selection, selected};
+
+/// Covers the crash window between starting Podman and its container acquiring
+/// the candidate lease. A later update collects abandoned candidates after this.
+const INCOMPLETE_GRACE: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug)]
 struct Lock(File);
@@ -92,8 +97,11 @@ impl Update {
                 continue;
             }
             let path = entry.path();
-            if keep.contains(&path) || path.join(".installing").try_exists()? {
+            if keep.contains(&path) {
                 report.retained.push(path);
+                continue;
+            }
+            if self.handle_incomplete(&path, &mut report)? {
                 continue;
             }
             let lease = Lock::open(&path.join(".lease"))?;
@@ -110,6 +118,37 @@ impl Update {
         report.removed.sort();
         report.retained.sort();
         Ok(report)
+    }
+
+    /// Returns true when the path was an incomplete candidate (removed or kept).
+    fn handle_incomplete(&self, path: &Path, report: &mut CleanupReport) -> io::Result<bool> {
+        let marker = path.join(".installing");
+        let metadata = match fs::symlink_metadata(&marker) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            report.retained.push(path.to_owned());
+            return Ok(true);
+        }
+        let age = SystemTime::now()
+            .duration_since(metadata.modified()?)
+            .unwrap_or_default();
+        if age < INCOMPLETE_GRACE {
+            report.retained.push(path.to_owned());
+            return Ok(true);
+        }
+        let lease = File::open(&marker)?;
+        match lease.try_lock() {
+            Ok(()) => {
+                fs::remove_dir_all(path)?;
+                report.removed.push(path.to_owned());
+            }
+            Err(std::fs::TryLockError::WouldBlock) => report.retained.push(path.to_owned()),
+            Err(error) => return Err(io::Error::other(error)),
+        }
+        Ok(true)
     }
 
     fn cleanup_legacy(

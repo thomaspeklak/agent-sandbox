@@ -266,7 +266,9 @@ Pending launches hold a shared lease on their selected generation, so even a lau
 
 **Legacy cleanup:** the old `pnpm-home`, `codex-install`, `opencode-install`, and `claude-install` directories directly under `<cache_dir>` are treated as one legacy generation. After publication, cleanup removes these directories only when no running or stopped container references the legacy runtime and no updated-AGS launch holds its legacy lease. User settings, authentication, `npm-global`, and other general caches are not removed. Upgrade the host AGS executable before updating: old launchers do not acquire leases, must not be started concurrently with cleanup, and cannot use legacy installations after they have been removed.
 
-Incomplete/interrupted builds (marked `.installing`) are not automatically removed. An interrupted installer may still be running or creating its container; remove such a build manually only after confirming its installer has stopped and no container references it. Unrelated directories and symlinks are never cleanup candidates. Do not manually remove generation directories used by containers or pending launches.
+**Interrupted-candidate cleanup:** installation and verification containers hold a shared lock on their candidate's `.installing` marker, independently of the AGS parent process. Cleanup removes an incomplete candidate only when a fresh inspection finds no running/stopped container reference, its marker is at least 10 minutes old, and the marker can be locked exclusively. The grace period closes the crash window before Podman creates the container or acquires its lease. This also collects abandoned candidates created by earlier generation-aware AGS versions. Fresh, referenced, or leased candidates are retained.
+
+Unrelated directories, symlinks, and malformed `.installing` markers are never cleanup candidates. Do not manually remove generation directories used by containers or pending launches.
 
 The enabled set comes from `[sandbox].enabled_agents`; installer settings such as `pi_spec` come from `[update]`.
 Use `--config <path>` when the selection was saved to a non-default config.

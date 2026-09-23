@@ -160,6 +160,36 @@ fn late_legacy_container_reference_is_honored_by_cleanup() {
 }
 
 #[test]
+fn stale_incomplete_candidate_is_cleaned_but_fresh_one_is_retained() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    setup(root);
+    let runtimes = root.join("cache/agent-runtimes");
+    let stale = runtimes.join("generation-abandoned");
+    let fresh = runtimes.join("generation-starting");
+    for path in [&stale, &fresh] {
+        fs::create_dir_all(path).unwrap();
+        fs::write(path.join(".installing"), "").unwrap();
+    }
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(11 * 60);
+    fs::File::open(stale.join(".installing"))
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(old))
+        .unwrap();
+    let output = update(root, "");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!stale.exists());
+    assert!(fresh.exists());
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains(&format!("cleaned: {}", stale.display()))
+    );
+}
+
+#[test]
 fn pending_launch_survives_updates_until_its_lease_is_released() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();

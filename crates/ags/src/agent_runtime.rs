@@ -77,6 +77,8 @@ pub fn mount_source(cache: &Path, selected: &Path, suffix: &str) -> PathBuf {
 pub struct Update {
     // OS lock is released even if the updater crashes. Never unlink the lock file.
     _lock: File,
+    // Shared with installer/verification containers through the .installing marker.
+    _candidate_lease: File,
     cache: PathBuf,
     root: PathBuf,
     pub path: PathBuf,
@@ -103,14 +105,18 @@ impl Update {
             .prefix("generation-")
             .tempdir_in(&root)?
             .keep();
-        // Interrupted installers can outlive their host updater. Keep incomplete
-        // trees out of GC, even before Podman has created their container.
-        fs::write(path.join(".installing"), "")?;
+        // Installer containers share-lock this marker. Cleanup only collects an
+        // unlocked, unreferenced marker after the crash-startup grace period.
+        let marker = path.join(".installing");
+        fs::write(&marker, "")?;
+        let candidate_lease = File::open(&marker)?;
+        candidate_lease.lock_shared()?;
         for suffix in RUNTIME_DIRS.iter().copied().chain(["npm-global"]) {
             fs::create_dir(path.join(suffix))?;
         }
         Ok(Self {
             _lock: lock,
+            _candidate_lease: candidate_lease,
             cache: cache.canonicalize()?,
             root,
             path,

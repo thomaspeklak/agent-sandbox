@@ -58,21 +58,22 @@ fn all_agents_script() -> String {
 fn podman_run_args_mount_all_reconciliation_volumes_without_relabeling() {
     let args = build_podman_run_args(
         "localhost/agent-sandbox:latest",
-        Path::new("/tmp/pnpm-home"),
-        Path::new("/tmp/codex-home"),
-        Path::new("/tmp/opencode-home"),
-        Path::new("/tmp/claude-home"),
-        Path::new("/tmp/npm-global"),
+        Path::new("/tmp/generation/pnpm-home"),
+        Path::new("/tmp/generation/codex-home"),
+        Path::new("/tmp/generation/opencode-home"),
+        Path::new("/tmp/generation/claude-home"),
+        Path::new("/tmp/generation/npm-global"),
         "echo ok",
     );
 
     assert!(args.contains(&"--security-opt=label=disable".to_owned()));
     for mount in [
-        "/tmp/pnpm-home:/usr/local/pnpm:rw",
-        "/tmp/codex-home:/opt/codex-home:rw",
-        "/tmp/opencode-home:/opt/opencode-home:rw",
-        "/tmp/claude-home:/opt/claude-home:rw",
-        "/tmp/npm-global:/home/dev/.npm-global:rw",
+        "/tmp/generation/pnpm-home:/usr/local/pnpm:rw",
+        "/tmp/generation/codex-home:/opt/codex-home:rw",
+        "/tmp/generation/opencode-home:/opt/opencode-home:rw",
+        "/tmp/generation/claude-home:/opt/claude-home:rw",
+        "/tmp/generation/npm-global:/home/dev/.npm-global:rw",
+        "/tmp/generation/.installing:/run/ags-update-candidate/.installing:rw",
     ] {
         assert!(
             args.windows(2)
@@ -80,6 +81,8 @@ fn podman_run_args_mount_all_reconciliation_volumes_without_relabeling() {
         );
     }
     assert!(!args.iter().any(|arg| arg.contains(":rw,z")));
+    assert!(args.last().unwrap().contains("flock --shared 9"));
+    assert!(args.last().unwrap().ends_with("echo ok"));
 }
 
 #[test]

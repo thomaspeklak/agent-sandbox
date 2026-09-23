@@ -61,7 +61,7 @@ fn pending_launch_survives_two_updates_and_is_cleaned_after_last_lease_drops() {
 }
 
 #[test]
-fn incomplete_unrelated_and_symlinked_trees_are_not_deleted() {
+fn fresh_incomplete_unrelated_and_symlinked_trees_are_not_deleted() {
     let temp = tempfile::tempdir().unwrap();
     let incomplete = Update::begin(temp.path()).unwrap();
     let incomplete_path = incomplete.path.clone();
@@ -83,6 +83,49 @@ fn incomplete_unrelated_and_symlinked_trees_are_not_deleted() {
     assert!(incomplete_path.exists());
     assert!(root.join("other-data").exists());
     assert!(external.path().join("valuable").exists());
+}
+
+fn age_incomplete(path: &Path) {
+    let old = SystemTime::now() - INCOMPLETE_GRACE - Duration::from_secs(1);
+    File::open(path.join(".installing"))
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(old))
+        .unwrap();
+}
+
+#[test]
+fn stale_incomplete_is_removed_unless_referenced_or_leased() {
+    let temp = tempfile::tempdir().unwrap();
+    let incomplete = Update::begin(temp.path()).unwrap();
+    let incomplete_path = incomplete.path.clone();
+    drop(incomplete);
+    age_incomplete(&incomplete_path);
+    let marker = File::open(incomplete_path.join(".installing")).unwrap();
+    marker.lock_shared().unwrap();
+    let latest = publish(temp.path());
+    let references = BTreeSet::from([incomplete_path.clone()]);
+    assert!(
+        latest
+            .cleanup_unlocked(&references)
+            .unwrap()
+            .removed
+            .is_empty()
+    );
+    assert!(incomplete_path.exists());
+    assert!(
+        latest
+            .cleanup_unlocked(&BTreeSet::new())
+            .unwrap()
+            .removed
+            .is_empty()
+    );
+    assert!(incomplete_path.exists());
+    marker.unlock().unwrap();
+    assert_eq!(
+        latest.cleanup_unlocked(&BTreeSet::new()).unwrap().removed,
+        vec![incomplete_path.clone()]
+    );
+    assert!(!incomplete_path.exists());
 }
 
 #[test]
