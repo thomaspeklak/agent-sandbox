@@ -190,12 +190,13 @@ fn stale_incomplete_candidate_is_cleaned_but_fresh_one_is_retained() {
 }
 
 #[test]
-fn failed_update_discards_its_candidate_and_sweeps_older_stale_incomplete() {
+fn failed_update_preserves_its_candidate_and_sweeps_older_stale_incomplete() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     setup(root);
     let selected = successful_update(root);
-    let stale = root.join("cache/agent-runtimes/generation-old-failure");
+    let runtimes = root.join("cache/agent-runtimes");
+    let stale = runtimes.join("generation-old-failure");
     fs::create_dir_all(&stale).unwrap();
     fs::write(stale.join(".installing"), "").unwrap();
     let old = std::time::SystemTime::now() - std::time::Duration::from_secs(11 * 60);
@@ -210,9 +211,26 @@ fn failed_update_discards_its_candidate_and_sweeps_older_stale_incomplete() {
         ags::agent_runtime::selected(&root.join("cache")).unwrap(),
         selected
     );
+    let failed_candidates: Vec<_> = fs::read_dir(&runtimes)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.join(".installing").is_file())
+        .collect();
+    assert_eq!(failed_candidates.len(), 1);
+    let failed = &failed_candidates[0];
+    assert!(failed.exists());
     assert!(
         String::from_utf8_lossy(&output.stdout).contains(&format!("cleaned: {}", stale.display()))
     );
+
+    // A later cleanup may remove the candidate only after its startup grace and
+    // after the failed updater (and therefore its own shared lease) is gone.
+    fs::File::open(failed.join(".installing"))
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(old))
+        .unwrap();
+    successful_update(root);
+    assert!(!failed.exists());
 }
 
 #[test]

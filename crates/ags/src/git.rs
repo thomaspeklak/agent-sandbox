@@ -128,6 +128,15 @@ pub fn repo_root(workdir: &Path) -> Option<PathBuf> {
     git_rev_parse_path(workdir, &["--show-toplevel"])
 }
 
+/// Return metadata owned by this checkout rather than the shared common Git
+/// directory. Linked worktrees therefore receive independent identities.
+pub(crate) fn worktree_git_dir(workdir: &Path) -> Option<PathBuf> {
+    if !is_inside_work_tree(workdir) {
+        return None;
+    }
+    resolve_absolute_git_dir(workdir)
+}
+
 /// If `workdir` is a linked git worktree, return the parent repository root.
 ///
 /// For linked worktrees, `git rev-parse --git-common-dir` points to

@@ -76,21 +76,16 @@ impl Update {
         self.cleanup_unlocked(&referenced)
     }
 
-    /// A normally returned error means Podman never started or its foreground
-    /// container has exited. Discard this invocation's unselected candidate at
-    /// once, then sweep older abandoned candidates using a fresh inspection.
+    /// Preserve a failed candidate until a fresh Podman inspection and the
+    /// installer lease both prove it unused. A failed Podman client does not
+    /// prove that its container has exited, so fresh candidates remain covered
+    /// by the normal crash-startup grace period.
     pub fn cleanup_after_failure(&self) -> io::Result<CleanupReport> {
         let gate = Lock::open(&self.root.join("cleanup.lock"))?;
         gate.0.lock()?;
-        let mut report = CleanupReport::default();
-        if read_selection(&self.root, "current")?.as_ref() != Some(&self.path)
-            && self.path.try_exists()?
-        {
-            fs::remove_dir_all(&self.path)?;
-            report.removed.push(self.path.clone());
-        }
         let uses = inspect_usage(&self.cache)?;
         let referenced = uses.into_iter().flat_map(|(_, roots)| roots).collect();
+        let mut report = CleanupReport::default();
         self.cleanup_incomplete_unlocked(&referenced, &mut report)?;
         report.removed.sort();
         report.retained.sort();

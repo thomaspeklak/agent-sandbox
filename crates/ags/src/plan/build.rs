@@ -358,7 +358,7 @@ pub fn build_launch_plan(
         add_pub_key_mount(&mut mounts, &config.sandbox.sign_key, "ags-agent-signing");
     }
 
-    validate_protected_cache_mounts(&mounts, cache_dir)?;
+    validate_protected_cache_mounts(&mounts, cache_dir, workspace_pnpm_cache.as_ref())?;
 
     // Render managed Node data after every user- or runtime-controlled mount.
     // The final, exact bind makes the read-only policy win over an accidental

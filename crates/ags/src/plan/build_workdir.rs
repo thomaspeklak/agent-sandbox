@@ -154,6 +154,7 @@ fn add_infrastructure_mounts(
 fn validate_protected_cache_mounts(
     mounts: &[PlanMount],
     cache_dir: &Path,
+    workspace_cache: Option<&WorkspacePnpmCache>,
 ) -> Result<(), PlanError> {
     let cache = fs::canonicalize(cache_dir).map_err(|source| PlanError::DirCreate {
         path: cache_dir.to_owned(),
@@ -165,7 +166,21 @@ fn validate_protected_cache_mounts(
     });
     for mount in mounts.iter().filter(|mount| mount.mode == MountMode::Rw) {
         let host = fs::canonicalize(&mount.host).unwrap_or_else(|_| mount.host.clone());
-        if let Some(path) = protected.iter().find(|path| path.starts_with(&host)) {
+        let intended_workspace_mount = workspace_cache.is_some_and(|workspace| {
+            (mount.container == workspace_cache::STORE_CONTAINER
+                && host == fs::canonicalize(&workspace.store).unwrap_or_else(|_| workspace.store.clone()))
+                || (mount.container == workspace_cache::CACHE_CONTAINER
+                    && host
+                        == fs::canonicalize(&workspace.cache)
+                            .unwrap_or_else(|_| workspace.cache.clone()))
+        });
+        if intended_workspace_mount {
+            continue;
+        }
+        if let Some(path) = protected
+            .iter()
+            .find(|path| path.starts_with(&host) || host.starts_with(path))
+        {
             return Err(PlanError::ProtectedCacheExposure {
                 mount: host,
                 protected: path.clone(),

@@ -30,6 +30,15 @@ fn same_worktree_subdirectories_share_cache_and_different_worktrees_do_not() {
 }
 
 #[test]
+fn reused_device_and_inode_still_get_a_fresh_identity_for_a_new_checkout() {
+    let path = Path::new("/same/worktree");
+    let first = identity_hash(path, 7, 42, Some("checkout-one"));
+    let second = identity_hash(path, 7, 42, Some("checkout-two"));
+    assert_ne!(first, second);
+    assert_eq!(first, identity_hash(path, 7, 42, Some("checkout-one")));
+}
+
+#[test]
 fn recreating_checkout_metadata_at_same_path_gets_a_fresh_cache() {
     let cache = tempfile::tempdir().unwrap();
     let worktree = tempfile::tempdir().unwrap();

@@ -9,7 +9,7 @@ use std::sync::{Mutex, OnceLock};
 
 use ags::cli::Agent;
 use ags::config::{ClipboardMode, MountMode, parse_toml_str};
-use ags::plan::{BuildLaunchPlanOptions, LaunchPlan, PlanError, build_launch_plan};
+use ags::plan::{BuildLaunchPlanOptions, LaunchPlan, PlanError, PlanMount, build_launch_plan};
 
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -350,6 +350,66 @@ fn writable_ancestor_mount_cannot_expose_runtime_or_package_caches() {
         build_launch_plan(&config, workdir, Agent::Shell, default_options(&secrets)).unwrap_err();
     assert!(matches!(error, PlanError::ProtectedCacheExposure { .. }));
     assert!(error.to_string().contains("protected AGS storage"));
+}
+
+#[test]
+fn writable_descendants_and_symlink_aliases_cannot_expose_protected_caches() {
+    let toml = minimal_config_toml();
+    let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let secrets = HashMap::new();
+    let initial = build_launch_plan(
+        &config,
+        workdir.path(),
+        Agent::Pi,
+        default_options(&secrets),
+    )
+    .unwrap();
+    let workspace_store = initial
+        .mounts
+        .iter()
+        .find(|mount| mount.container == "/var/cache/ags/pnpm/store")
+        .unwrap()
+        .host
+        .clone();
+    let cache = workspace_store.ancestors().nth(3).unwrap().to_owned();
+    let generation = cache.join("agent-runtimes/generation-protected");
+    let generation_file = generation.join("pnpm-home/protected-file");
+    let updater_store = cache.join("agent-downloads/pnpm-store");
+    let other_store = cache.join("workspace-caches/another-worktree/pnpm-store");
+    fs::create_dir_all(generation_file.parent().unwrap()).unwrap();
+    fs::write(&generation_file, "immutable").unwrap();
+    fs::create_dir_all(&updater_store).unwrap();
+    fs::create_dir_all(&other_store).unwrap();
+
+    let aliases = tempfile::tempdir().unwrap();
+    let protected = [generation, generation_file, updater_store, other_store];
+    for (index, path) in protected.iter().enumerate() {
+        let alias = aliases.path().join(format!("alias-{index}"));
+        std::os::unix::fs::symlink(path, &alias).unwrap();
+        for exposed in [path, &alias] {
+            let extra = [PlanMount {
+                host: exposed.clone(),
+                container: format!("/exposed-{index}"),
+                mode: MountMode::Rw,
+            }];
+            let error = build_launch_plan(
+                &config,
+                workdir.path(),
+                Agent::Pi,
+                BuildLaunchPlanOptions {
+                    extra_mounts: &extra,
+                    ..default_options(&secrets)
+                },
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, PlanError::ProtectedCacheExposure { .. }),
+                "accepted protected path {}",
+                exposed.display()
+            );
+        }
+    }
 }
 
 #[test]

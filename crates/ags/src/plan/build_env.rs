@@ -22,9 +22,20 @@ fn build_env(
         guard_enabled,
         lockdown,
     } = ctx;
+    let (pnpm_home, pnpm_store, pnpm_cache) = if lockdown {
+        (LOCKDOWN_PNPM_HOME, LOCKDOWN_PNPM_STORE, LOCKDOWN_PNPM_CACHE)
+    } else {
+        (
+            PNPM_USER_HOME,
+            workspace_cache::STORE_CONTAINER,
+            workspace_cache::CACHE_CONTAINER,
+        )
+    };
+    // Keep managed launchers ahead of the selected user-writable pnpm prefix.
+    let container_path = CONTAINER_PATH.replace(PNPM_USER_HOME, pnpm_home);
     let mut inline = vec![
         ("HOME".to_owned(), CONTAINER_HOME.to_owned()),
-        ("PATH".to_owned(), CONTAINER_PATH.to_owned()),
+        ("PATH".to_owned(), container_path),
         ("RUSTUP_HOME".to_owned(), "/usr/local/rustup".to_owned()),
         ("AGS_SANDBOX".to_owned(), "1".to_owned()),
     ];
@@ -38,15 +49,6 @@ fn build_env(
             "/tmp/ags-mise-cache".to_owned(),
         ));
     }
-    let (pnpm_home, pnpm_store, pnpm_cache) = if lockdown {
-        (LOCKDOWN_PNPM_HOME, LOCKDOWN_PNPM_STORE, LOCKDOWN_PNPM_CACHE)
-    } else {
-        (
-            PNPM_USER_HOME,
-            workspace_cache::STORE_CONTAINER,
-            workspace_cache::CACHE_CONTAINER,
-        )
-    };
     inline.extend([
         ("PNPM_HOME".to_owned(), pnpm_home.to_owned()),
         ("PNPM_CONFIG_GLOBAL_BIN_DIR".to_owned(), pnpm_home.to_owned()),

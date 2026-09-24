@@ -175,7 +175,7 @@ fn update_reports_all_container_references_and_publishes_only_verified_generatio
 }
 
 #[test]
-fn first_failed_update_leaves_no_incomplete_candidate() {
+fn first_failed_update_preserves_its_incomplete_candidate() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     setup(root);
@@ -191,12 +191,12 @@ fn first_failed_update_leaves_no_incomplete_candidate() {
                 .to_string_lossy()
                 .starts_with("generation-"))
             .count(),
-        0
+        1
     );
 }
 
 #[test]
-fn failed_inspection_install_or_verification_preserves_selection() {
+fn failed_inspection_install_or_verification_preserves_selection_and_candidate() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     setup(root);
@@ -228,6 +228,10 @@ fn failed_inspection_install_or_verification_preserves_selection() {
                     .starts_with("generation-")
             })
             .count();
-        assert_eq!(after, before, "failed {phase} accumulated a candidate");
+        assert_eq!(
+            after,
+            before + 1,
+            "failed {phase} should retain its candidate until safe cleanup"
+        );
     }
 }

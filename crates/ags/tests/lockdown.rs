@@ -428,6 +428,16 @@ fn lockdown_plan_filters_mounts_and_env() {
                 .any(|(key, actual)| key == name && actual == value)
         );
     }
+    let path = plan
+        .env
+        .inline
+        .iter()
+        .find(|(key, _)| key == "PATH")
+        .map(|(_, value)| value)
+        .unwrap();
+    assert!(path.split(':').any(|entry| entry == "/tmp/ags-pnpm/global"));
+    assert!(!path.contains("/home/dev/.local/share/pnpm-user"));
+    assert!(path.find("/usr/local/pnpm/bin").unwrap() < path.find("/tmp/ags-pnpm/global").unwrap());
     assert!(plan.entrypoint.contains("/tmp/ags-pnpm/store"));
     assert!(plan.security.tmpfs.iter().any(|v| v.starts_with("/tmp:")));
     assert!(
