@@ -427,6 +427,7 @@ Symptoms:
 - `[browser].command` exists and executable
 - `[browser].profile_dir` is valid
 - `[browser].profile_dir` is writable; AGS creates an isolated session profile and discovers the OS-assigned debug port from Chromium's `DevToolsActivePort` file
+- `[browser].startup_timeout_ms` is high enough for the host; try `30000` on slow or heavily loaded systems
 
 ### Fix
 

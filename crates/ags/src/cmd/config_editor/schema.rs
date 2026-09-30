@@ -127,6 +127,15 @@ const BROWSER_FIELDS: &[ScalarFieldSchema] = &[
         default_input: "9222",
     },
     ScalarFieldSchema {
+        key: "startup_timeout_ms",
+        kind: ScalarFieldKind::Number {
+            min: 0,
+            max: u64::MAX,
+        },
+        required: false,
+        default_input: "5000",
+    },
+    ScalarFieldSchema {
         key: "pi_skill_path",
         kind: ScalarFieldKind::Text,
         required: false,

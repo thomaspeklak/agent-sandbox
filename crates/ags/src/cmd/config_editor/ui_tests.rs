@@ -142,6 +142,7 @@ sign_key = "/tmp/sign"
                 "command",
                 "profile_dir",
                 "debug_port",
+                "startup_timeout_ms",
                 "pi_skill_path",
                 "command_args",
             ],

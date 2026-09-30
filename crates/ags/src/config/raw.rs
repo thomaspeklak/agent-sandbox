@@ -4,7 +4,9 @@ use serde::Deserialize;
 
 use crate::cli::Agent;
 
-use super::defaults::{DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC};
+use super::defaults::{
+    DEFAULT_BROWSER_STARTUP_TIMEOUT_MS, DEFAULT_EXTRA_DNF_PACKAGES, DEFAULT_PI_SPEC,
+};
 
 /// Top-level config as deserialized directly from TOML.
 /// Field names and shapes match the config file schema exactly.
@@ -115,7 +117,7 @@ pub struct RawSecret {
     pub attributes: Option<BTreeMap<String, String>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct RawBrowser {
     #[serde(default)]
     pub window_class: Option<String>,
@@ -127,10 +129,27 @@ pub struct RawBrowser {
     pub profile_dir: String,
     #[serde(default)]
     pub debug_port: u16,
+    #[serde(default = "default_browser_startup_timeout_ms")]
+    pub startup_timeout_ms: u64,
     #[serde(default)]
     pub pi_skill_path: String,
     #[serde(default)]
     pub command_args: Vec<String>,
+}
+
+impl Default for RawBrowser {
+    fn default() -> Self {
+        Self {
+            window_class: None,
+            enabled: false,
+            command: String::new(),
+            profile_dir: String::new(),
+            debug_port: 0,
+            startup_timeout_ms: DEFAULT_BROWSER_STARTUP_TIMEOUT_MS,
+            pi_skill_path: String::new(),
+            command_args: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -236,6 +255,10 @@ fn default_when() -> String {
 
 fn default_source() -> String {
     "config".to_owned()
+}
+
+fn default_browser_startup_timeout_ms() -> u64 {
+    DEFAULT_BROWSER_STARTUP_TIMEOUT_MS
 }
 
 fn default_ro() -> String {

@@ -242,6 +242,7 @@ enabled = true
 command = "google-chrome"
 profile_dir = "/tmp/chrome"
 debug_port = 9222
+startup_timeout_ms = 15000
 pi_skill_path = "/home/dev/browser-tools"
 command_args = ["--no-sandbox"]
 "#;
@@ -249,6 +250,7 @@ command_args = ["--no-sandbox"]
     assert!(raw.browser.enabled);
     assert_eq!(raw.browser.command, "google-chrome");
     assert_eq!(raw.browser.debug_port, 9222);
+    assert_eq!(raw.browser.startup_timeout_ms, 15_000);
     assert_eq!(raw.browser.command_args, vec!["--no-sandbox"]);
 }
 

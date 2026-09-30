@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_PI_SPEC: &str = "@earendil-works/pi-coding-agent";
+pub const DEFAULT_BROWSER_STARTUP_TIMEOUT_MS: u64 = 5_000;
 pub const LEGACY_PI_SPECS: &[&str] = &["@mariozechner/pi-coding-agent"];
 pub const BASE_DNF_PACKAGES: &[&str] = &[
     "bash",

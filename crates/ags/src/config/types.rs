@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::cli::Agent;
 
-use super::defaults::DEFAULT_PI_SPEC;
+use super::defaults::{DEFAULT_BROWSER_STARTUP_TIMEOUT_MS, DEFAULT_PI_SPEC};
 use super::{LockedAgentProvider, LockedToolDownload};
 
 /// Validated, path-resolved configuration ready for use by the launch pipeline.
@@ -163,15 +163,31 @@ pub enum SecretSource {
     },
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BrowserConfig {
     pub window_class: String,
     pub enabled: bool,
     pub command: String,
     pub profile_dir: PathBuf,
     pub debug_port: u16,
+    pub startup_timeout_ms: u64,
     pub pi_skill_path: String,
     pub command_args: Vec<String>,
+}
+
+impl Default for BrowserConfig {
+    fn default() -> Self {
+        Self {
+            window_class: String::new(),
+            enabled: false,
+            command: String::new(),
+            profile_dir: PathBuf::new(),
+            debug_port: 0,
+            startup_timeout_ms: DEFAULT_BROWSER_STARTUP_TIMEOUT_MS,
+            pi_skill_path: String::new(),
+            command_args: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

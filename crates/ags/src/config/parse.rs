@@ -442,6 +442,7 @@ fn validate_browser(raw: &RawBrowser) -> Result<BrowserConfig, ConfigError> {
         command,
         profile_dir,
         debug_port: raw.debug_port,
+        startup_timeout_ms: raw.startup_timeout_ms,
         window_class: window_class.to_owned(),
         pi_skill_path: raw.pi_skill_path.clone(),
         command_args: raw.command_args.clone(),

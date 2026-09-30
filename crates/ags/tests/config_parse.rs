@@ -959,6 +959,7 @@ enabled = true
 command = "google-chrome"
 profile_dir = "/tmp/chrome"
 debug_port = 9222
+startup_timeout_ms = 15000
 pi_skill_path = "/home/dev/browser-tools"
 command_args = ["--no-sandbox"]
 "#,
@@ -966,6 +967,7 @@ command_args = ["--no-sandbox"]
     assert!(cfg.browser.enabled);
     assert_eq!(cfg.browser.command, "google-chrome");
     assert_eq!(cfg.browser.debug_port, 9222);
+    assert_eq!(cfg.browser.startup_timeout_ms, 15_000);
     assert_eq!(cfg.browser.pi_skill_path, "/home/dev/browser-tools");
     assert_eq!(cfg.browser.command_args, vec!["--no-sandbox"]);
 }
@@ -1032,6 +1034,7 @@ profile_dir = "/tmp/chrome"
 "#,
     );
     assert_eq!(cfg.browser.debug_port, 0);
+    assert_eq!(cfg.browser.startup_timeout_ms, 5_000);
     assert_eq!(cfg.browser.window_class, "ags-browser");
 }
 

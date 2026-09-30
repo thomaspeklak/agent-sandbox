@@ -390,6 +390,7 @@ enabled = true
 command = "google-chrome"
 profile_dir = "~/.cache/ags/chrome-profile"
 window_class = "ags-browser"
+startup_timeout_ms = 5000
 pi_skill_path = "/home/dev/browser-tools"
 command_args = []
 ```
@@ -407,6 +408,8 @@ command_args = []
   - Passed to Chromium as `--class`; match this class/app ID in Hyprland workspace and grouping rules. Use `hyprctl clients` to verify the value reported by your browser/backend.
 - `debug_port` (u16, legacy)
   - Accepted for compatibility but ignored on launch. Each browser receives an OS-assigned port, discovered via its `DevToolsActivePort` file. Inside each sandbox, the endpoint stays at `http://127.0.0.1:9222`; socat forwards that fixed port to the session's dynamic host port.
+- `startup_timeout_ms` (u64, default `5000`)
+  - How long AGS waits for the browser's debug endpoint to become reachable. Increase this for slow or heavily loaded hosts.
 - `pi_skill_path` (string)
   - Injected for Pi runs in browser mode (`--skill <path>`).
 - `command_args` (string array)

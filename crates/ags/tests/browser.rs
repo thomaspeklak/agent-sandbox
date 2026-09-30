@@ -19,6 +19,7 @@ fn make_config(enabled: bool, port: u16) -> BrowserConfig {
         command: String::new(),
         profile_dir: PathBuf::from("/tmp/ags-browser-test-profile"),
         debug_port: port,
+        startup_timeout_ms: 2_000,
         pi_skill_path: String::new(),
         command_args: Vec::new(),
     }
@@ -123,10 +124,17 @@ fn sessions_are_isolated_and_cleanup_only_their_own_browser() {
 }
 
 #[test]
-fn readiness_failure_cleans_up_profile() {
+fn readiness_failure_uses_configured_timeout_and_cleans_up_profile() {
     let (_dir, mut config) = fake_browser();
     config.command = "/bin/true".to_owned();
-    assert!(browser::start_if_needed(true, &config).is_err());
+    config.startup_timeout_ms = 40;
+    let error = browser::start_if_needed(true, &config).unwrap_err();
+    match error {
+        browser::BrowserError::ReadyTimeout { timeout, .. } => {
+            assert_eq!(timeout, std::time::Duration::from_millis(40));
+        }
+        other => panic!("unexpected error: {other}"),
+    }
     assert_eq!(
         std::fs::read_dir(config.profile_dir.join("sessions"))
             .unwrap()

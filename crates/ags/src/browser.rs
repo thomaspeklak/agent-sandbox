@@ -9,9 +9,6 @@ use std::time::Duration;
 use crate::BROWSER_HOST_LOOPBACK;
 use crate::config::BrowserConfig;
 
-/// How long to wait for the browser debug endpoint to become reachable.
-const READY_TIMEOUT: Duration = Duration::from_secs(5);
-
 /// How long to sleep between readiness polls.
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -140,7 +137,10 @@ pub fn start_if_needed(
         profile,
         port: 0,
     };
-    sidecar.port = wait_for_ready(sidecar.profile.path())?;
+    sidecar.port = wait_for_ready(
+        sidecar.profile.path(),
+        Duration::from_millis(config.startup_timeout_ms),
+    )?;
     Ok(Some(sidecar))
 }
 
@@ -190,9 +190,9 @@ fn spawn_browser(config: &BrowserConfig, profile: &Path) -> Result<Child, Browse
 }
 
 /// Poll the debug port until the browser is ready or timeout.
-fn wait_for_ready(profile: &Path) -> Result<u16, BrowserError> {
+fn wait_for_ready(profile: &Path, timeout: Duration) -> Result<u16, BrowserError> {
     use std::ops::ControlFlow;
-    crate::util::poll_until(READY_TIMEOUT, POLL_INTERVAL, || {
+    crate::util::poll_until(timeout, POLL_INTERVAL, || {
         let port = fs::read_to_string(profile.join("DevToolsActivePort"))
             .ok()
             .and_then(|text| text.lines().next()?.parse::<u16>().ok());
@@ -202,8 +202,5 @@ fn wait_for_ready(profile: &Path) -> Result<u16, BrowserError> {
             ControlFlow::Continue(())
         }
     })
-    .ok_or(BrowserError::ReadyTimeout {
-        port: 0,
-        timeout: READY_TIMEOUT,
-    })
+    .ok_or(BrowserError::ReadyTimeout { port: 0, timeout })
 }

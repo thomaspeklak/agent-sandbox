@@ -139,6 +139,7 @@ enabled = false
 command = "your-browser-command"
 profile_dir = "~/.cache/ags/browser-profile"
 window_class = "ags-browser" # Stable class/app ID for compositor rules; ports are per-session
+startup_timeout_ms = 5000
 pi_skill_path = "/home/dev/example-browser-skill"
 command_args = []
 
