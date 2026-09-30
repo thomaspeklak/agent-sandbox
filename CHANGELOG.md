@@ -11,6 +11,27 @@ All notable changes to this project will be documented in this file.
 - Avoid rotating agent runtime generations on no-op updates: compare verified file/dependency manifests and image identity, discard identical candidates, and still run cleanup. Share unchanged immutable files through post-verification hard links; keep the writable pnpm download store separate.
 - Keep running agent sessions intact during `ags update-agents`: install and verify a fresh runtime generation, atomically select it for new sandboxes, and mount published runtimes read-only. Report generations referenced by running and stopped Podman containers. Automatically clean completed generations except the latest, previous, and those referenced by containers or pending-launch leases; also remove unreferenced legacy runtime directories while preserving user caches and settings. Ordinary update failures immediately discard their candidate and sweep older stale candidates; crash-abandoned candidates are collected after a startup grace period while installer-held leases protect live work.
 
+## [0.24.0] - 2026-09-30
+
+### Added
+
+- Configure browser startup waiting with `[browser].startup_timeout_ms`; the default remains 5000 milliseconds.
+
+### Changed
+
+- `ags update-agents` installs and verifies immutable runtime generations without changing existing sandboxes. New sandboxes use the selected generation; failed updates leave that selection intact.
+- Automatically clean obsolete runtime generations and legacy installations while retaining the current, previous, and all generations protected by running or stopped containers or pending launches. Abandoned incomplete candidates are collected only after safety checks.
+- Give normal sandboxes persistent per-worktree pnpm development caches, separate from the updater download cache; lockdown sessions use temporary storage. Rebuild with `ags update-image` for pnpm 11.27.1 and reinstall dependencies in idle worktrees if pnpm reports `ERR_PNPM_UNEXPECTED_STORE`.
+- Upgrade the host AGS executable before running `ags update-agents`; old launchers cannot coordinate with generation cleanup.
+
+### Fixed
+
+- Keep current and previous generations unchanged when a verified update has identical runtime contents. Changed generations share unchanged immutable files to reduce disk usage.
+
+### Security
+
+- Mount published agent runtimes read-only, verify candidates without network or updater-cache access, and reject writable mounts that would expose protected runtime and cache directories.
+
 ## [0.23.0] - 2026-09-21
 
 ### Added
