@@ -171,7 +171,13 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
             let dir = runtime_base.join(format!("ags-host-ui-{pid}"));
             let session_id = format!("ags-{}-{pid}", opts.agent.as_str());
             match crate::host_ui::start(&dir, session_id, &config.host_ui) {
-                Ok(guard) => Some(guard),
+                Ok(guard) => {
+                    eprintln!(
+                        "[ags] Host UI ready; diagnostics: {}",
+                        guard.log_path.display()
+                    );
+                    Some(guard)
+                }
                 Err(e) => {
                     eprintln!("warning: host UI: {e}");
                     None

@@ -181,6 +181,28 @@ For a user-facing overview, see `docs/GLIMPSE.md`.
 
 ---
 
+## Mesa warnings overwrite the agent terminal when a popup opens
+
+Messages such as `MESA-INTEL: warning: ... FINISHME` come from native graphics libraries used by the host popup renderer, not from Pi's logging. Lowering `[host_ui].log_level` does not control those messages.
+
+AGS redirects host UI service stderr and inherited renderer stderr to a private host-only log. At startup it prints:
+
+```text
+[ags] Host UI ready; diagnostics: /run/user/<uid>/ags/host-ui-logs/host-ui-<random>.log
+```
+
+Read that exact path **on the host** to investigate popup failures. The log remains after the session exits and is not mounted into the sandbox. Memory-corruption messages such as `free(): corrupted unsorted chunks` still indicate a renderer problem; keeping them out of the terminal is not a fix for the underlying crash.
+
+If output still overwrites the terminal, rebuild the host AGS binary and start a fresh session:
+
+```bash
+cargo build --release -p ags
+```
+
+This host-side logging change does not require rebuilding the sandbox image. A clipboard paste client may time out while you approve the popup; retrying the paste is still expected, but its broken-pipe/connection-reset disconnect is handled quietly.
+
+---
+
 ## Pi Ctrl-V image paste or `/copy` clipboard actions fail
 
 Symptoms:

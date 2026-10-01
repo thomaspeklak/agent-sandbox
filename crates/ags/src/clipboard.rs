@@ -388,9 +388,18 @@ fn handle_client(
     access: Arc<dyn ClipboardAccessAuthorizer>,
     backend: Arc<dyn ClipboardBackend>,
 ) {
-    if let Err(err) = handle_client_result(stream, mode, max_bytes, access, backend) {
+    if let Err(err) = handle_client_result(stream, mode, max_bytes, access, backend)
+        && !client_disconnected(&err)
+    {
         eprintln!("[ags clipboard] client error: {err}");
     }
+}
+
+fn client_disconnected(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset
+    )
 }
 
 fn handle_client_result(

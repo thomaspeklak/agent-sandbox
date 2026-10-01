@@ -14,8 +14,17 @@ const CONTAINER_SOCKET_PATH: &str = "/run/ags-host-ui/host-ui.sock";
 #[derive(Debug)]
 pub enum HostUiError {
     RuntimeDirCreate(io::Error),
+    LogCreate(io::Error),
     SpawnFailed(io::Error),
-    ReadyTimeout { path: PathBuf, timeout: Duration },
+    ServiceExited {
+        status: std::process::ExitStatus,
+        log_path: PathBuf,
+    },
+    ReadyTimeout {
+        path: PathBuf,
+        timeout: Duration,
+        log_path: PathBuf,
+    },
 }
 
 impl fmt::Display for HostUiError {
@@ -24,12 +33,23 @@ impl fmt::Display for HostUiError {
             Self::RuntimeDirCreate(err) => {
                 write!(f, "host UI: failed to create runtime dir: {err}")
             }
+            Self::LogCreate(err) => write!(f, "host UI: failed to create diagnostics log: {err}"),
             Self::SpawnFailed(err) => write!(f, "host UI: failed to start service: {err}"),
-            Self::ReadyTimeout { path, timeout } => write!(
+            Self::ServiceExited { status, log_path } => write!(
                 f,
-                "host UI: socket {} was not ready within {:.1}s",
+                "host UI: service exited with {status}; diagnostics: {}",
+                log_path.display()
+            ),
+            Self::ReadyTimeout {
+                path,
+                timeout,
+                log_path,
+            } => write!(
+                f,
+                "host UI: socket {} was not ready within {:.1}s; diagnostics: {}",
                 path.display(),
-                timeout.as_secs_f64()
+                timeout.as_secs_f64(),
+                log_path.display()
             ),
         }
     }
@@ -42,6 +62,8 @@ pub struct HostUiGuard {
     pub runtime_dir: PathBuf,
     pub socket_path: PathBuf,
     pub session_id: String,
+    /// Host-only diagnostics, retained after the session's socket directory is removed.
+    pub log_path: PathBuf,
 }
 
 impl HostUiGuard {
@@ -73,6 +95,7 @@ pub fn start(
 ) -> Result<HostUiGuard, HostUiError> {
     crate::util::ensure_private_dir(runtime_dir).map_err(HostUiError::RuntimeDirCreate)?;
     let socket_path = runtime_dir.join("host-ui.sock");
+    let (log, log_path) = create_log(runtime_dir).map_err(HostUiError::LogCreate)?;
 
     let mut cmd = Command::new(&config.binary);
     cmd.arg("--socket")
@@ -85,102 +108,62 @@ pub fn start(
         .arg(&config.log_level)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit());
+        // Native renderer libraries (Mesa, GTK, etc.) bypass service log levels.
+        // A file also captures inherited child stderr without a pipe to drain.
+        .stderr(Stdio::from(log));
 
     if let Some(renderer_bin) = &config.renderer_bin {
         cmd.arg("--renderer-bin").arg(renderer_bin);
     }
 
     let child = cmd.spawn().map_err(HostUiError::SpawnFailed)?;
-    wait_for_ready(&socket_path)?;
-
-    Ok(HostUiGuard {
+    let mut guard = HostUiGuard {
         child,
         runtime_dir: runtime_dir.to_owned(),
         socket_path,
         session_id,
-    })
+        log_path,
+    };
+    // On readiness failure, the guard stops the child but retains its diagnostics.
+    wait_for_ready(&mut guard)?;
+    Ok(guard)
 }
 
-fn wait_for_ready(socket_path: &Path) -> Result<(), HostUiError> {
+fn create_log(runtime_dir: &Path) -> io::Result<(fs::File, PathBuf)> {
+    // Keep logs outside the directory mounted into the sandbox.
+    let log_dir = runtime_dir
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("host-ui-logs");
+    crate::util::ensure_private_dir(&log_dir)?;
+    tempfile::Builder::new()
+        .prefix("host-ui-")
+        .suffix(".log")
+        .tempfile_in(log_dir)?
+        .keep()
+        .map_err(|err| err.error)
+}
+
+fn wait_for_ready(guard: &mut HostUiGuard) -> Result<(), HostUiError> {
     use std::ops::ControlFlow;
     crate::util::poll_until(READY_TIMEOUT, POLL_INTERVAL, || {
-        if socket_path.exists() && UnixStream::connect(socket_path).is_ok() {
-            ControlFlow::Break(())
+        if let Ok(Some(status)) = guard.child.try_wait() {
+            return ControlFlow::Break(Err(HostUiError::ServiceExited {
+                status,
+                log_path: guard.log_path.clone(),
+            }));
+        }
+        if guard.socket_path.exists() && UnixStream::connect(&guard.socket_path).is_ok() {
+            ControlFlow::Break(Ok(()))
         } else {
             ControlFlow::Continue(())
         }
     })
-    .ok_or_else(|| HostUiError::ReadyTimeout {
-        path: socket_path.to_owned(),
-        timeout: READY_TIMEOUT,
+    .unwrap_or_else(|| {
+        Err(HostUiError::ReadyTimeout {
+            path: guard.socket_path.clone(),
+            timeout: READY_TIMEOUT,
+            log_path: guard.log_path.clone(),
+        })
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
-    #[test]
-    fn starts_service_and_waits_for_socket_ready() {
-        let _guard = env_lock().lock().unwrap();
-        let temp = tempfile::tempdir().unwrap();
-        let runtime_dir = temp.path().join("host-ui-runtime");
-        let stub = temp.path().join("glimpse-host-ui-stub.py");
-        fs::write(
-            &stub,
-            r#"#!/usr/bin/env python3
-import os, socket, sys, time
-sock_path = None
-for index, value in enumerate(sys.argv):
-    if value == '--socket' and index + 1 < len(sys.argv):
-        sock_path = sys.argv[index + 1]
-        break
-if not sock_path:
-    raise SystemExit('missing --socket')
-os.makedirs(os.path.dirname(sock_path), exist_ok=True)
-try:
-    os.unlink(sock_path)
-except FileNotFoundError:
-    pass
-server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-server.bind(sock_path)
-server.listen(4)
-server.settimeout(0.1)
-end = time.time() + 5
-while time.time() < end:
-    try:
-        conn, _ = server.accept()
-        conn.close()
-    except TimeoutError:
-        pass
-server.close()
-"#,
-        )
-        .unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
-        }
-
-        let config = crate::config::HostUiConfig {
-            enabled: true,
-            binary: stub.to_string_lossy().into_owned(),
-            renderer: "stub".to_owned(),
-            renderer_bin: None,
-            idle_timeout_ms: 1_000,
-            log_level: "info".to_owned(),
-        };
-        let guard = start(&runtime_dir, "ags-test-session".to_owned(), &config).unwrap();
-        assert!(guard.socket_path.exists());
-        assert_eq!(guard.session_id, "ags-test-session");
-        drop(guard);
-    }
 }

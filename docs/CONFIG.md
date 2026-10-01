@@ -449,11 +449,13 @@ log_level = "info"
   - Idle timeout passed to the host UI service.
   - `0` disables idle shutdown so the sidecar stays alive for the AGS session.
 - `log_level` (string, default `info`)
-  - Logging level passed to the host UI service.
+  - Logging level passed to the host UI service. Native renderer libraries such as Mesa can write diagnostics independently of this setting.
 
 Notes:
 
 - AGS handles the sandbox wiring automatically once `[host_ui].enabled = true`.
+- Host UI service stderr, including inherited renderer stderr, goes to a private host-only log instead of the agent terminal. AGS prints the log's exact path at startup.
+- Logs are stored in `host-ui-logs/` under the AGS runtime base (normally `$XDG_RUNTIME_DIR/ags`), outside the socket directory mounted into the sandbox. The directory is owner-only (`0700`) and each log is owner-only (`0600`). Logs survive session cleanup; runtime storage is normally cleared at logout or reboot. Without `XDG_RUNTIME_DIR`, the cache fallback retains them until manually removed.
 - Auth-proxy and clipboard approval prompts use the same host UI sidecar for branded, dark/light-aware dialogs; if disabled, they fall back to zenity/kdialog.
 - Users normally should not set Glimpse transport env vars manually.
 - For end-user setup and troubleshooting, see `docs/GLIMPSE.md`.

@@ -94,6 +94,70 @@ fn oversized_write_is_rejected() {
 }
 
 #[test]
+fn timed_out_paste_client_is_an_expected_disconnect() {
+    // Simulate Pi timing out while the approval dialog is still open.
+    let (mut client, server) = UnixStream::pair().unwrap();
+    client
+        .write_all(b"{\"op\":\"read\",\"mime\":\"image/png\"}\n")
+        .unwrap();
+    drop(client);
+
+    let err = handle_client_result(
+        server,
+        ClipboardMode::Read,
+        1024,
+        Arc::new(AllowAllClipboardAccess),
+        Arc::new(MockBackend::default()),
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    assert!(client_disconnected(&err));
+}
+
+#[test]
+fn only_peer_disconnects_are_quiet() {
+    for kind in [io::ErrorKind::BrokenPipe, io::ErrorKind::ConnectionReset] {
+        assert!(client_disconnected(&io::Error::from(kind)));
+    }
+    for kind in [
+        io::ErrorKind::PermissionDenied,
+        io::ErrorKind::InvalidData,
+        io::ErrorKind::Other,
+        io::ErrorKind::TimedOut,
+    ] {
+        assert!(!client_disconnected(&io::Error::from(kind)));
+    }
+}
+
+#[test]
+fn next_paste_still_works_after_a_client_disconnects() {
+    let backend = Arc::new(MockBackend::default());
+    let access = Arc::new(AllowAllClipboardAccess);
+    let (mut first_client, first_server) = UnixStream::pair().unwrap();
+    first_client.write_all(b"{\"op\":\"read\"}\n").unwrap();
+    drop(first_client);
+    assert!(
+        handle_client_result(
+            first_server,
+            ClipboardMode::Read,
+            1024,
+            access.clone(),
+            backend.clone(),
+        )
+        .is_err()
+    );
+
+    let (mut client, server) = UnixStream::pair().unwrap();
+    client.write_all(b"{\"op\":\"read\"}\n").unwrap();
+    handle_client_result(server, ClipboardMode::Read, 1024, access, backend).unwrap();
+    let mut line = String::new();
+    BufReader::new(client).read_line(&mut line).unwrap();
+    let response: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["data_b64"], "aGVsbG8=");
+}
+
+#[test]
 fn formats_approval_window_duration() {
     assert_eq!(format_duration(300), "5 minutes");
     assert_eq!(format_duration(1), "1 second");
