@@ -11,6 +11,13 @@ All notable changes to this project will be documented in this file.
 - Avoid rotating agent runtime generations on no-op updates: compare verified file/dependency manifests and image identity, discard identical candidates, and still run cleanup. Share unchanged immutable files through post-verification hard links; keep the writable pnpm download store separate.
 - Keep running agent sessions intact during `ags update-agents`: install and verify a fresh runtime generation, atomically select it for new sandboxes, and mount published runtimes read-only. Report generations referenced by running and stopped Podman containers. Automatically clean completed generations except the latest, previous, and those referenced by containers or pending-launch leases; also remove unreferenced legacy runtime directories while preserving user caches and settings. Ordinary update failures immediately discard their candidate and sweep older stale candidates; crash-abandoned candidates are collected after a startup grace period while installer-held leases protect live work.
 
+## [0.24.1] - 2026-10-01
+
+### Fixed
+
+- Keep host popup and renderer diagnostics, including native library warnings, in private host-only logs instead of agent terminals. Retain those logs after session cleanup and report their location on startup failures.
+- Let Pi clipboard paste wait for host approval instead of timing out after three seconds. Repeated paste keys insert only once, and canceled or stale requests do not modify the editor. Start a fresh AGS session after upgrading; no image rebuild is needed.
+
 ## [0.24.0] - 2026-09-30
 
 ### Added

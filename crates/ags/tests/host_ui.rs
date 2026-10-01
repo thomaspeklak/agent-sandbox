@@ -29,7 +29,18 @@ while True:
 
 fn config(root: &Path, body: &str) -> HostUiConfig {
     let stub = root.join("glimpse-host-ui-stub.py");
-    fs::write(&stub, format!("#!/usr/bin/env python3\n{body}")).unwrap();
+    // A subprocess keeps writable executable descriptors out of the test process.
+    // Parallel test spawns could otherwise inherit one and cause ETXTBSY.
+    let status = Command::new("python3")
+        .args([
+            "-c",
+            "import pathlib, sys; pathlib.Path(sys.argv[1]).write_text(sys.argv[2])",
+        ])
+        .arg(&stub)
+        .arg(format!("#!/usr/bin/env python3\n{body}"))
+        .status()
+        .unwrap();
+    assert!(status.success(), "failed to create host UI test service");
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     HostUiConfig {
         enabled: true,
