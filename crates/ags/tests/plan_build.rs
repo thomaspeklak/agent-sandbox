@@ -487,7 +487,7 @@ fn clipboard_bridge_mounts_socket_and_shims_when_enabled() {
     let toml = minimal_config_toml();
     let workdir = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
-    fs::write(runtime.path().join("clipboard-shim"), "#!/bin/sh\n").unwrap();
+    ags::assets::ensure_clipboard_assets(runtime.path()).unwrap();
     let config = parse_toml_str(&toml, Path::new("/test/config.toml")).unwrap();
     let secrets = HashMap::new();
     let plan = build_launch_plan(
@@ -525,10 +525,88 @@ fn clipboard_bridge_mounts_socket_and_shims_when_enabled() {
         find_plan_env(&plan, "AGS_CLIPBOARD_MODE"),
         Some("readwrite".to_owned())
     );
+    let extension_mount = plan
+        .mounts
+        .iter()
+        .find(|m| m.container == "/run/ags-clipboard/pi-extension")
+        .expect("Pi clipboard extension mount");
+    assert_eq!(extension_mount.mode, MountMode::Ro);
+    assert!(extension_mount.host.join("index.ts").is_file());
+    assert!(extension_mount.host.join("editor.mjs").is_file());
+    assert!(extension_mount.host.join("bridge.mjs").is_file());
+    assert!(
+        plan.entrypoint
+            .contains("/run/ags-clipboard/pi-extension/index.ts")
+    );
     assert_eq!(
         find_plan_env(&plan, "XDG_SESSION_TYPE"),
         Some("wayland".to_owned())
     );
+}
+
+#[test]
+fn pi_paste_extension_is_scoped_to_a_live_bridge_and_not_to_guards() {
+    let config = parse_toml_str(&minimal_config_toml(), Path::new("/test/config.toml")).unwrap();
+    let workdir = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    ags::assets::ensure_clipboard_assets(runtime.path()).unwrap();
+    let secrets = HashMap::new();
+    for (agent, lockdown, bridge, guard_enabled, expected) in [
+        (Agent::Pi, false, true, true, true),
+        (Agent::Pi, false, true, false, true),
+        (Agent::Pi, false, false, true, false),
+        (Agent::Pi, true, true, true, false),
+        (Agent::Shell, false, true, true, false),
+        (Agent::Claude, false, true, true, false),
+    ] {
+        let plan = build_launch_plan(
+            &config,
+            workdir.path(),
+            agent,
+            BuildLaunchPlanOptions {
+                lockdown,
+                guard_enabled,
+                clipboard_runtime_dir: bridge.then_some(runtime.path()),
+                clipboard_mode: ClipboardMode::ReadWrite,
+                ..default_options(&secrets)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            plan.entrypoint
+                .contains("/run/ags-clipboard/pi-extension/index.ts"),
+            expected,
+            "agent={agent:?}, lockdown={lockdown}, bridge={bridge}, guards={guard_enabled}"
+        );
+        assert_eq!(
+            plan.mounts
+                .iter()
+                .any(|m| m.container == "/run/ags-clipboard/pi-extension"),
+            expected
+        );
+    }
+}
+
+#[test]
+fn clipboard_assets_include_the_complete_refreshable_pi_extension() {
+    let runtime = tempfile::tempdir().unwrap();
+    ags::assets::ensure_clipboard_assets(runtime.path()).unwrap();
+    assert_eq!(
+        fs::read_to_string(runtime.path().join("clipboard-shim")).unwrap(),
+        ags::assets::CLIPBOARD_SHIM
+    );
+    for (name, content) in ags::assets::PI_CLIPBOARD_EXTENSION_FILES {
+        let path = runtime.path().join("pi-extension").join(name);
+        assert_eq!(fs::read_to_string(&path).unwrap(), *content);
+        fs::write(&path, "stale").unwrap();
+    }
+    ags::assets::ensure_clipboard_assets(runtime.path()).unwrap();
+    for (name, content) in ags::assets::PI_CLIPBOARD_EXTENSION_FILES {
+        assert_eq!(
+            fs::read_to_string(runtime.path().join("pi-extension").join(name)).unwrap(),
+            *content
+        );
+    }
 }
 
 #[test]

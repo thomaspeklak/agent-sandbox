@@ -1,4 +1,5 @@
 mod build;
+mod clipboard;
 mod node;
 mod types;
 mod workspace_cache;

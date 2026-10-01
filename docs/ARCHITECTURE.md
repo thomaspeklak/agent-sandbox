@@ -44,6 +44,10 @@
   - Session-scoped clipboard bridge for sandbox `wl-paste`/`wl-copy` shims.
   - Reads/writes the host clipboard through a narrow Unix socket instead of exposing the compositor.
   - Gates clipboard contents reads through the shared host approval dialog by default.
+- `agent/extensions/clipboard-paste/*`
+  - Session-scoped Pi editor integration mounted read-only by `plan/clipboard.rs`.
+  - Keeps one approval-gated read pending, then inserts image paths/text without replaying keystrokes or submitting a prompt.
+  - Composes the current editor factory and discards cancelled or stale-session/draft results.
 - `webview_relay.rs`
   - Session-scoped host HTTP relay for host-owned webviews that need to reach sandbox-local temporary app servers.
   - Pairs with embedded sandbox helper scripts written by `assets.rs`.

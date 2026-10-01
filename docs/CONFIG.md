@@ -480,6 +480,7 @@ approve_writes = false
 
 - `enabled` (bool, default `true`)
   - Starts the AGS clipboard sidecar for normal runs.
+  - AGS-launched interactive Pi also loads a session-scoped paste handler: a single paste waits up to five minutes for host approval and completes once, without automatically sending a message. This wait is separate from the access window configured by `approval_seconds`.
   - Lockdown mode disables it regardless of config.
 - `mode` (string, default `readwrite`)
   - `off`: no clipboard bridge.

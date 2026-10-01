@@ -10,6 +10,7 @@ This project is a Rust CLI (`ags`) for running coding agents inside a Podman san
 - Podman
 - git
 - bash
+- Node.js 22.19+ (for the dependency-free Pi clipboard extension tests)
 
 Optional:
 
@@ -33,6 +34,7 @@ cargo clippy -p ags -- -D warnings
 
 # tests
 cargo test -p ags
+node --test agent/tests/clipboard-*.test.mjs
 ```
 
 Useful run examples:
@@ -99,6 +101,7 @@ podman run --rm -it \
 - [ ] `cargo fmt`
 - [ ] `cargo clippy -p ags -- -D warnings`
 - [ ] `cargo test -p ags`
+- [ ] `node --test agent/tests/clipboard-*.test.mjs`
 - [ ] docs updated (`README.md`, `docs/*`, config examples) if needed
 
 ---

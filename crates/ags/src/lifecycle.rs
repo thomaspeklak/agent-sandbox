@@ -203,10 +203,12 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
             _host_ui_guard.as_ref().map(|g| g.socket_path.as_path()),
         ) {
             Ok(guard) => {
-                if let Err(e) = crate::assets::ensure_clipboard_shim(&guard.runtime_dir) {
-                    eprintln!("warning: clipboard shim write failed: {e}");
+                if let Err(e) = crate::assets::ensure_clipboard_assets(&guard.runtime_dir) {
+                    eprintln!("warning: clipboard assets write failed: {e}");
+                    None
+                } else {
+                    Some(guard)
                 }
-                Some(guard)
             }
             Err(e) => {
                 eprintln!("warning: clipboard bridge: {e}");

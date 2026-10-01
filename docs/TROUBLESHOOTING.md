@@ -199,7 +199,7 @@ If output still overwrites the terminal, rebuild the host AGS binary and start a
 cargo build --release -p ags
 ```
 
-This host-side logging change does not require rebuilding the sandbox image. A clipboard paste client may time out while you approve the popup; retrying the paste is still expected, but its broken-pipe/connection-reset disconnect is handled quietly.
+This host-side logging change does not require rebuilding the sandbox image. Expected clipboard-client broken-pipe/connection-reset disconnects are handled quietly.
 
 ---
 
@@ -245,6 +245,10 @@ approval_seconds = 300
 ```
 
 Clipboard reads prompt on the host by default. Enable `[host_ui]` for the branded dark/light-aware dialog, or install `zenity`/`kdialog` for the fallback. If you intentionally want the old session-wide bridge behavior, set `approval_required = false`.
+
+AGS-launched interactive Pi loads a session-scoped handler that keeps one clipboard paste pending for up to five minutes while you approve, then inserts it exactly once. Additional paste presses during the wait do not duplicate it. Escape/Ctrl-C cancels the pending insertion without clearing the draft; editing/submitting the draft, switching sessions, or opening another Pi prompt also cancels it. Cancelling in Pi does not close a still-open host approval dialog: dismiss it there too. The handler never bypasses approval or automatically sends a message. Its five-minute wait is independent of the configured approval **access window**.
+
+If the first paste still times out after about three seconds, start a fresh session using a rebuilt AGS binary (`cargo build --release -p ags`). No image rebuild is needed. The handler applies to AGS's Pi launch, not Pi started manually from a sandbox shell, and requires a `CustomEditor`-compatible Pi editor. Images remain in private `/tmp/ags-pi-clipboard-*` directories for submission/draft recovery; temporary files follow the sandbox's normal cleanup lifecycle.
 
 For raw GUI clients, do not rely on clipboard settings; use the explicit `--wayland-compositor-passthrough` flag only when you intentionally want broad desktop access.
 

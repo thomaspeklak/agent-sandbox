@@ -184,7 +184,8 @@ pub fn build_launch_plan(
     let psp_session_id = psp_session_id.filter(|_| !lockdown);
     let ssh_auth_sock = ssh_auth_sock.filter(|_| !lockdown);
 
-    let profile = agent::profile_for_with_guards(agent, config, guard_enabled, root_mode, lockdown);
+    let mut profile =
+        agent::profile_for_with_guards(agent, config, guard_enabled, root_mode, lockdown);
     let workdir_mapping = resolve_workdir(workdir)?;
     let container_name = build_container_name(&workdir_mapping.host);
     let cache_dir = &config.sandbox.cache_dir;
@@ -306,19 +307,7 @@ pub fn build_launch_plan(
         }
 
         if let Some(runtime_dir) = clipboard_runtime_dir {
-            mounts.push(PlanMount {
-                host: runtime_dir.to_owned(),
-                container: ClipboardGuard::container_runtime_dir().to_owned(),
-                mode: MountMode::Rw,
-            });
-            let shim_host = runtime_dir.join(crate::clipboard::SHIM_NAME);
-            for name in ["wl-paste", "wl-copy"] {
-                mounts.push(PlanMount {
-                    host: shim_host.clone(),
-                    container: format!("{CONTAINER_HOME}/.local/bin/{name}"),
-                    mode: MountMode::Ro,
-                });
-            }
+            super::clipboard::add_mounts(runtime_dir, agent, &mut mounts, &mut profile);
         }
 
         if let Some(runtime_dir) = host_ui_runtime_dir {

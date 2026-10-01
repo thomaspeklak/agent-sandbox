@@ -16,6 +16,20 @@ pub const GUARD_PLUGIN_JSON: &str = include_str!("../../../agent/hooks/.claude-p
 pub const SETTINGS_EXAMPLE: &str = include_str!("../../../agent/settings.example.json");
 pub const AUTH_PROXY_SHIM: &str = include_str!("../../../agent/auth-proxy-shim");
 pub const CLIPBOARD_SHIM: &str = include_str!("../../../agent/clipboard-shim");
+pub const PI_CLIPBOARD_EXTENSION_FILES: &[(&str, &str)] = &[
+    (
+        "index.ts",
+        include_str!("../../../agent/extensions/clipboard-paste/index.ts"),
+    ),
+    (
+        "editor.mjs",
+        include_str!("../../../agent/extensions/clipboard-paste/editor.mjs"),
+    ),
+    (
+        "bridge.mjs",
+        include_str!("../../../agent/extensions/clipboard-paste/bridge.mjs"),
+    ),
+];
 pub const WEBVIEW_RELAY_SHIM: &str = include_str!("../../../agent/webview-relay-shim");
 pub const WEBVIEW_URL_HELPER: &str = include_str!("../../../agent/webview-url-helper");
 pub const ONEPASSWORD_BOOTSTRAP: &str = include_str!("../../../agent/onepassword-bootstrap");
@@ -124,6 +138,15 @@ pub fn ensure_auth_proxy_shim(dir: &Path) -> io::Result<()> {
 /// Write the embedded clipboard shim to `<dir>/clipboard-shim`.
 pub fn ensure_clipboard_shim(dir: &Path) -> io::Result<()> {
     write_asset(dir, "clipboard-shim", CLIPBOARD_SHIM, Some(0o755))
+}
+
+/// Write clipboard shims and the session-scoped Pi paste extension into `dir`.
+pub fn ensure_clipboard_assets(dir: &Path) -> io::Result<()> {
+    ensure_clipboard_shim(dir)?;
+    for (name, content) in PI_CLIPBOARD_EXTENSION_FILES {
+        write_asset(&dir.join("pi-extension"), name, content, Some(0o644))?;
+    }
+    Ok(())
 }
 
 /// Write the embedded sandbox-side webview relay shim and helper into `dir`.
