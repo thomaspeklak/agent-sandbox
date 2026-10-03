@@ -58,7 +58,10 @@ const agents = {agents};
 let dependencies = {{}};
 if (agents.some(agent => agent === 'pi' || agent === 'gemini')) {{
   const output = require('node:child_process').execFileSync('/usr/local/bin/pnpm', ['list', '-g', '--depth=0', '--json'], {{
-    env: {{ ...process.env, PNPM_HOME: '/usr/local/pnpm', PNPM_CONFIG_STORE_DIR: '/tmp/ags-pnpm-verification-store', PNPM_CONFIG_GLOBAL_BIN_DIR: '/usr/local/pnpm/bin' }},
+    // pnpm 11 requires a writable global bin dir on PATH for every global command except
+    // `root` and `prefix` (pnpm11/pnpm/src/main.ts#L150 at e2fef7f), and verification
+    // mounts /usr/local/pnpm read-only.
+    env: {{ ...process.env, PNPM_HOME: '/usr/local/pnpm', PNPM_CONFIG_STORE_DIR: '/tmp/ags-pnpm-verification-store', PNPM_CONFIG_GLOBAL_BIN_DIR: '/tmp/ags-pnpm-verification-bin', PATH: `/tmp/ags-pnpm-verification-bin:${{process.env.PATH}}` }},
     encoding: 'utf8'
   }});
   for (const project of JSON.parse(output)) Object.assign(dependencies, project.dependencies || {{}});
