@@ -102,6 +102,10 @@ fn setup_base_dirs(base: &Path) {
 fn run_opts(agent: Agent) -> RunOptions {
     RunOptions {
         agent,
+        tty: true,
+        container_name: None,
+        timeout_seconds: None,
+        repo_config: true,
         browser: false,
         tmux: false,
         psp: false,

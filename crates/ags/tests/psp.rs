@@ -67,6 +67,10 @@ fn start_fails_when_binary_exits_immediately() {
 fn validate_options_rejects_psp_keep_without_psp() {
     let opts = RunOptions {
         agent: Agent::Pi,
+        tty: true,
+        container_name: None,
+        timeout_seconds: None,
+        repo_config: true,
         browser: false,
         tmux: false,
         psp: false,

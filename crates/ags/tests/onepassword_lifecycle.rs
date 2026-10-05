@@ -225,6 +225,95 @@ fn resolves_after_preflight_and_hands_only_an_anonymous_fd_to_podman() {
 }
 
 #[test]
+fn headless_payload_run_keeps_cleanup_and_does_not_retry() {
+    for network_failure in [false, true] {
+        let fixture = Fixture::new();
+        let output = fixture.run_with(
+            &[
+                "--config",
+                fixture.config.to_str().unwrap(),
+                "--agent",
+                "pi",
+                "--tty=false",
+                "-1",
+                "Employee/readonly item",
+            ],
+            network_failure,
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(if network_failure { 125 } else { 0 })
+        );
+        let events = fixture.events();
+        assert_eq!(events.matches("op ['item', 'get'").count(), 1);
+        assert_eq!(events.matches("final-fd-ok").count(), 1);
+        let run = events
+            .lines()
+            .find(|line| line.contains("--preserve-fds=1"))
+            .unwrap();
+        assert!(run.contains("\"-i\"") && run.contains("\"--rm\""));
+        assert!(!run.contains("\"-it\""));
+        assert!(!events.contains(SENTINEL));
+        let runtime = fixture.root.path().join("runtime/ags");
+        assert!(bootstrap_dirs(&runtime).is_empty());
+        assert!(!regular_file_contents(&runtime).contains(SENTINEL));
+    }
+}
+
+#[test]
+fn headless_payload_run_still_rejects_remote_podman_before_lookup() {
+    let fixture = Fixture::new();
+    let output = fixture
+        .command(&[
+            "--config",
+            fixture.config.to_str().unwrap(),
+            "--agent",
+            "pi",
+            "--tty=false",
+            "-1",
+            "Employee/readonly item",
+        ])
+        .env("CONTAINER_HOST", "ssh://remote-fixture")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requires local Podman"));
+    assert!(!fixture.events().contains("op ['item', 'get'"));
+}
+
+#[test]
+fn headless_guarded_run_does_not_build_a_missing_image_or_resolve_payloads() {
+    let fixture = Fixture::new();
+    write_executable(
+        &fixture.bin.join("podman"),
+        r#"#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+with open(os.environ['FIXTURE_LOG'], 'a') as log:
+    log.write('podman ' + json.dumps(args) + '\n')
+sys.exit(1 if args[:2] == ['image', 'exists'] else 0)
+"#,
+    );
+    let output = fixture.run(&[
+        "--config",
+        fixture.config.to_str().unwrap(),
+        "--agent",
+        "pi",
+        "--tty=false",
+        "-1",
+        "Employee/readonly item",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("require a preinstalled sandbox image")
+    );
+    let events = fixture.events();
+    assert!(!events.contains("op ['item', 'get'"));
+    assert!(!events.contains("\"build\""));
+    assert!(!events.contains("--entrypoint"));
+}
+
+#[test]
 fn ordered_sources_reach_contiguous_descriptors() {
     let fixture = Fixture::new();
     let output = fixture.run(&[

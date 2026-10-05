@@ -8,7 +8,7 @@ This document explains what each `ags` command does and what side effects to exp
 
 ```bash
 ags [command]
-ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--root] [--lockdown] [--wayland-compositor-passthrough] [--defaults|-D] [--config PATH] [--add-dir PATH ...] [--env NAME=VALUE ...] -- [agent args...]
+ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--root] [--lockdown] [--wayland-compositor-passthrough] [--defaults|-D] [--config PATH] [--tty true|false] [--container-name NAME] [--timeout-seconds SECONDS] [--no-repo-config] [--add-dir PATH ...] [--env NAME=VALUE ...] -- [agent args...]
 ags node <install VERSION|list> [--config PATH]
 ```
 
@@ -80,6 +80,7 @@ ags --agent pi --psp
 ags --agent claude --lockdown
 ags --agent claude -d ~/code -d ~/Downloads
 ags --agent pi --env BROWSER_URL=http://127.0.0.1:9222
+ags --agent shell --tty=false --container-name ci-check --timeout-seconds 300 --no-repo-config -- -lc 'cargo test'
 ```
 
 ### What happens on run
@@ -98,12 +99,17 @@ ags --agent pi --env BROWSER_URL=http://127.0.0.1:9222
 12. If running with `--lockdown`, stage a sanitized per-run agent home/runtime for the selected agent.
 13. Build launch plan (mounts/env/security/network/entrypoint).
 14. For Pi/Claude runs with guards enabled, verify the sandbox image contains `dcg` and warn if it does not.
-15. Ensure image exists (builds if missing), then run `podman run`.
+15. Ensure image exists (builds if missing only when TTY is enabled), then run `podman run`.
 16. In ordinary (non-lockdown) runs, mount the persistent AGS mise Node store read-only and install ephemeral Node command wrappers. Each wrapper finds the nearest `.nvmrc` under the initial workspace on every invocation, including noninteractive commands and nested `cd` paths.
 
 ### Notes
 
 - Args after `--` are passed directly to agent CLI.
+- `--tty true|false` (also `--tty=true|false`) controls terminal allocation and defaults to `true`. Use `--tty=false` for piped/headless commands; stdin remains attached, stdout/stderr are not merged by a terminal, and the container is still removed on exit. This cannot be combined with `--tmux`. Select your agent's non-interactive mode separately (for example, Claude's `-p`); disabling TTY does not change agent arguments or host-side services.
+- Runs with `--tty=false` require an existing sandbox image and never build one automatically. Prepare it with `ags update-image` (and `ags update-agents` for managed agent runtimes). They also do not probe/retry a failed launch, avoiding replay of consumed stdin or work. Version-based network adaptation still applies. Remote Podman is not rejected solely because TTY is disabled; anonymous `--op-secret-set` descriptors still require local Podman.
+- `--container-name NAME` overrides the generated name. Names must be 1–80 ASCII letters, digits, hyphens or underscores, starting with a letter or digit. Existing containers with the same name are not removed or replaced.
+- `--timeout-seconds SECONDS` sets Podman's maximum container lifetime (1–86400 seconds), independently of TTY mode. It does not bound AGS config loading, host preflight, image builds, or sidecar startup.
+- `--no-repo-config` skips discovery, trust lookup/prompting, and merging of `.ags/config.toml` for this run—even if already trusted. The base config selected by `--config` (or the default path) still loads; stored trust is unchanged. Container names and timeouts also accept `--flag=value`.
 - `--defaults` / `-D` prepends AGS-managed default passthrough args for the selected agent harness. Today that means Claude gets `--strict-mcp-config --dangerously-skip-permissions`, Gemini gets `--yolo`, and other agents currently add nothing.
 - `--add-dir <path>` / `-d <path>` adds an extra same-path directory mount for the current run only; repeat it to add multiple directories.
 - User-managed Node versions live under `<cache_dir>/mise`. `ags node install 22` and `ags node list` run mise in the Linux sandbox image; installation is the only workflow that mounts this store read-write. During normal runs it is mounted at `/opt/ags/mise:ro`. This protects the store from writes by the sandboxed agent, but it is not an integrity boundary against its host owner or another process that can write the host cache; install only versions you trust.

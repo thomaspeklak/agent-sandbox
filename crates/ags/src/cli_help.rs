@@ -28,6 +28,18 @@ Run flags:
 \
   --agent <name>       Agent to run (required), or 'shell' for interactive bash
 \
+  --tty <true|false>   Allocate a terminal (default: true; false requires an existing image)
+\
+  --container-name <name>
+\
+                       Override the generated container name (1–80 ASCII characters)
+\
+  --timeout-seconds <seconds>
+\
+                       Limit container lifetime to 1–86400 seconds
+\
+  --no-repo-config    Skip repository-local config and trust lookup for this run
+\
   --browser            Start browser sidecar and browser skill wiring
 \
   --tmux               Launch the agent inside a tmux session

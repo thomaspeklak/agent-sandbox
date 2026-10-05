@@ -5,7 +5,7 @@ mod network;
 
 pub use args::build_run_args;
 pub(crate) use args::{build_image_args, encode_tool_downloads};
-pub(crate) use exec::execute_with_payload_sources;
 pub use exec::{
     PodmanError, ensure_image, execute, image_exists, image_has_binary, write_env_file,
 };
+pub(crate) use exec::{ensure_run_image, execute_with_payload_sources};

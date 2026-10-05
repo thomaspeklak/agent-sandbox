@@ -60,7 +60,7 @@ const BASH: &str = r#"_ags_completion() {
   done
 
   if (( COMP_CWORD == 1 )); then
-    COMPREPLY=( $(compgen -W "$commands --agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "$commands --agent --tty --container-name --timeout-seconds --no-repo-config --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help" -- "$cur") )
     return 0
   fi
 
@@ -178,6 +178,13 @@ const BASH: &str = r#"_ags_completion() {
   esac
 
   case "$prev" in
+    --tty)
+      COMPREPLY=( $(compgen -W "true false" -- "$cur") )
+      return 0
+      ;;
+    --container-name|--timeout-seconds)
+      return 0
+      ;;
     --agent)
       COMPREPLY=( $(compgen -W "$agents" -- "$cur") )
       return 0
@@ -190,6 +197,13 @@ const BASH: &str = r#"_ags_completion() {
       return 0
       ;;
   esac
+
+  if [[ "$cur" == --tty=* ]]; then
+    local value="${cur#--tty=}"
+    COMPREPLY=( $(compgen -W "true false" -- "$value") )
+    COMPREPLY=( "${COMPREPLY[@]/#/--tty=}" )
+    return 0
+  fi
 
   if [[ "$cur" == --agent=* ]]; then
     local value="${cur#--agent=}"
@@ -212,7 +226,7 @@ const BASH: &str = r#"_ags_completion() {
     return 0
   fi
 
-  COMPREPLY=( $(compgen -W "--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help" -- "$cur") )
+  COMPREPLY=( $(compgen -W "--agent --tty --container-name --timeout-seconds --no-repo-config --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help" -- "$cur") )
 }
 
 complete -F _ags_completion ags
@@ -229,7 +243,7 @@ modes=(wrappers aliases both)
 if (( CURRENT == 2 )); then
   _alternative \
     'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions tools node runtime runtimes)' \
-    'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help)'
+    'run-flag:run flag:(--agent --tty --container-name --timeout-seconds --no-repo-config --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help)'
   return
 fi
 
@@ -293,6 +307,10 @@ esac
 
 _arguments -S \
   '--agent[Agent to run]:agent:(pi claude codex gemini opencode shell)' \
+  '--tty[Allocate a terminal (default true)]:tty:(true false)' \
+  '--container-name[Override the generated container name]:name:' \
+  '--timeout-seconds[Maximum container lifetime in seconds]:seconds:' \
+  '--no-repo-config[Skip repository config and trust lookup]' \
   '--browser[Enable browser sidecar]' \
   '--tmux[Launch the agent inside a tmux session]' \
   '--psp[Enable podman-socket-proxy mode (policy-gated)]' \
@@ -335,6 +353,10 @@ complete -c ags -n "__fish_use_subcommand" -a runtime -d "Install or list user-m
 complete -c ags -n "__fish_use_subcommand" -a runtimes -d "Install or list user-managed Node versions"
 
 complete -c ags -n "__fish_use_subcommand" -l agent -r -a "$__ags_agents" -d "Agent to run"
+complete -c ags -n "__fish_use_subcommand" -l tty -r -a "true false" -d "Allocate a terminal (default true)"
+complete -c ags -n "__fish_use_subcommand" -l container-name -r -f -d "Override the generated container name"
+complete -c ags -n "__fish_use_subcommand" -l timeout-seconds -r -f -d "Maximum container lifetime in seconds"
+complete -c ags -n "__fish_use_subcommand" -l no-repo-config -d "Skip repository config and trust lookup"
 complete -c ags -n "__fish_use_subcommand" -l browser -d "Enable browser sidecar"
 complete -c ags -n "__fish_use_subcommand" -l tmux -d "Launch the agent inside a tmux session"
 complete -c ags -n "__fish_use_subcommand" -l psp -d "Enable podman-socket-proxy mode (policy-gated)"
@@ -394,88 +416,5 @@ end
 "#;
 
 #[cfg(test)]
-mod tests {
-    use super::render;
-    use crate::cli::Shell;
-
-    #[test]
-    fn bash_completion_contains_core_flags() {
-        let script = render(Shell::Bash);
-        assert!(script.contains("--agent"));
-        assert!(script.contains("--browser"));
-        assert!(script.contains("--tmux"));
-        assert!(script.contains("--lockdown"));
-        assert!(script.contains("--wayland-compositor-passthrough"));
-        assert!(script.contains("--stop-when-done"));
-        assert!(script.contains("--defaults"));
-        assert!(script.contains("-D"));
-        assert!(script.contains("create-aliases"));
-        assert!(script.contains("completions"));
-        assert!(script.contains("--add-agent-mounts"));
-        assert!(script.contains("--keep-existing"));
-        assert!(script.contains("tools"));
-        assert!(script.contains("COMPREPLY=( $(compgen -f -- \"$cur\") $(compgen -W \"--packages --config -h --help\" -- \"$cur\") )"));
-        assert!(script.contains("--add-dir"));
-        assert!(script.contains("-d"));
-        assert!(script.contains("--env"));
-        assert!(script.contains("--op-secret-set"));
-        assert!(script.contains("-1"));
-    }
-
-    #[test]
-    fn bash_completion_handles_equals_form_file_options() {
-        let script = render(Shell::Bash);
-
-        assert!(script.contains("if [[ \"$cur\" == --config=* ]]; then"));
-        assert!(script.contains("local value=\"${cur#--config=}\""));
-        assert!(script.contains("COMPREPLY=( \"${COMPREPLY[@]/#/--config=}\" )"));
-        assert!(
-            script.contains("if [[ \"$cur\" == --packages=* || \"$cur\" == --config=* ]]; then")
-        );
-        assert!(script.contains("local prefix=\"${cur%%=*}=\""));
-        assert!(script.contains("local value=\"${cur#*=}\""));
-        assert!(script.contains("COMPREPLY=( \"${COMPREPLY[@]/#/$prefix}\" )"));
-    }
-
-    #[test]
-    fn zsh_completion_contains_compdef() {
-        let script = render(Shell::Zsh);
-        assert!(script.starts_with("#compdef ags"));
-        assert!(script.contains("update-agents"));
-        assert!(
-            script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
-        );
-        assert!(script.contains("--packages[Tool catalog JSON file]"));
-        assert!(script.contains("'1:catalog file:_files'"));
-        assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
-        assert!(script.contains("--env[Set a container environment variable (repeatable)]"));
-        assert!(script.contains("--op-secret-set[Inject fields from a 1Password Secure Note]"));
-        assert!(script.contains("-1[Inject fields from a 1Password Secure Note]"));
-        assert!(
-            script.contains(
-                "--psp-keep[Keep PSP-managed containers on exit (debug; requires --psp)]"
-            )
-        );
-    }
-
-    #[test]
-    fn fish_completion_contains_subcommands() {
-        let script = render(Shell::Fish);
-        assert!(script.contains("complete -c ags"));
-        assert!(script.contains("-a completions"));
-        assert!(script.contains(
-            "-l keep-existing -d \"Keep the previous image after a successful rebuild\""
-        ));
-        assert!(script.contains("-a tools"));
-        assert!(script.contains(
-            "complete -c ags -n \"__fish_seen_subcommand_from tools\" -F -d \"Tool catalog JSON file\""
-        ));
-        assert!(script.contains("-l packages -r"));
-        assert!(script.contains("-l psp -d \"Enable podman-socket-proxy mode (policy-gated)\""));
-        assert!(script.contains(
-            "-l psp-keep -d \"Keep PSP-managed containers on exit (debug; requires --psp)\""
-        ));
-        assert!(script.contains("-l env -r"));
-        assert!(script.contains("-l op-secret-set -s 1 -r"));
-    }
-}
+#[path = "completions_tests.rs"]
+mod tests;

@@ -12,6 +12,8 @@ fn minimal_plan() -> LaunchPlan {
         extra_dnf_packages: vec![],
         tool_downloads: vec![],
         container_name: "ags-project-abcd".to_owned(),
+        tty: true,
+        timeout_seconds: None,
         workdir: WorkdirMapping {
             host: PathBuf::from("/home/user/project"),
             container: "/home/user/project".to_owned(),
@@ -66,6 +68,46 @@ fn interactive_output_is_not_persisted_by_podman() {
         assert!(args[..image_index].contains(&"--log-driver=none".to_owned()));
         assert!(args[..image_index].contains(&"-it".to_owned()));
     }
+}
+
+#[test]
+fn headless_runs_keep_stdin_cleanup_and_logging_protection() {
+    for payload_fd_count in [0, 1] {
+        let mut plan = minimal_plan();
+        plan.tty = false;
+        plan.payload_fd_count = payload_fd_count;
+        plan.container_name = "headless-job".to_owned();
+        plan.timeout_seconds = Some(60);
+        let args = build_run_args(&plan, Path::new("/tmp/env"));
+        let image_index = args.iter().position(|arg| arg == &plan.image).unwrap();
+        let flags = &args[..image_index];
+        for flag in [
+            "-i",
+            "--rm",
+            "--pull=never",
+            "--log-driver=none",
+            "--timeout=60",
+        ] {
+            assert!(flags.iter().any(|arg| arg == flag), "missing {flag}");
+        }
+        assert!(!flags.iter().any(|arg| arg == "-it" || arg == "-t"));
+        assert!(
+            flags
+                .windows(2)
+                .any(|pair| pair == ["--name", "headless-job"])
+        );
+    }
+}
+
+#[test]
+fn timeout_is_opt_in_and_independent_of_tty() {
+    let mut plan = minimal_plan();
+    let args = build_run_args(&plan, Path::new("/tmp/env"));
+    assert!(!args.iter().any(|arg| arg.starts_with("--timeout=")));
+    plan.timeout_seconds = Some(86_400);
+    let args = build_run_args(&plan, Path::new("/tmp/env"));
+    assert!(args.contains(&"--timeout=86400".to_owned()));
+    assert!(args.contains(&"-it".to_owned()));
 }
 
 #[test]

@@ -44,7 +44,12 @@ pub fn build_run_args(plan: &LaunchPlan, env_file: &Path) -> Vec<String> {
     // Base flags
     // Keep attached terminal output, but never persist TUI redraws or session
     // contents through the host's default logging driver (often journald).
-    args.extend(["run", "--rm", "-it", "--pull=never", "--log-driver=none"].map(String::from));
+    args.extend(["run", "--rm"].map(String::from));
+    args.push(if plan.tty { "-it" } else { "-i" }.to_owned());
+    args.extend(["--pull=never", "--log-driver=none"].map(String::from));
+    if let Some(seconds) = plan.timeout_seconds {
+        args.push(format!("--timeout={seconds}"));
+    }
     if let Some(ref userns) = plan.security.userns {
         args.push(format!("--userns={userns}"));
     }

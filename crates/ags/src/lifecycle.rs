@@ -35,7 +35,7 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
     }
     // Config loading is intentionally after source/lockdown validation but
     // before all other preflight work. It never invokes `op`.
-    let mut config = match load_config(opts.config_path.as_deref()) {
+    let mut config = match load_config_with_overlay(opts.config_path.as_deref(), opts.repo_config) {
         Ok(c) => c,
         Err(code) => return code,
     };
@@ -307,7 +307,7 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
     let bootstrap_host_path = bootstrap_asset.as_ref().map(BootstrapAssetGuard::path);
 
     // 8. Build launch plan
-    let plan = match crate::plan::build_launch_plan(
+    let mut plan = match crate::plan::build_launch_plan(
         &config,
         &workdir,
         opts.agent,
@@ -351,6 +351,12 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         }
     };
 
+    plan.tty = opts.tty;
+    plan.timeout_seconds = opts.timeout_seconds;
+    if let Some(name) = opts.container_name {
+        plan.container_name = name;
+    }
+
     if matches!(opts.agent, Agent::Pi | Agent::Claude) {
         if opts.root {
             eprintln!("warning: --root grants root access inside the sandbox for this run");
@@ -361,12 +367,7 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
                 opts.agent.as_str()
             );
         } else {
-            if let Err(e) = crate::podman::ensure_image(
-                &plan.image,
-                &plan.containerfile,
-                &plan.extra_dnf_packages,
-                &plan.tool_downloads,
-            ) {
+            if let Err(e) = crate::podman::ensure_run_image(&plan) {
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;
             }
@@ -399,6 +400,13 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
 }
 
 pub fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, ExitCode> {
+    load_config_with_overlay(override_path, true)
+}
+
+fn load_config_with_overlay(
+    override_path: Option<&Path>,
+    repo_config: bool,
+) -> Result<ValidatedConfig, ExitCode> {
     let config_path = override_path
         .map(PathBuf::from)
         .unwrap_or_else(crate::config::default_config_path);
@@ -411,7 +419,11 @@ pub fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, Exit
         eprintln!("Created default config: {}", config_path.display());
     }
 
-    let repo_local_config = resolve_repo_local_config(&config_path);
+    let repo_local_config = if repo_config {
+        resolve_repo_local_config(&config_path)
+    } else {
+        None
+    };
 
     config::parse_and_validate_with_overlay(&config_path, repo_local_config.as_deref()).map_err(
         |e| {

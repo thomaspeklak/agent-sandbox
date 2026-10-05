@@ -92,6 +92,10 @@ pub struct LaunchPlan {
     pub extra_dnf_packages: Vec<String>,
     pub tool_downloads: Vec<LockedToolDownload>,
     pub container_name: String,
+    /// Allocate a terminal; defaults to true for ordinary interactive launches.
+    pub tty: bool,
+    /// Maximum container lifetime enforced by Podman, in seconds.
+    pub timeout_seconds: Option<u32>,
     pub workdir: WorkdirMapping,
     pub mounts: Vec<PlanMount>,
     pub env: PlanEnv,
