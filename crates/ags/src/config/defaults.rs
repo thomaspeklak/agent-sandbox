@@ -62,6 +62,7 @@ pub fn default_config_path() -> PathBuf {
 
 pub const DEFAULT_CONFIG: &str = r#"[sandbox]
 image = "localhost/agent-sandbox:latest"
+# pnpm_version = "12.9.1"  # omitted or "latest" tracks the latest stable release
 containerfile = "~/.config/ags/Containerfile"
 cache_dir = "~/.cache/ags"
 gitconfig_path = "~/.config/ags/gitconfig-agent"

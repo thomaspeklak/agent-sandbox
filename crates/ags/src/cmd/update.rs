@@ -36,6 +36,7 @@ pub fn run(config: &ValidatedConfig, opts: &UpdateOptions) -> Result<(), UpdateE
     let sandbox = &config.sandbox;
     let spec = ImageSpec {
         image: &sandbox.image,
+        pnpm_version: &sandbox.pnpm_version,
         extra_dnf_packages: &sandbox.extra_dnf_packages,
         tool_downloads: &sandbox.tool_downloads,
     };

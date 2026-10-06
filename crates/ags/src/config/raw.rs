@@ -40,6 +40,8 @@ pub struct RawConfig {
 #[derive(Debug, Deserialize)]
 pub struct RawSandbox {
     pub image: String,
+    #[serde(default = "default_pnpm_version")]
+    pub pnpm_version: String,
     pub containerfile: String,
     pub cache_dir: String,
     pub gitconfig_path: String,
@@ -267,6 +269,10 @@ fn default_ro() -> String {
 
 fn default_pi_spec() -> String {
     DEFAULT_PI_SPEC.to_owned()
+}
+
+fn default_pnpm_version() -> String {
+    super::PnpmVersion::default().as_str().to_owned()
 }
 
 fn default_extra_dnf_packages() -> Vec<String> {

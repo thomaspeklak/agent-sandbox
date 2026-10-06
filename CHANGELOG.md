@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Configure `[sandbox].pnpm_version` as `"latest"` (default) or an exact stable release. Image updates and first-time creation use the same SHA-512-verified selection, with no fallback for unavailable pins. Expose the setting in the config editor.
+
 ### Changed
 
 - Build sandbox images incrementally from independently cached OS, Rust, pnpm, vendor-tool, and Glimpse components. `ags update-image` resolves the current stable pnpm release with integrity verification instead of a fixed version; `--rebase` refreshes the Fedora base within its release. Verify candidates offline before publication and preserve existing pnpm storage isolation.

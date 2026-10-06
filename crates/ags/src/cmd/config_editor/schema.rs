@@ -25,6 +25,12 @@ const SANDBOX_FIELDS: &[ScalarFieldSchema] = &[
         default_input: "localhost/agent-sandbox:latest",
     },
     ScalarFieldSchema {
+        key: "pnpm_version",
+        kind: ScalarFieldKind::Text,
+        required: false,
+        default_input: "latest",
+    },
+    ScalarFieldSchema {
         key: "containerfile",
         kind: ScalarFieldKind::Text,
         required: true,

@@ -81,6 +81,7 @@ Core runtime settings.
 ```toml
 [sandbox]
 image = "localhost/agent-sandbox:latest"
+pnpm_version = "latest"  # or an exact stable version such as "12.9.1"
 containerfile = "~/.config/ags/Containerfile"
 cache_dir = "~/.cache/ags"
 gitconfig_path = "~/.config/ags/gitconfig-agent"
@@ -100,6 +101,11 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
 
 - `image` (string, required)
   - Podman image tag used for runs.
+- `pnpm_version` (string, optional; default `"latest"`)
+  - Selects the image-owned pnpm used for development and managed-agent installation: `"latest"` follows npm's latest stable release; an exact `MAJOR.MINOR.PATCH` pins that release.
+  - Ranges, other dist-tags, prereleases, and build metadata are rejected. The requested release must exist and pass SHA-512 integrity verification; AGS never falls back to latest for a missing pin.
+  - Used by both `ags update-image` and first-time image creation. After changing it for an existing image, run `ags update-image`; normal launches do not update images.
+  - Repo-local overlays replace the base value. This is image-wide, not a project's `packageManager` setting: use different image tags for configurations requiring different pnpm versions.
 - `containerfile` (path, required)
   - Where AGS writes a reference copy of the image recipes: the final-assembly `Containerfile`, with component recipes under `image/` next to it. Builds always use a private snapshot of the recipes embedded in the AGS binary, so editing these copies does not change the image.
 - `cache_dir` (path, required)

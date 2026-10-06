@@ -9,10 +9,14 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 use super::error::ImageUpdateError;
+use crate::config::PnpmVersion;
 
 const RUST_CHANNEL_URL: &str = "https://static.rust-lang.org/dist/channel-rust-stable.toml";
 const RUSTUP_RELEASE_URL: &str = "https://static.rust-lang.org/rustup/release-stable.toml";
-const PNPM_LATEST_URL: &str = "https://registry.npmjs.org/pnpm/latest";
+
+fn pnpm_metadata_url(version: &PnpmVersion) -> String {
+    format!("https://registry.npmjs.org/pnpm/{}", version.as_str())
+}
 
 /// Concrete compiler/component identity of the Rust stable channel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,7 +29,7 @@ pub struct RustRelease {
     pub clippy: String,
 }
 
-/// Exact pnpm release selected by npm's `latest` dist-tag.
+/// Exact pnpm release selected by npm's `latest` dist-tag or a configured pin.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PnpmRelease {
@@ -48,10 +52,14 @@ pub fn resolve_rustup() -> Result<String, ImageUpdateError> {
     parse_rustup_release(&body).map_err(|message| metadata_error("rustup", message))
 }
 
-pub fn resolve_pnpm() -> Result<PnpmRelease, ImageUpdateError> {
-    let body = fetch(PNPM_LATEST_URL, 1024 * 1024, Some("application/json"))
-        .map_err(|message| metadata_error("pnpm", message))?;
-    parse_pnpm_latest(&body).map_err(|message| metadata_error("pnpm", message))
+pub fn resolve_pnpm(version: &PnpmVersion) -> Result<PnpmRelease, ImageUpdateError> {
+    let body = fetch(
+        &pnpm_metadata_url(version),
+        1024 * 1024,
+        Some("application/json"),
+    )
+    .map_err(|message| metadata_error("pnpm", message))?;
+    parse_pnpm_release(&body, version).map_err(|message| metadata_error("pnpm", message))
 }
 
 fn metadata_error(component: &'static str, message: String) -> ImageUpdateError {
@@ -186,9 +194,9 @@ pub fn parse_rust_channel(body: &str, triple: &str) -> Result<RustRelease, Strin
     })
 }
 
-pub fn parse_pnpm_latest(body: &str) -> Result<PnpmRelease, String> {
+pub fn parse_pnpm_release(body: &str, requested: &PnpmVersion) -> Result<PnpmRelease, String> {
     #[derive(Deserialize)]
-    struct Latest {
+    struct Release {
         name: String,
         version: String,
         dist: Dist,
@@ -198,25 +206,32 @@ pub fn parse_pnpm_latest(body: &str) -> Result<PnpmRelease, String> {
         integrity: String,
         tarball: String,
     }
-    let latest: Latest =
+    let release: Release =
         serde_json::from_str(body).map_err(|error| format!("malformed npm metadata: {error}"))?;
-    if latest.name != "pnpm" {
-        return Err(format!("npm metadata describes '{}'", latest.name));
+    if release.name != "pnpm" {
+        return Err(format!("npm metadata describes '{}'", release.name));
     }
-    if !is_release_version(&latest.version) {
+    if release.version == "latest" || PnpmVersion::parse(&release.version).is_err() {
         return Err(format!(
-            "npm latest is '{}', not a stable release; refusing to change channel",
-            latest.version
+            "npm release is '{}', not a stable release; refusing to change channel",
+            release.version
+        ));
+    }
+    if requested.as_str() != "latest" && release.version != requested.as_str() {
+        return Err(format!(
+            "requested pnpm {}, but npm metadata describes {}",
+            requested.as_str(),
+            release.version
         ));
     }
     let expected_tarball = format!(
         "https://registry.npmjs.org/pnpm/-/pnpm-{}.tgz",
-        latest.version
+        release.version
     );
-    if latest.dist.tarball != expected_tarball {
-        return Err(format!("unexpected tarball URL {}", latest.dist.tarball));
+    if release.dist.tarball != expected_tarball {
+        return Err(format!("unexpected tarball URL {}", release.dist.tarball));
     }
-    let digest = latest
+    let digest = release
         .dist
         .integrity
         .strip_prefix("sha512-")
@@ -228,8 +243,8 @@ pub fn parse_pnpm_latest(body: &str) -> Result<PnpmRelease, String> {
         .filter(|digest| digest.len() == 64)
         .ok_or_else(|| "integrity is not a sha512 digest".to_owned())?;
     Ok(PnpmRelease {
-        version: latest.version,
-        integrity: latest.dist.integrity,
+        version: release.version,
+        integrity: release.dist.integrity,
         sha512: digest.iter().map(|byte| format!("{byte:02x}")).collect(),
     })
 }

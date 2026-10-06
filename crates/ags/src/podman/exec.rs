@@ -79,11 +79,13 @@ pub fn image_has_binary(image: &str, binary: &str) -> Result<bool, PodmanError> 
 /// not exist yet. An existing image is launched as-is, without update checks.
 pub fn ensure_image(
     image: &str,
+    pnpm_version: &crate::config::PnpmVersion,
     extra_dnf_packages: &[String],
     tool_downloads: &[crate::config::LockedToolDownload],
 ) -> Result<(), PodmanError> {
     crate::image_update::ensure_image(&crate::image_update::ImageSpec {
         image,
+        pnpm_version,
         extra_dnf_packages,
         tool_downloads,
     })
@@ -173,7 +175,12 @@ pub(crate) fn execute_with_payload_sources(
     ensure_local_podman()?;
     let mut plan = plan.clone();
     adapt_network_mode_for_installed_podman(&mut plan);
-    ensure_image(&plan.image, &plan.extra_dnf_packages, &plan.tool_downloads)?;
+    ensure_image(
+        &plan.image,
+        &plan.pnpm_version,
+        &plan.extra_dnf_packages,
+        &plan.tool_downloads,
+    )?;
     let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
     let result = run_payload_sources(&plan, &env_file, passthrough_args, sources);
@@ -213,7 +220,12 @@ fn ensure_local_podman() -> Result<(), PodmanError> {
 fn execute_inner(plan: &LaunchPlan, passthrough_args: &[String]) -> Result<u8, PodmanError> {
     let mut plan = plan.clone();
     adapt_network_mode_for_installed_podman(&mut plan);
-    ensure_image(&plan.image, &plan.extra_dnf_packages, &plan.tool_downloads)?;
+    ensure_image(
+        &plan.image,
+        &plan.pnpm_version,
+        &plan.extra_dnf_packages,
+        &plan.tool_downloads,
+    )?;
     let env_dir = crate::util::runtime_dir().map_err(PodmanError::EnvFileCreate)?;
     let env_file = write_env_file(&plan.env.env_file_entries, &env_dir)?;
     let result = run_container(&plan, &env_file, passthrough_args);

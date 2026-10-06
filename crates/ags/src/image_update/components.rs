@@ -183,7 +183,7 @@ pub fn pnpm(
     };
     let recorded = previous.map(|record| (record.key.as_str(), record.image_id.as_str()));
     if let Some(id) = reusable(ctx, "pnpm", &key, recorded)? {
-        return Ok((record(id), "current; artifact reused".to_owned()));
+        return Ok((record(id), pnpm_summary(previous, release, false)));
     }
     let foundation_id = foundation.ensure(ctx)?;
     let id = ctx.build(BuildStep {
@@ -199,12 +199,17 @@ pub fn pnpm(
         ],
         cache: LayerCache::Reuse,
     })?;
-    let summary = match previous {
-        Some(old) if old.release == *release => "current; artifact rebuilt".to_owned(),
-        Some(_) => format!("updated to {}; artifact rebuilt", release.version),
+    Ok((record(id), pnpm_summary(previous, release, true)))
+}
+
+fn pnpm_summary(previous: Option<&PnpmRecord>, release: &PnpmRelease, rebuilt: bool) -> String {
+    let status = match previous {
+        Some(old) if old.release == *release => "current".to_owned(),
+        Some(_) => format!("updated to {}", release.version),
         None => format!("installed {}", release.version),
     };
-    Ok((record(id), summary))
+    let artifact = if rebuilt { "rebuilt" } else { "reused" };
+    format!("{status}; artifact {artifact}")
 }
 
 pub fn glimpse(
@@ -235,3 +240,7 @@ pub fn glimpse(
     })?;
     Ok((ArtifactRecord { key, image_id: id }, "rebuilt".to_owned()))
 }
+
+#[cfg(test)]
+#[path = "components_tests.rs"]
+mod tests;

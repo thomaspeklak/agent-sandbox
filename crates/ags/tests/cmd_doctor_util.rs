@@ -29,6 +29,7 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
         config_file: tmp.join("config.toml"),
         sandbox: ValidatedSandbox {
             image: "test-image:latest".into(),
+            pnpm_version: Default::default(),
             containerfile,
             cache_dir,
             gitconfig_path: gitconfig,

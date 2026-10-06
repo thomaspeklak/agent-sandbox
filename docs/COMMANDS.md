@@ -216,7 +216,7 @@ The image is assembled from components that are cached and reused independently.
 | Same packages in another order or duplicated | nothing | the selection is sorted and de-duplicated |
 | Rust stable release | Rust toolchain, Glimpse, final assembly | OS, pnpm, vendor tools |
 | rustup release only | Rust toolchain (compiler kept), final assembly | Glimpse, OS, pnpm, vendor tools |
-| pnpm release | pnpm, final assembly | OS, Rust, Glimpse, vendor tools |
+| pnpm release or a pin selecting a different release | pnpm, final assembly | OS, Rust, Glimpse, vendor tools |
 | One vendor tool lock entry | that tool, final assembly | the other tools; unchanged archives are neither downloaded nor extracted again |
 | Vendor tool removed | final assembly (its executable is absent from the new image) | the other tools |
 | `uv.toml`, `tmux.conf`, or other late configuration (new AGS release) | final assembly only | every component |
@@ -240,7 +240,7 @@ Image:      verified and published 3f2a9c1d7e40
 - The base is `registry.fedoraproject.org/fedora:44`. The first run records its digest and image ID, reusing a local copy and pulling only if none exists. Later runs use the recorded image, re-pulling it by digest if it was removed; if that fails, the error suggests `--rebase`.
 - RPM updates are found with `dnf check-upgrade --refresh` (repositories may not be skipped as unavailable) and applied as a checkpoint on top of the previous checkpoint. A checkpoint is kept only if the installed-RPM inventory actually changed.
 - Rust is the current stable release from the official channel manifest. It is installed by an archived, SHA-256-verified `rustup-init` and never self-updates. An unchanged compiler is kept when only rustup changes.
-- pnpm is the exact `latest` release from the npm registry. Pre-releases are refused, and the tarball is verified against the registry's SHA-512 integrity and installed without lifecycle scripts.
+- pnpm defaults to the exact `latest` stable release from the npm registry. Set `[sandbox].pnpm_version = "12.9.1"` to pin an exact stable release, or `"latest"` to restore automatic updates. Ranges and prereleases are refused; unavailable pins fail without fallback. Both policies verify the registry's SHA-512 integrity and install without lifecycle scripts. First-time image creation uses the same policy; existing images change only through `ags update-image`.
 - Vendor tools use the immutable architecture-specific URLs and SHA-256 values in `[sandbox].tool_download_lock`. Archives are downloaded on the host into a private verified store (`~/.cache/ags/image-build/downloads/`). Every stored entry is re-verified before reuse, and mismatched entries are deleted. Only the declared executable is extracted, from `zip`, `tar.gz`, or `tar.xz`. Two tools may not install the same command, and `pnpm` is reserved for the image itself.
 - Malformed or unreachable metadata fails the update with the component's name. The existing image is kept, and AGS never reports it as current.
 

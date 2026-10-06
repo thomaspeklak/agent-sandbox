@@ -3,6 +3,7 @@
 
 [sandbox]
 image = "example/agent-sandbox:latest"
+pnpm_version = "latest"  # or an exact stable version, e.g. "12.9.1"
 containerfile = "~/.config/ags/Containerfile"
 cache_dir = "~/.cache/ags"
 gitconfig_path = "~/.config/ags/gitconfig-agent"

@@ -80,10 +80,54 @@ fn parses_pnpm_latest_with_hex_digest() {
         "https://registry.npmjs.org/pnpm/-/pnpm-10.20.0.tgz",
         &integrity(),
     );
-    let release = parse_pnpm_latest(&body).unwrap();
+    let release = parse_pnpm_release(&body, &PnpmVersion::default()).unwrap();
     assert_eq!(release.version, "10.20.0");
     assert_eq!(release.integrity, integrity());
     assert_eq!(release.sha512, "ab".repeat(64));
+}
+
+#[test]
+fn pnpm_selection_uses_the_requested_registry_endpoint() {
+    assert_eq!(
+        pnpm_metadata_url(&PnpmVersion::default()),
+        "https://registry.npmjs.org/pnpm/latest"
+    );
+    let pin = PnpmVersion::parse("12.9.1").unwrap();
+    assert_eq!(
+        pnpm_metadata_url(&pin),
+        "https://registry.npmjs.org/pnpm/12.9.1"
+    );
+}
+
+#[test]
+fn pinned_pnpm_requires_matching_stable_metadata_and_integrity() {
+    let pin = PnpmVersion::parse("12.9.1").unwrap();
+    let url = "https://registry.npmjs.org/pnpm/-/pnpm-12.9.1.tgz";
+    let body = pnpm_latest("12.9.1", url, &integrity());
+    let pinned = parse_pnpm_release(&body, &pin).unwrap();
+    assert_eq!(
+        pinned,
+        parse_pnpm_release(&body, &PnpmVersion::default()).unwrap()
+    );
+    let mismatch = pnpm_latest(
+        "12.9.2",
+        "https://registry.npmjs.org/pnpm/-/pnpm-12.9.2.tgz",
+        &integrity(),
+    );
+    assert!(
+        parse_pnpm_release(&mismatch, &pin)
+            .unwrap_err()
+            .contains("requested pnpm 12.9.1")
+    );
+    assert!(parse_pnpm_release(&pnpm_latest("12.9.1", url, "sha512-AAAA"), &pin).is_err());
+    assert!(parse_pnpm_release("{\"error\":\"Not found\"}", &pin).is_err());
+    assert!(
+        parse_pnpm_release(
+            &pnpm_latest("latest", url, &integrity()),
+            &PnpmVersion::default()
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -102,6 +146,9 @@ fn rejects_prerelease_foreign_or_unverifiable_pnpm_metadata() {
         pnpm_latest("10.20.0", &url("10.20.0"), &integrity()).replace("\"pnpm\"", "\"npm\""),
         "{".to_owned(),
     ] {
-        assert!(parse_pnpm_latest(&body).is_err(), "accepted {body}");
+        assert!(
+            parse_pnpm_release(&body, &PnpmVersion::default()).is_err(),
+            "accepted {body}"
+        );
     }
 }

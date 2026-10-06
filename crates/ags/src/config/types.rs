@@ -27,6 +27,7 @@ pub struct ValidatedConfig {
 #[derive(Debug, Clone)]
 pub struct ValidatedSandbox {
     pub image: String,
+    pub pnpm_version: super::PnpmVersion,
     pub containerfile: PathBuf,
     pub cache_dir: PathBuf,
     pub gitconfig_path: PathBuf,

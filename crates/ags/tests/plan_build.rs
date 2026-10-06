@@ -170,9 +170,18 @@ fn minimal_plan_has_correct_image() {
     let workdir = tempfile::tempdir().unwrap();
     let plan = build_plan_from(&toml, workdir.path());
     assert_eq!(plan.image, "localhost/agent-sandbox:latest");
+    assert_eq!(plan.pnpm_version.as_str(), "latest");
     assert_eq!(plan.extra_dnf_packages, vec!["ansible-lint", "shellcheck"]);
     assert_eq!(plan.tool_downloads.len(), 1);
     assert_eq!(plan.tool_downloads[0].id, "terraform");
+}
+
+#[test]
+fn plan_carries_the_pnpm_pin_for_first_image_creation() {
+    let toml = minimal_config_toml().replace("[sandbox]", "[sandbox]\npnpm_version = \"12.9.1\"");
+    let workdir = tempfile::tempdir().unwrap();
+    let plan = build_plan_from(&toml, workdir.path());
+    assert_eq!(plan.pnpm_version.as_str(), "12.9.1");
 }
 
 #[test]

@@ -8,6 +8,7 @@ fn minimal_plan() -> LaunchPlan {
     LaunchPlan {
         runtime_lease: None,
         image: "localhost/agent-sandbox:latest".to_owned(),
+        pnpm_version: Default::default(),
         extra_dnf_packages: vec![],
         tool_downloads: vec![],
         container_name: "ags-project-abcd".to_owned(),

@@ -382,6 +382,12 @@ If an older in-place update already broke a session, generation-based updates ca
 
 If the updater cannot inspect containers or acquire the update lock, resolve the Podman error or wait for the other update; do not delete lock files. If inspection fails during post-update cleanup, the update remains published but cleanup is skipped with a warning. A failed install or version check leaves the previous selection intact. See [runtime generations](COMMANDS.md#running-session-safety) for retention and disk usage details.
 
+## A pinned pnpm version is unavailable or unsuitable
+
+`[sandbox].pnpm_version` accepts `"latest"` (the default) or an exact stable version such as `"12.9.1"`. Ranges and prereleases fail config validation. If a pin is unavailable or its integrity cannot be verified, the image update fails and retains the existing image; it never substitutes latest.
+
+Choose another exact stable version, or remove the setting/set it to `"latest"`, then run `ags update-image`. A pin controls the shared image, so use distinct image tags for configurations needing different versions. Pinning an older release can reintroduce upstream bugs, including read-only global-directory permission checks during agent verification.
+
 ## Project pnpm reports `ERR_PNPM_UNEXPECTED_STORE` after upgrading
 
 Normal sandboxes now use a writable per-worktree store at `/var/cache/ags/pnpm/store`; `/usr/local/pnpm` is reserved for the immutable managed-agent runtime. Existing `node_modules` may record the former `/usr/local/pnpm/.store` location.

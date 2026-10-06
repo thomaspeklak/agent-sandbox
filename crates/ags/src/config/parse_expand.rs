@@ -69,6 +69,8 @@ fn validate_sandbox(
     }
     Ok(ValidatedSandbox {
         image: require_non_empty(&raw.image, "[sandbox].image")?.to_owned(),
+        pnpm_version: crate::config::PnpmVersion::parse(&raw.pnpm_version)
+            .map_err(|error| ConfigError::Validation(format!("[sandbox].pnpm_version {error}")))?,
         containerfile: expand_path(&raw.containerfile, "[sandbox].containerfile")?,
         cache_dir: expand_path(&raw.cache_dir, "[sandbox].cache_dir")?,
         gitconfig_path: expand_path(&raw.gitconfig_path, "[sandbox].gitconfig_path")?,

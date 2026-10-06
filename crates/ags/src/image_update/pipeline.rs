@@ -26,6 +26,7 @@ use crate::config::{BASE_DNF_PACKAGES, LockedToolDownload};
 #[derive(Debug, Clone, Copy)]
 pub struct ImageSpec<'a> {
     pub image: &'a str,
+    pub pnpm_version: &'a crate::config::PnpmVersion,
     pub extra_dnf_packages: &'a [String],
     pub tool_downloads: &'a [LockedToolDownload],
 }
@@ -103,7 +104,7 @@ pub fn run(spec: &ImageSpec<'_>, request: UpdateRequest) -> Result<UpdateReport,
     )?;
     let rust_release = metadata::resolve_rust(ctx.platform.rust_triple())?;
     let rustup = metadata::resolve_rustup()?;
-    let pnpm_release = metadata::resolve_pnpm()?;
+    let pnpm_release = metadata::resolve_pnpm(spec.pnpm_version)?;
 
     let mut foundation = Foundation::plan(
         &ctx,
