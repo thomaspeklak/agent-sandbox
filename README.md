@@ -380,12 +380,19 @@ Start here:
 - `ags doctor` — run environment + config health checks
 - `ags update-image [--rebase] [--keep-existing]` — check for and apply image updates incrementally (RPM updates, Rust stable, rustup, pnpm, and catalog-selected DNF and verified-download tools), reusing unchanged components, verifying the result offline before publishing it, and removing the previous image unless it is still referenced by a container or `--keep-existing` is set. `--rebase` refreshes the Fedora base within its release and restarts the OS update layers. See [docs/COMMANDS.md](docs/COMMANDS.md#ags-update-image)
 - `ags update-agents` — install/update agent CLIs in persistent volumes
+- `ags prune-workspace-caches [--dry-run]` — safely collect orphaned checkout caches with seven-day grace and bounded, low-priority deletion; see [daily systemd maintenance](docs/COMMANDS.md#scheduling-with-systemd-recommended)
 - `ags node install <version>` / `ags node list` — manage user Node versions through mise in the persistent AGS store
 - `ags tools --packages <catalog.json>` — choose optional sandbox tools by profession and area
 - `ags install [--link-self] [--force] [--add-agent-mounts]` — install assets/config layout, optional self-link, optional config mount block append
 - `ags uninstall` — currently reserved/no-op cleanup
 - `ags create-aliases` — create managed wrappers and/or shell alias blocks
 - `ags completions --shell <bash|zsh|fish>` — print shell completion script
+
+### Workspace cache maintenance
+
+Workspace caches are not cleaned during agent launches or `ags update-agents`. Schedule `ags prune-workspace-caches` with the optional **daily systemd user timer** in `config/systemd/`; it runs around 03:17–03:32 local time, catches up missed runs, and preserves valid checkouts, container mounts, and pending launches. Installation and status/log commands are in [the maintenance guide](docs/COMMANDS.md#scheduling-with-systemd-recommended). No scheduler is installed by `ags install`.
+
+The first run may report `26 orphaned; 0 removed; 0 pending; 0 filesystem deletions`: that is normal while the seven-day grace period is starting. Large caches are deleted incrementally over subsequent scheduled runs. See [cleanup troubleshooting](docs/TROUBLESHOOTING.md#workspace-cache-pruning-reports-orphans-but-removes-nothing).
 
 ### `node` runtime management
 

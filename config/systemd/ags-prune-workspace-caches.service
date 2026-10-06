@@ -1,0 +1,17 @@
+[Unit]
+Description=Low-impact cleanup of orphaned AGS workspace caches
+
+[Service]
+Type=oneshot
+# Adjust executable/config paths if AGS is installed elsewhere (e.g. ~/.cargo/bin).
+ExecStart=%h/.local/bin/ags prune-workspace-caches --config %h/.config/ags/config.toml
+WorkingDirectory=%h
+Environment=PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+Environment=XDG_RUNTIME_DIR=%t
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=10
+IOWeight=10
+TimeoutStartSec=60s
+TimeoutStopSec=5s
+KillMode=control-group

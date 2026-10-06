@@ -119,6 +119,19 @@ ags update-agents
 ags doctor
 ```
 
+## Optional Daily Workspace Cache Cleanup
+
+After upgrading the host AGS executable, install the low-impact **systemd user timer** from `config/systemd/` using [the maintenance guide](docs/COMMANDS.md#scheduling-with-systemd-recommended). It runs daily around 03:17–03:32 local time with seven-day orphan grace, container/launch protection, and bounded resumable deletion. No timer is installed automatically by `ags install`.
+
+Check the schedule and last result:
+
+```bash
+systemctl --user list-timers ags-prune-workspace-caches.timer
+journalctl --user -u ags-prune-workspace-caches.service -n 20
+```
+
+An initial `orphaned; 0 removed` result is normal: the first run starts the grace clock. See [cleanup troubleshooting](docs/TROUBLESHOOTING.md#workspace-cache-pruning-reports-orphans-but-removes-nothing).
+
 ## Updating Later
 
 From the cloned repository, update AGS itself with one repeatable command:

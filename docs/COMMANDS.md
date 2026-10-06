@@ -380,24 +380,76 @@ An orphan is a checkout that disappeared or whose canonical path, Git metadata d
 Defaults:
 
 - **Seven-day observed-orphan grace:** the first real maintenance run marks an orphan; collection starts only after seven days of subsequent observation. Launching the checkout again clears its marker. `--grace-days <n>` changes this, including explicit `0`. Dry runs neither start the grace clock nor delete caches.
-- **Two cache trees and 1000 filesystem deletions per run**, adjustable with `--max-caches` and `--max-deletions` (minimum 3). Eligible trees are atomically quarantined, then deleted incrementally outside the launch gate. Large trees and interrupted runs resume next time. Symlinks are unlinked, never followed, and deletion refuses to cross filesystems. Budgets bound unlink work, not total directory entries or wall-clock time; use the cron timeout below for a wall-clock cap.
+- **Two cache trees and 1000 filesystem deletions per run**, adjustable with `--max-caches` and `--max-deletions` (minimum 3). Eligible trees are atomically quarantined, then deleted incrementally outside the launch gate. Large trees and interrupted runs resume next time. Symlinks are unlinked, never followed, and deletion refuses to cross filesystems. Budgets bound unlink work, not total directory entries or wall-clock time; use the systemd service or cron timeout below for a wall-clock cap.
 - **CPU nice 19 and Linux idle I/O priority.** If these policies cannot be applied, maintenance fails before mutation. Idle I/O support depends on the kernel/filesystem/scheduler; deletion budgets remain in force regardless.
 - **One fresh Podman inventory**, batched for running **and stopped** containers, only when there are eligible candidates. Any overlapping host mount protects the cache. Inspection has a five-second total deadline and fails closed. Shared launch-plan leases protect pending launches. Concurrent maintenance or a busy launch-registration gate skips successfully rather than waiting.
 
 Maintenance reads only the selected **host config**, never repository overlays, and does not create a missing config, prompt for trust, resolve secrets, or check for AGS releases. Use `--config` for each distinct cache root. `--quiet` suppresses normal output but leaves errors visible.
 
-### Scheduling with cron
+### First-run output
+
+```text
+26 orphaned; 0 removed; 0 pending; 0 filesystem deletions
+```
+
+On a first real run, this normally means 26 caches were marked orphaned and are waiting for the seven-day grace period. It does not mean cleanup failed. Once grace expires, protected container/launch references can still prevent deletion. `pending` counts quarantined trees whose deletion budget ran out, not caches waiting for grace.
+
+To explicitly bypass grace, review first, then run without `--dry-run`:
+
+```bash
+ags prune-workspace-caches --dry-run --grace-days 0
+ags prune-workspace-caches --grace-days 0
+```
+
+All usage/lease checks and deletion budgets still apply. More than two eligible trees or large caches need subsequent runs; increasing budgets trades lower disk usage sooner for more per-run work.
+
+### Scheduling with systemd (recommended)
 
 Upgrade the host AGS executable before enabling collection. Older launchers do not acquire workspace-cache leases: do not launch them concurrently with cleanup. Existing running/stopped containers remain protected by inventory.
 
-Use your **own user crontab**, not root's, so the job inspects the same rootless Podman context as your sandboxes. `config/ags-workspace-cache-prune.cron.example` contains this hourly, timeout-bounded job:
+Install the **user** service and timer from a repository checkout, as the same user who runs AGS/Podman:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp config/systemd/ags-prune-workspace-caches.service config/systemd/ags-prune-workspace-caches.timer ~/.config/systemd/user/
+# Check `command -v ags`; edit the copied service's ExecStart if needed.
+# Defaults: %h/.local/bin/ags and %h/.config/ags/config.toml.
+systemd-analyze --user verify ~/.config/systemd/user/ags-prune-workspace-caches.service ~/.config/systemd/user/ags-prune-workspace-caches.timer
+systemctl --user daemon-reload
+systemctl --user enable --now ags-prune-workspace-caches.timer
+```
+
+The timer uses `OnCalendar=*-*-* 03:17:00`, `RandomizedDelaySec=15m`, and `Persistent=true`: one run daily around **03:17–03:32 local time**, with one catch-up run when the user manager returns after a missed schedule. The service keeps the default seven-day grace and two-tree/1000-deletion budgets, applies nice 19 and idle I/O priority plus low CPU/I/O weights, and limits runtime to 60 seconds with a five-second stop timeout. CPU/I/O weight enforcement depends on cgroup delegation. Control-group termination ensures systemd also terminates lingering subprocesses on timeout. Output goes to the user journal, not a shell profile or interactive prompt.
+
+Check the next run and last result, or run the same protected cleanup now:
+
+```bash
+systemctl --user list-timers ags-prune-workspace-caches.timer
+systemctl --user status ags-prune-workspace-caches.timer
+journalctl --user -u ags-prune-workspace-caches.service -n 20
+systemctl --user start ags-prune-workspace-caches.service
+```
+
+To stop future scheduled runs:
+
+```bash
+systemctl --user disable --now ags-prune-workspace-caches.timer
+```
+
+For execution while logged out, the user manager must keep running. Check `loginctl show-user "$USER" -p Linger`; if your machine's policy permits it, `loginctl enable-linger "$USER"` enables this. Without lingering, missed runs are caught up when the user manager starts again. No systemd timer is installed automatically by `ags install`.
+
+The job must use the **same Podman connection/storage context** as your AGS launches. Preserve any custom `CONTAINER_HOST`, `CONTAINER_CONNECTION`, or container configuration environment in the user service; a different context cannot see the right containers. Use `systemctl --user edit ags-prune-workspace-caches.service` for local overrides and reload/restart the timer after scheduling changes. Keep each distinct cache root's `--config` explicit. Do not install these as root/system services.
+
+### Scheduling with cron (alternative)
+
+Use cron **instead of**, not in addition to, the systemd timer. `config/ags-workspace-cache-prune.cron.example` contains this daily, timeout-bounded user-crontab job:
 
 ```cron
 PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
-17 * * * * XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/bin/timeout --kill-after=5s 60s "$HOME/.local/bin/ags" prune-workspace-caches --quiet
+17 3 * * * XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/bin/timeout --kill-after=5s 60s "$HOME/.local/bin/ags" prune-workspace-caches --quiet
 ```
 
-Adjust the AGS executable/config paths and runtime directory to your environment. Preserve any custom Podman connection/storage environment used for launching; a job in a different Podman context cannot see those containers. If the user runtime directory or Podman context is unavailable, inspection fails and no cache is deleted. The default grace period means the first scheduled run marks orphans, not immediately removes them. No cron job is installed automatically.
+Adjust the executable/config paths and runtime directory to your environment, and preserve the same Podman context as your launches. If the user runtime directory or Podman context is unavailable, inspection fails and no cache is deleted. Unlike the persistent systemd timer, cron does not catch up missed runs. The first scheduled run marks orphans rather than immediately removing them. No cron job is installed automatically.
 
 ---
 

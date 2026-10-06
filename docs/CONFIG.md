@@ -111,6 +111,7 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
 - `cache_dir` (path, required)
   - Host cache dir for ssh-agent env/socket and tool caches. AGS stores mise-managed Node installations below `<cache_dir>/mise`; `ags node install` is the only writer and normal sandbox runs mount that store read-only.
   - Agent updater pnpm downloads live under `<cache_dir>/agent-downloads` and are never mounted in ordinary sandboxes. Normal pnpm development store/cache data lives under `<cache_dir>/workspace-caches/<worktree-identity>`; only the current worktree's cache children are mounted writable. Lockdown uses ephemeral pnpm storage.
+  - Orphaned workspace caches are collected only by `ags prune-workspace-caches`, not during launches or agent updates. The command reads the selected host config without repository overlays. Its grace period and deletion budgets are CLI options, not TOML settings. See [daily systemd scheduling](COMMANDS.md#scheduling-with-systemd-recommended); use the matching `--config` for each distinct cache root.
 - `gitconfig_path` (path, required)
   - Host path for generated git signing config used in container.
 - `auth_key` (path, required)

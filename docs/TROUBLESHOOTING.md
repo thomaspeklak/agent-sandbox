@@ -382,6 +382,45 @@ If an older in-place update already broke a session, generation-based updates ca
 
 If the updater cannot inspect containers or acquire the update lock, resolve the Podman error or wait for the other update; do not delete lock files. If inspection fails during post-update cleanup, the update remains published but cleanup is skipped with a warning. A failed install or version check leaves the previous selection intact. See [runtime generations](COMMANDS.md#running-session-safety) for retention and disk usage details.
 
+## Workspace cache pruning reports orphans but removes nothing
+
+```text
+26 orphaned; 0 removed; 0 pending; 0 filesystem deletions
+```
+
+This is normal on a first run of `ags prune-workspace-caches`: it starts the **seven-day observed-orphan grace period**. Dry runs do not start that clock. `pending` means a tree has already been quarantined and only partially deleted; it does not count caches waiting for grace. After grace expires, running **or stopped** containers and pending launch leases can still retain an orphan.
+
+To clean sooner, explicitly review candidates and bypass only grace:
+
+```bash
+ags prune-workspace-caches --dry-run --grace-days 0
+ags prune-workspace-caches --grace-days 0
+```
+
+Protection checks remain enabled. Each run processes at most two cache trees and 1000 filesystem deletions by default, so large caches may take many daily runs. Use `--max-caches`/`--max-deletions` only if you accept more work per invocation. Never manually remove mounted caches or their lease/lock files. Valid checkouts, inaccessible/ambiguous identities, and unrelated cache domains are retained; this command is not a general disk purge.
+
+## Daily workspace-cache timer is not running or cleanup failed
+
+The optional scheduler is a **systemd user timer**, not a root/system service. Inspect it in the same user's session:
+
+```bash
+systemctl --user is-enabled ags-prune-workspace-caches.timer
+systemctl --user list-timers ags-prune-workspace-caches.timer
+systemctl --user status ags-prune-workspace-caches.service
+journalctl --user -u ags-prune-workspace-caches.service -n 30
+systemctl --user cat ags-prune-workspace-caches.service ags-prune-workspace-caches.timer
+```
+
+- **Unit not found:** `ags install` does not install a scheduler. Follow [systemd installation](COMMANDS.md#scheduling-with-systemd-recommended).
+- **Executable/config missing:** check `command -v ags` and the service's `ExecStart`. The template assumes `~/.local/bin/ags`; source installations commonly use `~/.cargo/bin/ags`. Maintenance intentionally does not create missing configs or read repository overlays.
+- **No run while logged out:** check `loginctl show-user "$USER" -p Linger`. A persistent timer catches up missed runs when the user manager starts, but running while logged out requires lingering/user-manager availability.
+- **Next run is later than 03:17:** a random delay of up to 15 minutes is intentional. The schedule uses local time.
+- **Podman inspection failure or five-second deadline:** verify Podman works in the user's service environment and uses the same connection/storage context as normal launches. Inspection fails closed; no eligible cache is deleted from that attempt. Do not switch to root or another Podman context to bypass it.
+- **Service timeout or `pending` trees:** the 60-second service limit and deletion budgets keep impact low. Quarantined trees are resumable on subsequent runs; interruption does not require manual deletion.
+- **Priority-policy error:** nice/idle-I/O setup must succeed before maintenance mutates caches. Check kernel or sandbox restrictions rather than bypassing the safety/impact policy.
+
+Only enable one scheduler: the daily systemd timer **or** the daily cron alternative, not both. To stop scheduled runs, use `systemctl --user disable --now ags-prune-workspace-caches.timer`.
+
 ## A pinned pnpm version is unavailable or unsuitable
 
 `[sandbox].pnpm_version` accepts `"latest"` (the default) or an exact stable version such as `"12.9.1"`. Ranges and prereleases fail config validation. If a pin is unavailable or its integrity cannot be verified, the image update fails and retains the existing image; it never substitutes latest.

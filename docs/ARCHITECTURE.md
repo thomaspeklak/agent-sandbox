@@ -24,6 +24,13 @@
   - Agent-specific profiles (command, mounts, env, browser integration).
 - `plan/*`
   - Converts config + runtime state into final `LaunchPlan`.
+- `workspace_cache.rs` / `workspace_cache_{gc,usage,delete}.rs`
+  - Records checkout-scoped pnpm cache identities and shared launch-plan leases.
+  - Collection discovers orphan identities without Git subprocesses, refreshes running/stopped Podman mounts under a launch-registration gate, and quarantines only unreferenced/unleased trees after grace.
+  - Deletes quarantined trees outside the gate with a filesystem-deletion budget, retaining coordination metadata for crash recovery. Normal launches do not run collection.
+- `cmd/prune_workspace_caches.rs`
+  - Low-priority, non-interactive maintenance entrypoint, intended for the daily systemd user timer or cron alternative in `config/`.
+  - Reads only the selected host config and bypasses config bootstrap, repository overlays/trust prompts, secrets, and release-check networking.
 - `podman/*`
   - Turns `LaunchPlan` into `podman run` arguments and executes.
   - Renders `podman build` arguments with explicit layer-cache and pull policies.
@@ -71,7 +78,7 @@
 ### Run mode
 
 - Immutable agent-generation mounts are read-only.
-- Normal package-manager writes use a per-worktree pnpm store/cache; lockdown uses ephemeral storage.
+- Normal package-manager writes use a per-worktree pnpm store/cache; lockdown uses ephemeral storage. Launch plans retain shared cache leases until their last owner exits, protecting delayed launches from maintenance.
 - The updater-only pnpm download cache is mounted only in installer containers and is absent from verification and runtime containers.
 - User calls `ags --agent <name> ...`.
 - Config is validated.
@@ -82,7 +89,8 @@
 ### Subcommands
 
 - `setup`/`doctor`/`update`/`update-agents` operate as host-side utilities.
-- `install` writes embedded assets and optional self-link.
+- `prune-workspace-caches` performs explicit orphan cleanup with grace, fresh container usage checks, leases, and bounded resumable deletion; it does not prune valid checkout caches or agent runtime generations. Scheduling is external and optional.
+- `install` writes embedded assets and optional self-link; it does not install maintenance timers or cron jobs.
 - `create-aliases` manages shell alias blocks and wrapper scripts.
 - `completions` prints shell completion scripts (bash/zsh/fish).
 

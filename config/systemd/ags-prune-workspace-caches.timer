@@ -1,0 +1,11 @@
+[Unit]
+Description=Prune orphaned AGS workspace caches daily
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=ags-prune-workspace-caches.service
+
+[Install]
+WantedBy=timers.target
