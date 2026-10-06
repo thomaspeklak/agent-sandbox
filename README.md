@@ -378,7 +378,7 @@ Start here:
 
 - `ags setup` — generate keys, ensure Pi assets in mounted host path, optional keyring secret setup
 - `ags doctor` — run environment + config health checks
-- `ags update-image [--keep-existing]` — rebuild the container image from `Containerfile` with catalog-selected DNF and verified-download tools, and remove the previous image after a successful rebuild unless it is still referenced by a container or `--keep-existing` is set
+- `ags update-image [--rebase] [--keep-existing]` — check for and apply image updates incrementally (RPM updates, Rust stable, rustup, pnpm, and catalog-selected DNF and verified-download tools), reusing unchanged components, verifying the result offline before publishing it, and removing the previous image unless it is still referenced by a container or `--keep-existing` is set. `--rebase` refreshes the Fedora base within its release and restarts the OS update layers. See [docs/COMMANDS.md](docs/COMMANDS.md#ags-update-image)
 - `ags update-agents` — install/update agent CLIs in persistent volumes
 - `ags node install <version>` / `ags node list` — manage user Node versions through mise in the persistent AGS store
 - `ags tools --packages <catalog.json>` — choose optional sandbox tools by profession and area
@@ -503,7 +503,7 @@ Use `config/config.example.toml` for full schema examples.
 - For untrusted or foreign repos, prefer `--lockdown` to minimize host exposure for that run.
 - In lockdown, Bash command classification fails closed if `destructive_command_guard` (`dcg`) is unavailable or errors; run `ags doctor`/`ags update-image` if Bash commands are unexpectedly blocked.
 - Treat `passthrough_env` and configured secrets as sensitive data paths.
-- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`). Normal pnpm operations use writable per-worktree store/cache mounts, separate from read-only agent generations and the updater-only download cache. The sandbox image pins pnpm 11.27.1. For OpenCode, AGS resolves the catalog source saved by `ags tools`, verifies the architecture-specific GitHub Release archive, validates the staged binary version, and atomically activates it in a dedicated persistent volume outside pnpm.
+- npm/pnpm lifecycle scripts are disabled in the sandbox (`ignore-scripts=true`). Normal pnpm operations use writable per-worktree store/cache mounts, separate from read-only agent generations and the updater-only download cache. `ags update-image` resolves the current stable pnpm release from the npm registry and verifies its tarball integrity. For OpenCode, AGS resolves the catalog source saved by `ags tools`, verifies the architecture-specific GitHub Release archive, validates the staged binary version, and atomically activates it in a dedicated persistent volume outside pnpm.
 - Non-RPM tools selected through `ags tools` use pinned HTTPS artifacts for both supported architectures. AGS validates their catalog metadata and verifies SHA-256 before extracting only the declared executable.
 - Rotate/revoke credentials quickly if compromise is suspected.
 - The clipboard bridge is narrower than raw Wayland passthrough. Host clipboard reads require approval by default and can be allowed for `[clipboard].approval_seconds`; disabling approval restores session-wide read access.
@@ -517,7 +517,8 @@ Use `config/config.example.toml` for full schema examples.
 ## Project layout
 
 - `crates/ags/` — Rust CLI implementation
-- `config/Containerfile` — base sandbox image definition
+- `config/Containerfile` — final assembly of the sandbox image from prebuilt components
+- `config/image/` — component recipes (OS baseline and refresh, build foundation, Rust, pnpm, vendor tools, Glimpse) and the offline image verification script
 - `config/tmux.conf` — minimal tmux defaults copied into the sandbox image
 - `config/config.example.toml` — full config template
 - `agent/extensions/guard.ts` — runtime guard extension mounted for Pi

@@ -5,6 +5,7 @@ where
     I: Iterator<Item = String>,
 {
     let mut keep_existing = false;
+    let mut rebase = false;
     let mut config_path = None;
 
     while let Some(arg) = iter.next() {
@@ -13,6 +14,10 @@ where
         }
         if arg == "--keep-existing" {
             keep_existing = true;
+            continue;
+        }
+        if arg == "--rebase" {
+            rebase = true;
             continue;
         }
         if arg == "--config" {
@@ -32,6 +37,7 @@ where
 
     Ok(UpdateImageOptions {
         keep_existing,
+        rebase,
         config_path,
     })
 }

@@ -105,6 +105,7 @@ pub struct CompletionsOptions {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UpdateImageOptions {
     pub keep_existing: bool,
+    pub rebase: bool,
     pub config_path: Option<PathBuf>,
 }
 

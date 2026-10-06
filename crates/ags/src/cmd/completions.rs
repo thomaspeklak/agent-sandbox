@@ -76,7 +76,7 @@ const BASH: &str = r#"_ags_completion() {
         COMPREPLY=( "${COMPREPLY[@]/#/--config=}" )
         return 0
       fi
-      COMPREPLY=( $(compgen -W "--keep-existing --config -h --help" -- "$cur") )
+      COMPREPLY=( $(compgen -W "--keep-existing --rebase --config -h --help" -- "$cur") )
       return 0
       ;;
     update-agents)
@@ -237,6 +237,7 @@ case "$words[2]" in
   update-image)
     _arguments \
       '--keep-existing[Keep the previous image after a successful rebuild]' \
+      '--rebase[Refresh the Fedora base and restart OS update layers]' \
       '--config[Config file to build from]:config file:_files' \
       '(-h --help)'{-h,--help}'[Show help]'
     return
@@ -323,7 +324,7 @@ set -l __ags_modes wrappers aliases both
 # Top-level: subcommands + run-mode flags.
 complete -c ags -n "__fish_use_subcommand" -a setup -d "Generate SSH keys and configure secrets"
 complete -c ags -n "__fish_use_subcommand" -a doctor -d "Run environment and config health checks"
-complete -c ags -n "__fish_use_subcommand" -a update-image -d "Rebuild sandbox image"
+complete -c ags -n "__fish_use_subcommand" -a update-image -d "Check for and apply sandbox image updates"
 complete -c ags -n "__fish_use_subcommand" -a update-agents -d "Reconcile selected agent CLIs"
 complete -c ags -n "__fish_use_subcommand" -a install -d "Install assets/config layout"
 complete -c ags -n "__fish_use_subcommand" -a uninstall -d "Reserved no-op"
@@ -353,6 +354,7 @@ complete -c ags -n "__fish_use_subcommand" -s h -l help -d "Show help"
 
 # update-image
 complete -c ags -n "__fish_seen_subcommand_from update-image" -l keep-existing -d "Keep the previous image after a successful rebuild"
+complete -c ags -n "__fish_seen_subcommand_from update-image" -l rebase -d "Refresh the Fedora base and restart OS update layers"
 complete -c ags -n "__fish_seen_subcommand_from update-image" -l config -r -d "Config file to build from"
 complete -c ags -n "__fish_seen_subcommand_from update-image" -s h -l help -d "Show help"
 
@@ -394,88 +396,5 @@ end
 "#;
 
 #[cfg(test)]
-mod tests {
-    use super::render;
-    use crate::cli::Shell;
-
-    #[test]
-    fn bash_completion_contains_core_flags() {
-        let script = render(Shell::Bash);
-        assert!(script.contains("--agent"));
-        assert!(script.contains("--browser"));
-        assert!(script.contains("--tmux"));
-        assert!(script.contains("--lockdown"));
-        assert!(script.contains("--wayland-compositor-passthrough"));
-        assert!(script.contains("--stop-when-done"));
-        assert!(script.contains("--defaults"));
-        assert!(script.contains("-D"));
-        assert!(script.contains("create-aliases"));
-        assert!(script.contains("completions"));
-        assert!(script.contains("--add-agent-mounts"));
-        assert!(script.contains("--keep-existing"));
-        assert!(script.contains("tools"));
-        assert!(script.contains("COMPREPLY=( $(compgen -f -- \"$cur\") $(compgen -W \"--packages --config -h --help\" -- \"$cur\") )"));
-        assert!(script.contains("--add-dir"));
-        assert!(script.contains("-d"));
-        assert!(script.contains("--env"));
-        assert!(script.contains("--op-secret-set"));
-        assert!(script.contains("-1"));
-    }
-
-    #[test]
-    fn bash_completion_handles_equals_form_file_options() {
-        let script = render(Shell::Bash);
-
-        assert!(script.contains("if [[ \"$cur\" == --config=* ]]; then"));
-        assert!(script.contains("local value=\"${cur#--config=}\""));
-        assert!(script.contains("COMPREPLY=( \"${COMPREPLY[@]/#/--config=}\" )"));
-        assert!(
-            script.contains("if [[ \"$cur\" == --packages=* || \"$cur\" == --config=* ]]; then")
-        );
-        assert!(script.contains("local prefix=\"${cur%%=*}=\""));
-        assert!(script.contains("local value=\"${cur#*=}\""));
-        assert!(script.contains("COMPREPLY=( \"${COMPREPLY[@]/#/$prefix}\" )"));
-    }
-
-    #[test]
-    fn zsh_completion_contains_compdef() {
-        let script = render(Shell::Zsh);
-        assert!(script.starts_with("#compdef ags"));
-        assert!(script.contains("update-agents"));
-        assert!(
-            script.contains("--keep-existing[Keep the previous image after a successful rebuild]")
-        );
-        assert!(script.contains("--packages[Tool catalog JSON file]"));
-        assert!(script.contains("'1:catalog file:_files'"));
-        assert!(script.contains("--psp[Enable podman-socket-proxy mode (policy-gated)]"));
-        assert!(script.contains("--env[Set a container environment variable (repeatable)]"));
-        assert!(script.contains("--op-secret-set[Inject fields from a 1Password Secure Note]"));
-        assert!(script.contains("-1[Inject fields from a 1Password Secure Note]"));
-        assert!(
-            script.contains(
-                "--psp-keep[Keep PSP-managed containers on exit (debug; requires --psp)]"
-            )
-        );
-    }
-
-    #[test]
-    fn fish_completion_contains_subcommands() {
-        let script = render(Shell::Fish);
-        assert!(script.contains("complete -c ags"));
-        assert!(script.contains("-a completions"));
-        assert!(script.contains(
-            "-l keep-existing -d \"Keep the previous image after a successful rebuild\""
-        ));
-        assert!(script.contains("-a tools"));
-        assert!(script.contains(
-            "complete -c ags -n \"__fish_seen_subcommand_from tools\" -F -d \"Tool catalog JSON file\""
-        ));
-        assert!(script.contains("-l packages -r"));
-        assert!(script.contains("-l psp -d \"Enable podman-socket-proxy mode (policy-gated)\""));
-        assert!(script.contains(
-            "-l psp-keep -d \"Keep PSP-managed containers on exit (debug; requires --psp)\""
-        ));
-        assert!(script.contains("-l env -r"));
-        assert!(script.contains("-l op-secret-set -s 1 -r"));
-    }
-}
+#[path = "completions_tests.rs"]
+mod tests;

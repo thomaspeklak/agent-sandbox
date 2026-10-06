@@ -4,10 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Build sandbox images incrementally from independently cached OS, Rust, pnpm, vendor-tool, and Glimpse components. `ags update-image` resolves the current stable pnpm release with integrity verification instead of a fixed version; `--rebase` refreshes the Fedora base within its release. Verify candidates offline before publication and preserve existing pnpm storage isolation.
+
 ### Fixed
 
+- Install Rust's required rustfmt and Clippy components on first image creation before probing the compiler version, and expose compiler proxies on `PATH` while building Glimpse with an isolated Cargo cache.
 - Separate normal pnpm development writes into persistent per-worktree store/cache mounts, with ephemeral lockdown storage and a separate user-global prefix. Keep immutable agent generations and updater-only caches outside that writable boundary.
-- Preserve the updater-only pnpm download cache across updates instead of pruning it, verify candidates without cache or network access, and pin pnpm 11.27.1 in the sandbox image.
+- Preserve the updater-only pnpm download cache across updates instead of pruning it, and verify candidates without cache or network access.
 - Avoid rotating agent runtime generations on no-op updates: compare verified file/dependency manifests and image identity, discard identical candidates, and still run cleanup. Share unchanged immutable files through post-verification hard links; keep the writable pnpm download store separate.
 - Keep running agent sessions intact during `ags update-agents`: install and verify a fresh runtime generation, atomically select it for new sandboxes, and mount published runtimes read-only. Report generations referenced by running and stopped Podman containers. Automatically clean completed generations except the latest, previous, and those referenced by containers or pending-launch leases; also remove unreferenced legacy runtime directories while preserving user caches and settings. Ordinary update failures immediately discard their candidate and sweep older stale candidates; crash-abandoned candidates are collected after a startup grace period while installer-held leases protect live work.
 

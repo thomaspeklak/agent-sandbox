@@ -49,6 +49,7 @@ fn try_sub(label: &str, result: Result<(), impl std::fmt::Display>) -> ExitCode 
 }
 
 fn run_update_image(config: &ValidatedConfig, opts: ags::cli::UpdateImageOptions) -> ExitCode {
+    // Refresh the reference copy; the build itself uses a private snapshot.
     if let Err(e) = ags::assets::ensure_image_build_context(&config.sandbox.containerfile) {
         eprintln!("update-image error: could not prepare image build context: {e}");
         return ExitCode::FAILURE;
@@ -59,7 +60,7 @@ fn run_update_image(config: &ValidatedConfig, opts: ags::cli::UpdateImageOptions
             config,
             &ags::cmd::update::UpdateOptions {
                 keep_existing: opts.keep_existing,
-                ..Default::default()
+                rebase: opts.rebase,
             },
         ),
     )

@@ -443,7 +443,6 @@ pub fn build_launch_plan(
     Ok(LaunchPlan {
         runtime_lease: Some(runtime_lease),
         image: config.sandbox.image.clone(),
-        containerfile: config.sandbox.containerfile.clone(),
         extra_dnf_packages: config.sandbox.extra_dnf_packages.clone(),
         tool_downloads: config.sandbox.tool_downloads.clone(),
         container_name,

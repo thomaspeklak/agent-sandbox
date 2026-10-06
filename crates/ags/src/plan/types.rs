@@ -88,7 +88,6 @@ pub struct LaunchPlan {
     /// Protects selected runtime files until all plan owners finish launching/running.
     pub runtime_lease: Option<std::sync::Arc<crate::agent_runtime::Lease>>,
     pub image: String,
-    pub containerfile: PathBuf,
     pub extra_dnf_packages: Vec<String>,
     pub tool_downloads: Vec<LockedToolDownload>,
     pub container_name: String,
