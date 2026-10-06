@@ -47,7 +47,7 @@ const BASH: &str = r#"_ags_completion() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
   fi
 
-  local commands="setup doctor update-image update-agents install uninstall create-aliases completions tools node runtime runtimes"
+  local commands="setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes"
   local agents="pi claude codex gemini opencode shell"
   local shells="fish zsh bash"
   local modes="wrappers aliases both"
@@ -77,6 +77,14 @@ const BASH: &str = r#"_ags_completion() {
         return 0
       fi
       COMPREPLY=( $(compgen -W "--keep-existing --rebase --config -h --help" -- "$cur") )
+      return 0
+      ;;
+    prune-workspace-caches)
+      if [[ "$prev" == "--config" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+        return 0
+      fi
+      COMPREPLY=( $(compgen -W "--config --dry-run --grace-days --max-caches --max-deletions --quiet -h --help" -- "$cur") )
       return 0
       ;;
     update-agents)
@@ -221,14 +229,14 @@ complete -F _ags_completion ags
 const ZSH: &str = r#"#compdef ags
 
 local -a commands agents shells modes
-commands=(setup doctor update-image update-agents install uninstall create-aliases completions tools node runtime runtimes)
+commands=(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes)
 agents=(pi claude codex gemini opencode shell)
 shells=(fish zsh bash)
 modes=(wrappers aliases both)
 
 if (( CURRENT == 2 )); then
   _alternative \
-    'subcommand:subcommand:(setup doctor update-image update-agents install uninstall create-aliases completions tools node runtime runtimes)' \
+    'subcommand:subcommand:(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes)' \
     'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help)'
   return
 fi
@@ -239,6 +247,17 @@ case "$words[2]" in
       '--keep-existing[Keep the previous image after a successful rebuild]' \
       '--rebase[Refresh the Fedora base and restart OS update layers]' \
       '--config[Config file to build from]:config file:_files' \
+      '(-h --help)'{-h,--help}'[Show help]'
+    return
+    ;;
+  prune-workspace-caches)
+    _arguments \
+      '--config[Host config file]:config file:_files' \
+      '--dry-run[Report without deleting]' \
+      '--grace-days[Observed orphan grace period]:days:' \
+      '--max-caches[Cache tree limit]:count:' \
+      '--max-deletions[Filesystem deletion limit]:count:' \
+      '--quiet[Suppress normal output]' \
       '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
@@ -316,7 +335,7 @@ _arguments -S \
 
 const FISH: &str = r#"complete -c ags -f
 
-set -l __ags_subcommands setup doctor update-image update-agents install uninstall create-aliases completions tools node runtime runtimes
+set -l __ags_subcommands setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes
 set -l __ags_agents pi claude codex gemini opencode shell
 set -l __ags_shells fish zsh bash
 set -l __ags_modes wrappers aliases both
@@ -326,6 +345,7 @@ complete -c ags -n "__fish_use_subcommand" -a setup -d "Generate SSH keys and co
 complete -c ags -n "__fish_use_subcommand" -a doctor -d "Run environment and config health checks"
 complete -c ags -n "__fish_use_subcommand" -a update-image -d "Check for and apply sandbox image updates"
 complete -c ags -n "__fish_use_subcommand" -a update-agents -d "Reconcile selected agent CLIs"
+complete -c ags -n "__fish_use_subcommand" -a prune-workspace-caches -d "Collect orphaned checkout caches"
 complete -c ags -n "__fish_use_subcommand" -a install -d "Install assets/config layout"
 complete -c ags -n "__fish_use_subcommand" -a uninstall -d "Reserved no-op"
 complete -c ags -n "__fish_use_subcommand" -a create-aliases -d "Create wrappers and/or aliases"
@@ -361,6 +381,15 @@ complete -c ags -n "__fish_seen_subcommand_from update-image" -s h -l help -d "S
 # update-agents
 complete -c ags -n "__fish_seen_subcommand_from update-agents" -l config -r -d "Config file to reconcile from"
 complete -c ags -n "__fish_seen_subcommand_from update-agents" -s h -l help -d "Show help"
+
+# prune-workspace-caches
+complete -c ags -n "__fish_seen_subcommand_from prune-workspace-caches" -l config -r -d "Host config file"
+complete -c ags -n "__fish_seen_subcommand_from prune-workspace-caches" -l dry-run -d "Report without deleting"
+complete -c ags -n "__fish_seen_subcommand_from prune-workspace-caches" -l grace-days -r -d "Observed orphan grace period"
+complete -c ags -n "__fish_seen_subcommand_from prune-workspace-caches" -l max-caches -r -d "Cache tree limit"
+complete -c ags -n "__fish_seen_subcommand_from prune-workspace-caches" -l max-deletions -r -d "Filesystem deletion limit"
+complete -c ags -n "__fish_seen_subcommand_from prune-workspace-caches" -l quiet -d "Suppress normal output"
+complete -c ags -n "__fish_seen_subcommand_from prune-workspace-caches" -s h -l help -d "Show help"
 
 # install
 complete -c ags -n "__fish_seen_subcommand_from install" -l link-self -d "Link ags to ~/.local/bin/ags"

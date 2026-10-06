@@ -18,6 +18,7 @@ Subcommands:
 - `doctor`
 - `update`
 - `update-agents`
+- `prune-workspace-caches`
 - `install`
 - `uninstall`
 - `create-aliases`
@@ -360,6 +361,43 @@ Security hardening and runtime hygiene:
 - The updater-only pnpm store/cache are mounted at `/var/cache/ags/agent-pnpm-{store,cache}` only during installation. They persist without automatic `pnpm store prune`; verification runs with no network and mounts neither cache. Ordinary sandboxes cannot access these writable caches.
 - `update-agents` removes stale pnpm self-update shims from `/usr/local/pnpm` so sandbox `pnpm` resolves to the image-provided pnpm binary.
 - Legacy shared npm-global files are left untouched for existing sessions. Managed agent launchers use explicit paths, and managed runtime paths precede npm-global on the sandbox PATH.
+
+---
+
+## `ags prune-workspace-caches`
+
+Non-interactive, low-impact maintenance of orphaned development pnpm caches. It does **not** prune agent runtimes, updater downloads, project `node_modules`, user settings, or caches belonging to still-valid checkouts.
+
+```bash
+ags prune-workspace-caches --dry-run
+ags prune-workspace-caches --config ~/.config/ags/config.toml
+# Explicitly bypass the observed-orphan grace period after reviewing candidates:
+ags prune-workspace-caches --dry-run --grace-days 0
+```
+
+An orphan is a checkout that disappeared or whose canonical path, Git metadata device/inode, or checkout incarnation changed. Non-Git directories and linked worktrees are supported. Inaccessible, malformed, or ambiguous identities are retained. Collection reads shallow identities only: no Git subprocesses, package-size scans, package-manager prune, or network requests.
+
+Defaults:
+
+- **Seven-day observed-orphan grace:** the first real maintenance run marks an orphan; collection starts only after seven days of subsequent observation. Launching the checkout again clears its marker. `--grace-days <n>` changes this, including explicit `0`. Dry runs neither start the grace clock nor delete caches.
+- **Two cache trees and 1000 filesystem deletions per run**, adjustable with `--max-caches` and `--max-deletions` (minimum 3). Eligible trees are atomically quarantined, then deleted incrementally outside the launch gate. Large trees and interrupted runs resume next time. Symlinks are unlinked, never followed, and deletion refuses to cross filesystems. Budgets bound unlink work, not total directory entries or wall-clock time; use the cron timeout below for a wall-clock cap.
+- **CPU nice 19 and Linux idle I/O priority.** If these policies cannot be applied, maintenance fails before mutation. Idle I/O support depends on the kernel/filesystem/scheduler; deletion budgets remain in force regardless.
+- **One fresh Podman inventory**, batched for running **and stopped** containers, only when there are eligible candidates. Any overlapping host mount protects the cache. Inspection has a five-second total deadline and fails closed. Shared launch-plan leases protect pending launches. Concurrent maintenance or a busy launch-registration gate skips successfully rather than waiting.
+
+Maintenance reads only the selected **host config**, never repository overlays, and does not create a missing config, prompt for trust, resolve secrets, or check for AGS releases. Use `--config` for each distinct cache root. `--quiet` suppresses normal output but leaves errors visible.
+
+### Scheduling with cron
+
+Upgrade the host AGS executable before enabling collection. Older launchers do not acquire workspace-cache leases: do not launch them concurrently with cleanup. Existing running/stopped containers remain protected by inventory.
+
+Use your **own user crontab**, not root's, so the job inspects the same rootless Podman context as your sandboxes. `config/ags-workspace-cache-prune.cron.example` contains this hourly, timeout-bounded job:
+
+```cron
+PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+17 * * * * XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/bin/timeout --kill-after=5s 60s "$HOME/.local/bin/ags" prune-workspace-caches --quiet
+```
+
+Adjust the AGS executable/config paths and runtime directory to your environment. Preserve any custom Podman connection/storage environment used for launching; a job in a different Podman context cannot see those containers. If the user runtime directory or Podman context is unavailable, inspection fails and no cache is deleted. The default grace period means the first scheduled run marks orphans, not immediately removes them. No cron job is installed automatically.
 
 ---
 

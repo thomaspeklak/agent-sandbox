@@ -4,7 +4,6 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::workspace_cache::{self, WorkspacePnpmCache};
 use crate::BROWSER_HOST_LOOPBACK;
 use crate::agent::{self, AgentProfile, OPENCODE_INSTALL_HOME};
 use crate::auth_proxy::host::AuthProxyGuard;
@@ -18,6 +17,7 @@ use crate::host_ui::HostUiGuard;
 use crate::plan::types::*;
 use crate::util::shell_quote;
 use crate::webview_relay::WebviewRelayGuard;
+use crate::workspace_cache::{self, WorkspacePnpmCache};
 
 // Container-side path constants.
 const CONTAINER_HOME: &str = "/home/dev";
@@ -442,6 +442,7 @@ pub fn build_launch_plan(
 
     Ok(LaunchPlan {
         runtime_lease: Some(runtime_lease),
+        workspace_cache_lease: workspace_pnpm_cache.map(|cache| cache.lease),
         image: config.sandbox.image.clone(),
         pnpm_version: config.sandbox.pnpm_version.clone(),
         extra_dnf_packages: config.sandbox.extra_dnf_packages.clone(),

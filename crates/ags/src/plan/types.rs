@@ -87,6 +87,8 @@ impl std::error::Error for PlanError {}
 pub struct LaunchPlan {
     /// Protects selected runtime files until all plan owners finish launching/running.
     pub runtime_lease: Option<std::sync::Arc<crate::agent_runtime::Lease>>,
+    /// Protects writable workspace caches across delayed/concurrent launches.
+    pub workspace_cache_lease: Option<std::sync::Arc<crate::workspace_cache::Lease>>,
     pub image: String,
     pub pnpm_version: crate::config::PnpmVersion,
     pub extra_dnf_packages: Vec<String>,

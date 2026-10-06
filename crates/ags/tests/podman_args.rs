@@ -7,6 +7,7 @@ use ags::podman::{build_run_args, write_env_file};
 fn minimal_plan() -> LaunchPlan {
     LaunchPlan {
         runtime_lease: None,
+        workspace_cache_lease: None,
         image: "localhost/agent-sandbox:latest".to_owned(),
         pnpm_version: Default::default(),
         extra_dnf_packages: vec![],

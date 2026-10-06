@@ -1,0 +1,7 @@
+# Add these lines to the crontab of the SAME user who runs AGS/Podman.
+# Do not install as root. Adjust the executable/config paths if necessary.
+# AGS lowers itself to CPU nice 19 and Linux idle I/O priority.
+# A single run handles at most 2 trees and 1000 filesystem deletions;
+# interrupted/partial deletion resumes on the next run. Errors are not hidden.
+PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+17 * * * * XDG_RUNTIME_DIR=/run/user/$(id -u) /usr/bin/timeout --kill-after=5s 60s "$HOME/.local/bin/ags" prune-workspace-caches --quiet

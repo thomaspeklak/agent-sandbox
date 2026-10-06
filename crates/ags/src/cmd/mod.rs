@@ -5,6 +5,7 @@ pub mod doctor;
 mod doctor_util;
 pub mod install;
 pub mod node;
+pub mod prune_workspace_caches;
 pub mod setup;
 pub mod tool_configurator;
 pub mod update;

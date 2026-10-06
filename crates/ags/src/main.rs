@@ -4,9 +4,19 @@ use ags::cli::{self, Command, SubCommand};
 use ags::config::ValidatedConfig;
 
 fn main() -> ExitCode {
-    let update_check = ags::update_check::UpdateCheck::from_default_cache();
+    let command = cli::parse_args(std::env::args());
+    // Maintenance must not trigger even the background release-check network.
+    let maintenance = matches!(
+        &command,
+        Ok(Command::Sub(SubCommand::PruneWorkspaceCaches(_)))
+    );
+    let update_check = if maintenance {
+        None
+    } else {
+        Some(ags::update_check::UpdateCheck::from_default_cache())
+    };
 
-    let code = match cli::parse_args(std::env::args()) {
+    let code = match command {
         Ok(Command::Run(opts)) => ags::lifecycle::run_agent(opts),
         Ok(Command::Sub(sub)) => {
             let skip_notice = matches!(
@@ -33,7 +43,9 @@ fn main() -> ExitCode {
         }
     };
 
-    update_check.notify_if_available();
+    if let Some(update_check) = update_check {
+        update_check.notify_if_available();
+    }
     code
 }
 
@@ -91,6 +103,12 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 ags::cmd::tool_configurator::run(&config_path, &opts.packages_path),
             );
         }
+        SubCommand::PruneWorkspaceCaches(ref opts) => {
+            return try_sub(
+                "prune-workspace-caches",
+                ags::cmd::prune_workspace_caches::run(opts),
+            );
+        }
         SubCommand::Node(_) => {}
         SubCommand::Setup
         | SubCommand::Doctor
@@ -135,6 +153,7 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
         ),
         SubCommand::Node(ref opts) => try_sub("node", ags::cmd::node::run(&config, opts)),
         SubCommand::Install(_)
+        | SubCommand::PruneWorkspaceCaches(_)
         | SubCommand::Uninstall
         | SubCommand::CreateAliases(_)
         | SubCommand::Completions(_)

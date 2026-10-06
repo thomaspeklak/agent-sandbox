@@ -12,6 +12,8 @@ Commands:
 \
   update-agents  Reconcile selected agents in persistent volumes
 \
+  prune-workspace-caches  Collect orphaned checkout caches (cron-friendly)
+\
   install        Install config/assets (optional self-link)
 \
   uninstall      Reserved (currently no-op)
@@ -73,6 +75,21 @@ Update-image flags:
 Update-agents flags:
 \
   --config <path> Config file to reconcile from (default: ~/.config/ags/config.toml)
+
+\
+Prune-workspace-caches flags:
+\
+  --config <path>       Host config only (no repository overlays or prompts)
+\
+  --dry-run             Report eligible caches without deleting or marking orphans
+\
+  --grace-days <n>      Days since first observed orphaned (default: 7)
+\
+  --max-caches <n>      Maximum cache trees processed (default: 2)
+\
+  --max-deletions <n>   Maximum file/directory unlinks (default: 1000; minimum: 3)
+\
+  --quiet               Suppress normal output (errors still reported)
 
 \
 Install flags:

@@ -1,35 +1,77 @@
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+#[path = "workspace_cache_delete.rs"]
+mod delete;
+#[path = "workspace_cache_gc.rs"]
+mod gc;
+#[path = "workspace_cache_usage.rs"]
+mod usage;
+pub use gc::{PruneOptions, PruneReport, prune};
 use sha2::{Digest, Sha256};
 
-use super::types::PlanError;
+use crate::plan::PlanError;
 
-pub(super) const STORE_CONTAINER: &str = "/var/cache/ags/pnpm/store";
-pub(super) const CACHE_CONTAINER: &str = "/var/cache/ags/pnpm/cache";
+pub(crate) const STORE_CONTAINER: &str = "/var/cache/ags/pnpm/store";
+pub(crate) const CACHE_CONTAINER: &str = "/var/cache/ags/pnpm/cache";
 const INCARNATION_FILE: &str = "ags-workspace-id";
 
-pub(super) struct WorkspacePnpmCache {
+pub(crate) struct WorkspacePnpmCache {
     pub store: PathBuf,
     pub cache: PathBuf,
+    pub lease: Arc<Lease>,
 }
 
-#[derive(Serialize)]
+/// Shared until the last launch-plan owner exits; never mounted into a sandbox.
+#[derive(Debug)]
+pub struct Lease {
+    _lock: Lock,
+}
+
+#[derive(Debug)]
+struct Lock(fs::File);
+
+impl Lock {
+    fn open(path: &Path) -> io::Result<Self> {
+        fs::File::options()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+            .map(Self)
+    }
+}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
+const ROOT: &str = "workspace-caches";
+
+#[derive(Deserialize, Serialize)]
 struct Identity {
     worktree: String,
     anchor_device: u64,
     anchor_inode: u64,
     checkout_incarnation: Option<String>,
+    #[serde(default)]
+    git_anchor: Option<PathBuf>,
 }
 
 /// Scope writable package-manager state to one checkout incarnation. The ID is
 /// stored in per-worktree Git metadata, so it survives ordinary Git activity but
 /// disappears when the checkout metadata is removed and recreated.
-pub(super) fn prepare(cache_root: &Path, workdir: &Path) -> Result<WorkspacePnpmCache, PlanError> {
+pub(crate) fn prepare(cache_root: &Path, workdir: &Path) -> Result<WorkspacePnpmCache, PlanError> {
     let worktree = crate::git::repo_root(workdir).unwrap_or_else(|| workdir.to_owned());
     let worktree = fs::canonicalize(&worktree).map_err(|source| PlanError::DirCreate {
         path: worktree.clone(),
@@ -55,7 +97,22 @@ pub(super) fn prepare(cache_root: &Path, workdir: &Path) -> Result<WorkspacePnpm
         metadata.ino(),
         incarnation.as_deref(),
     );
-    let root = cache_root.join("workspace-caches").join(id);
+    let parent = cache_root.join(ROOT);
+    let coordinated = || -> io::Result<(Lock, Lock)> {
+        fs::create_dir_all(&parent)?;
+        let gate = Lock::open(&parent.join("cleanup.lock"))?;
+        gate.0.lock_shared()?;
+        let root = parent.join(&id);
+        fs::create_dir_all(&root)?;
+        let lease = Lock::open(&root.join(".lease"))?;
+        lease.0.lock_shared()?;
+        Ok((gate, lease))
+    };
+    let (_gate, lease) = coordinated().map_err(|source| PlanError::DirCreate {
+        path: parent.clone(),
+        source,
+    })?;
+    let root = parent.join(id);
     let store = root.join("pnpm-store");
     let cache = root.join("pnpm-cache");
     for path in [&store, &cache] {
@@ -69,13 +126,29 @@ pub(super) fn prepare(cache_root: &Path, workdir: &Path) -> Result<WorkspacePnpm
         anchor_device: metadata.dev(),
         anchor_inode: metadata.ino(),
         checkout_incarnation: incarnation,
+        git_anchor: git_dir,
     };
     let bytes = serde_json::to_vec_pretty(&identity).expect("workspace identity is serializable");
-    fs::write(root.join("identity.json"), bytes).map_err(|source| PlanError::DirCreate {
+    let publish = || -> io::Result<()> {
+        let mut file = tempfile::NamedTempFile::new_in(&root)?;
+        file.write_all(&bytes)?;
+        file.persist(root.join("identity.json"))
+            .map_err(|e| e.error)?;
+        match fs::remove_file(root.join(".orphaned")) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        }
+    };
+    publish().map_err(|source| PlanError::DirCreate {
         path: root.join("identity.json"),
         source,
     })?;
-    Ok(WorkspacePnpmCache { store, cache })
+    Ok(WorkspacePnpmCache {
+        store,
+        cache,
+        lease: Arc::new(Lease { _lock: lease }),
+    })
 }
 
 fn checkout_incarnation(git_dir: &Path) -> io::Result<String> {
@@ -104,7 +177,16 @@ fn checkout_incarnation(git_dir: &Path) -> io::Result<String> {
 }
 
 fn read_incarnation(path: &Path) -> io::Result<String> {
-    let identity = fs::read_to_string(path)?;
+    let mut identity = String::new();
+    fs::File::open(path)?
+        .take(4097)
+        .read_to_string(&mut identity)?;
+    if identity.len() > 4096 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "workspace identity is oversized",
+        ));
+    }
     let identity = identity.trim();
     if identity.is_empty() {
         return Err(io::Error::new(

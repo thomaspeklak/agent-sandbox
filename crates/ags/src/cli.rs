@@ -4,6 +4,8 @@ mod agent;
 mod help;
 #[path = "cli_node.rs"]
 mod node;
+#[path = "cli_prune.rs"]
+mod prune;
 #[path = "cli_subcommands.rs"]
 mod subcommands;
 #[path = "cli_tools.rs"]
@@ -20,6 +22,7 @@ use std::path::PathBuf;
 
 pub use agent::Agent;
 pub use node::{NodeCommand, NodeOptions};
+pub use prune::PruneWorkspaceCachesOptions;
 pub use tools::ToolConfigOptions;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +124,7 @@ pub enum SubCommand {
     UpdateImage(UpdateImageOptions),
     UpdateDeprecated(UpdateImageOptions),
     UpdateAgents(UpdateAgentsCliOptions),
+    PruneWorkspaceCaches(PruneWorkspaceCachesOptions),
     Install(InstallOptions),
     Uninstall,
     CreateAliases(CreateAliasesOptions),
@@ -150,6 +154,7 @@ pub enum CliError {
     ReservedEnvName(String),
     InvalidShell(String),
     InvalidAliasMode(String),
+    InvalidPruneOption(String),
     UnexpectedFlag(String),
     UnexpectedPositional(String),
 }
@@ -195,6 +200,7 @@ impl fmt::Display for CliError {
             Self::InvalidAliasMode(mode) => {
                 write!(f, "invalid mode '{mode}' (expected wrappers|aliases|both)")
             }
+            Self::InvalidPruneOption(flag) => write!(f, "invalid or missing numeric value for {flag}"),
             Self::UnexpectedFlag(flag) => write!(f, "unexpected flag '{flag}'"),
             Self::UnexpectedPositional(arg) => write!(
                 f,
@@ -239,6 +245,11 @@ where
         "update-agents" => {
             return Ok(Command::Sub(SubCommand::UpdateAgents(
                 update_agents::parse_args(iter)?,
+            )));
+        }
+        "prune-workspace-caches" => {
+            return Ok(Command::Sub(SubCommand::PruneWorkspaceCaches(
+                prune::parse_args(iter)?,
             )));
         }
         "install" => {
