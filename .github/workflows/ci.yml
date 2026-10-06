@@ -20,6 +20,8 @@ jobs:
       - run: node --test agent/tests/clipboard-*.test.mjs
       - run: cargo fmt --check
       - run: cargo clippy -p ags -- -D warnings
+      # Prime all workspace dependencies for the offline standalone Glimpse lock check.
+      - run: cargo fetch --locked
       - run: cargo test -p ags
 
   macos-check:

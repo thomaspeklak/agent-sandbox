@@ -32,7 +32,8 @@ cargo fmt
 # lint
 cargo clippy -p ags -- -D warnings
 
-# tests
+# tests (fetch workspace dependencies for the offline Glimpse lockfile check)
+cargo fetch --locked
 cargo test -p ags
 node --test agent/tests/clipboard-*.test.mjs
 ```
@@ -100,6 +101,7 @@ podman run --rm -it \
 
 - [ ] `cargo fmt`
 - [ ] `cargo clippy -p ags -- -D warnings`
+- [ ] `cargo fetch --locked`
 - [ ] `cargo test -p ags`
 - [ ] `node --test agent/tests/clipboard-*.test.mjs`
 - [ ] docs updated (`README.md`, `docs/*`, config examples) if needed
