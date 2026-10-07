@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Add cron-friendly `ags prune-workspace-caches` with seven-day observed-orphan grace, CPU/idle-I/O priority, bounded resumable deletion, dry-run support, and daily systemd user timer/service templates (with a daily cron alternative). Preserve valid checkouts, running/stopped container mounts, and pending launch leases; skip deletion when usage cannot be proved safe.
+- Add cron-friendly `ags prune-workspace-caches` with seven-day CLI-default observed-orphan grace, CPU/idle-I/O priority, bounded resumable deletion, dry-run support, and daily systemd user timer/service templates using one-day grace (with a daily cron alternative retaining the CLI default). Preserve valid checkouts, running/stopped container mounts, and pending launch leases; skip deletion when usage cannot be proved safe.
 
 ## [0.25.0] - 2026-10-06
 

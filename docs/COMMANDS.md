@@ -377,7 +377,7 @@ ags prune-workspace-caches --dry-run --grace-days 0
 
 An orphan is a checkout that disappeared or whose canonical path, Git metadata device/inode, or checkout incarnation changed. Non-Git directories and linked worktrees are supported. Inaccessible, malformed, or ambiguous identities are retained. Collection reads shallow identities only: no Git subprocesses, package-size scans, package-manager prune, or network requests.
 
-Defaults:
+CLI defaults (the systemd service overrides grace to one day):
 
 - **Seven-day observed-orphan grace:** the first real maintenance run marks an orphan; collection starts only after seven days of subsequent observation. Launching the checkout again clears its marker. `--grace-days <n>` changes this, including explicit `0`. Dry runs neither start the grace clock nor delete caches.
 - **Two cache trees and 1000 filesystem deletions per run**, adjustable with `--max-caches` and `--max-deletions` (minimum 3). Eligible trees are atomically quarantined, then deleted incrementally outside the launch gate. Large trees and interrupted runs resume next time. Symlinks are unlinked, never followed, and deletion refuses to cross filesystems. Budgets bound unlink work, not total directory entries or wall-clock time; use the systemd service or cron timeout below for a wall-clock cap.
@@ -392,7 +392,7 @@ Maintenance reads only the selected **host config**, never repository overlays, 
 26 orphaned; 0 removed; 0 pending; 0 filesystem deletions
 ```
 
-On a first real run, this normally means 26 caches were marked orphaned and are waiting for the seven-day grace period. It does not mean cleanup failed. Once grace expires, protected container/launch references can still prevent deletion. `pending` counts quarantined trees whose deletion budget ran out, not caches waiting for grace.
+On a first real run, this normally means 26 caches were marked orphaned and are waiting for the observed-orphan grace period (one day in the systemd service; seven days for the CLI without `--grace-days`). It does not mean cleanup failed. Once grace expires, protected container/launch references can still prevent deletion. `pending` counts quarantined trees whose deletion budget ran out, not caches waiting for grace.
 
 To explicitly bypass grace, review first, then run without `--dry-run`:
 
@@ -419,7 +419,9 @@ systemctl --user daemon-reload
 systemctl --user enable --now ags-prune-workspace-caches.timer
 ```
 
-The timer uses `OnCalendar=*-*-* 03:17:00`, `RandomizedDelaySec=15m`, and `Persistent=true`: one run daily around **03:17–03:32 local time**, with one catch-up run when the user manager returns after a missed schedule. The service keeps the default seven-day grace and two-tree/1000-deletion budgets, applies nice 19 and idle I/O priority plus low CPU/I/O weights, and limits runtime to 60 seconds with a five-second stop timeout. CPU/I/O weight enforcement depends on cgroup delegation. Control-group termination ensures systemd also terminates lingering subprocesses on timeout. Output goes to the user journal, not a shell profile or interactive prompt.
+The timer uses `OnCalendar=*-*-* 03:17:00`, `RandomizedDelaySec=15m`, and `Persistent=true`: one run daily around **03:17–03:32 local time**, with one catch-up run when the user manager returns after a missed schedule. The service explicitly sets **one-day observed-orphan grace** (`--grace-days 1`) and keeps the default two-tree/1000-deletion budgets, applies nice 19 and idle I/O priority plus low CPU/I/O weights, and limits runtime to 60 seconds with a five-second stop timeout. CPU/I/O weight enforcement depends on cgroup delegation. Control-group termination ensures systemd also terminates lingering subprocesses on timeout. Output goes to the user journal, not a shell profile or interactive prompt.
+
+The one-day grace allows a temporarily missing checkout or mount to return while avoiding a week-long delay for rebuildable caches. Container and launch protections still apply. To update an existing installation, recopy the service and run `systemctl --user daemon-reload`; the enabled timer does not need restarting for this service-only change.
 
 Check the next run and last result, or run the same protected cleanup now:
 

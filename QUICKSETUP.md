@@ -121,7 +121,7 @@ ags doctor
 
 ## Optional Daily Workspace Cache Cleanup
 
-After upgrading the host AGS executable, install the low-impact **systemd user timer** from `config/systemd/` using [the maintenance guide](docs/COMMANDS.md#scheduling-with-systemd-recommended). It runs daily around 03:17–03:32 local time with seven-day orphan grace, container/launch protection, and bounded resumable deletion. No timer is installed automatically by `ags install`.
+After upgrading the host AGS executable, install the low-impact **systemd user timer** from `config/systemd/` using [the maintenance guide](docs/COMMANDS.md#scheduling-with-systemd-recommended). It runs daily around 03:17–03:32 local time with one-day observed-orphan grace (`--grace-days 1`), container/launch protection, and bounded resumable deletion. No timer is installed automatically by `ags install`.
 
 Check the schedule and last result:
 

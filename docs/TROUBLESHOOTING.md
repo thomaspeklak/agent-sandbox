@@ -388,7 +388,7 @@ If the updater cannot inspect containers or acquire the update lock, resolve the
 26 orphaned; 0 removed; 0 pending; 0 filesystem deletions
 ```
 
-This is normal on a first run of `ags prune-workspace-caches`: it starts the **seven-day observed-orphan grace period**. Dry runs do not start that clock. `pending` means a tree has already been quarantined and only partially deleted; it does not count caches waiting for grace. After grace expires, running **or stopped** containers and pending launch leases can still retain an orphan.
+This is normal on a first run of `ags prune-workspace-caches`: it starts the **observed-orphan grace period**, measured from first detection, not cache creation. The systemd service uses **one day** (`--grace-days 1`); the CLI default remains **seven days**. Dry runs do not start that clock. `pending` means a tree has already been quarantined and only partially deleted; it does not count caches waiting for grace. After grace expires, running **or stopped** containers and pending launch leases can still retain an orphan.
 
 To clean sooner, explicitly review candidates and bypass only grace:
 
