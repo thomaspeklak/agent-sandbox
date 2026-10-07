@@ -4,13 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-07
+
 ### Added
 
-- Add cron-friendly `ags prune-workspace-caches` with seven-day CLI-default observed-orphan grace, CPU/idle-I/O priority, bounded resumable deletion, dry-run support, and daily systemd user timer/service templates using one-day grace (with a daily cron alternative retaining the CLI default). Preserve valid checkouts, running/stopped container mounts, and pending launch leases; skip deletion when usage cannot be proved safe.
+- Reclaim pnpm workspace caches left behind by deleted or replaced checkouts with `ags prune-workspace-caches`. Preview cleanup with `--dry-run`, adjust the observed-orphan grace period, and leave valid checkouts and unrelated caches untouched.
+- Clean up safely in the background: running **and stopped** container mounts and pending launches protect their caches, and failed container inspection prevents deletion. Low CPU/I/O priority and bounded, resumable deletion keep maintenance work limited, even for large caches.
+- Schedule daily cleanup with the optional systemd user service and timer, including catch-up after missed runs, or use the documented cron alternative. The systemd service uses a **one-day grace period** from first orphan detection; the standalone command retains its seven-day default. Upgrade the host AGS executable before enabling maintenance and install the scheduler explicitly—`ags install` does not enable it automatically.
 
 ### Removed
 
-- Remove this repository's unused Beads issue tracker and agent workflow integration. The sandbox's bundled `br`/`bv` tools remain available for other projects.
+- Retire this repository's unused Beads issue tracker and agent workflow integration. The sandbox's bundled `br`/`bv` tools remain available for other projects.
 
 ## [0.25.0] - 2026-10-06
 
