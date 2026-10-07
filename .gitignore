@@ -28,10 +28,3 @@ agent/settings.json
 /hooks
 /objects
 /refs
-
-
-# bv (beads viewer) local config and caches
-.bv/
-
-# beads local history exports (never commit)
-.beads/.br_history/
