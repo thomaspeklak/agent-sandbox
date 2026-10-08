@@ -5,6 +5,20 @@ use ags::config::ValidatedConfig;
 
 fn main() -> ExitCode {
     let command = cli::parse_args(std::env::args());
+    // T3 transport/owner modes must have pristine protocol stdio and no release check.
+    match &command {
+        Ok(Command::Sub(SubCommand::T3(options))) => {
+            return try_sub("t3", ags::t3::command(options));
+        }
+        Ok(Command::Run(options))
+            if options.agent == cli::Agent::T3
+                && options.passthrough_args != ["--version"]
+                && options.passthrough_args != ["--help"] =>
+        {
+            return try_sub("t3", ags::t3::run(options));
+        }
+        _ => {}
+    }
     // Maintenance must not trigger even the background release-check network.
     let maintenance = matches!(
         &command,
@@ -109,6 +123,7 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
                 ags::cmd::prune_workspace_caches::run(opts),
             );
         }
+        SubCommand::T3(ref options) => return try_sub("t3", ags::t3::command(options)),
         SubCommand::Node(_) => {}
         SubCommand::Setup
         | SubCommand::Doctor
@@ -159,6 +174,9 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
         | SubCommand::Completions(_)
         | SubCommand::Config
         | SubCommand::Tools(_) => {
+            unreachable!()
+        }
+        SubCommand::T3(_) => {
             unreachable!()
         }
     }

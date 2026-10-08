@@ -8,6 +8,34 @@ ags doctor
 
 Most issues are visible in doctor output.
 
+## T3 connection, version, and lifecycle errors
+
+Start with `ags t3 status` in the repository (or use `--repository PATH`). It
+reports the SSH alias, runtime, and private owner-log location. Confirm T3 is
+selected in `ags tools` and installed with `ags update-agents`.
+
+- **Desktop/runtime mismatch:** use the matching desktop version, or run
+  `ags update-agents` followed by explicit `ags t3 upgrade`. The update's release-age
+  policy still applies. Reconnect never downloads a replacement runtime.
+- **Unsupported SSH bootstrap:** AGS recognizes the v0.0.45 release contract.
+  Align desktop/runtime and update AGS's compatibility adapter rather than
+  allowing an unknown installer script to run.
+- **Untrusted/missing registered overlay:** run `ags --agent t3` interactively
+  with the registered config to prepare trust. Automatic startup fails instead
+  of silently dropping the overlay.
+- **Worktree or configuration layout changed:** explicitly recreate with
+  `ags t3 upgrade`. T3's default worktrees under its home are already covered by
+  their parent mount; newly added external paths can require recreation.
+- **Credential lookup/unlock failure:** prepare SSH keys and 1Password access
+  interactively, or configure a reacquirable secret source. Registered transient
+  environment values must be available on cold start.
+- **Owner failure:** inspect the reported private log. Reconnection recovers
+  owned stale services/container state; an unrelated container-name collision
+  is rejected and is never removed automatically.
+
+Closing the desktop intentionally leaves jobs running. Stop them with
+`ags t3 stop`. See [T3 integration](T3.md) for persistent storage and upgrades.
+
 ---
 
 ## Large journal, `user.log`, or `syslog` containing AGS terminal output

@@ -146,7 +146,7 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
         assert!(!app.state.agents[1].selected);
-        assert_eq!(app.state.selected_agent_count(), 3);
+        assert_eq!(app.state.selected_agent_count(), Agent::INSTALLABLE.len() - 2);
 
         app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
         assert_eq!(app.state.selected_agent_count(), Agent::INSTALLABLE.len());

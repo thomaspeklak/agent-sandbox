@@ -8,8 +8,9 @@ This document explains what each `ags` command does and what side effects to exp
 
 ```bash
 ags [command]
-ags --agent <pi|claude|codex|gemini|opencode|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--root] [--lockdown] [--wayland-compositor-passthrough] [--defaults|-D] [--config PATH] [--add-dir PATH ...] [--env NAME=VALUE ...] -- [agent args...]
+ags --agent <pi|claude|codex|gemini|opencode|t3|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--root] [--lockdown] [--wayland-compositor-passthrough] [--defaults|-D] [--config PATH] [--add-dir PATH ...] [--env NAME=VALUE ...] -- [agent args...]
 ags node <install VERSION|list> [--config PATH]
+ags t3 <status|stop|upgrade> [--repository PATH]
 ```
 
 Subcommands:
@@ -25,6 +26,7 @@ Subcommands:
 - `completions`
 - `tools`
 - `node install <version>` / `node list` (the `runtime` and `runtimes` names are accepted aliases)
+- `t3 status` / `t3 stop` / `t3 upgrade`
 
 Use `ags --help` for built-in help text.
 
@@ -59,7 +61,7 @@ What it does:
 - Removes obsolete `[[tool]]` entries created by older versions of this configurator while preserving user-authored tool mounts.
 - Prints image-component and agent changes, then prompts you to run `ags update-image` and `ags update-agents`.
 
-The catalog defines each known agent with a stable `id`, display metadata, and a closed provider policy: pnpm for Pi/Gemini, a trusted built-in installer for Claude/Codex, or a GitHub release for OpenCode. It defines each purposeful executable tool once with a stable `id`, display `name`, purpose-focused `description`, required `default` flag, and exactly one installation provider. DNF tools own one or more internal `dnf_packages`. Pinned downloads declare a version, archive format, executable member, destination command, and HTTPS URL plus SHA-256 for both `x86_64` and `aarch64`. GitHub-backed tools declare a repository, latest-or-exact release policy, anchored architecture asset selectors, and optional checksum selectors. Groups contain ordered subcategories that reference tool IDs. A tool may be referenced several times, but each package or downloaded command belongs to one canonical tool. Multi-package tools, such as tmux with its terminal metadata dependency, are selected only when all owned packages are configured.
+The catalog defines each known agent with a stable `id`, display metadata, and a closed provider policy: pnpm for Pi/Gemini/T3, a trusted built-in installer for Claude/Codex, or a GitHub release for OpenCode. It defines each purposeful executable tool once with a stable `id`, display `name`, purpose-focused `description`, required `default` flag, and exactly one installation provider. DNF tools own one or more internal `dnf_packages`. Pinned downloads declare a version, archive format, executable member, destination command, and HTTPS URL plus SHA-256 for both `x86_64` and `aarch64`. GitHub-backed tools declare a repository, latest-or-exact release policy, anchored architecture asset selectors, and optional checksum selectors. Groups contain ordered subcategories that reference tool IDs. A tool may be referenced several times, but each package or downloaded command belongs to one canonical tool. Multi-package tools, such as tmux with its terminal metadata dependency, are selected only when all owned packages are configured.
 
 `ags tools` only edits configuration and its generated locks. It may fetch GitHub release metadata and small checksum files while resolving selected sources, but it does not invoke a host package manager, download executable archives, inspect host `PATH`, mount host binaries, or modify user-authored `[[tool]]` and `[[secret]]` entries. Executable archives are downloaded only while building the sandbox image or reconciling OpenCode, use HTTPS, and must pass the pinned SHA-256 check. The only `[[tool]]` entries the picker removes are obsolete entries marked as owned by an older version of the configurator. Libraries, headers, certificate bundles, AGS runtimes, and standard utilities such as curl are not presented as tools. Deselecting a tool prevents AGS from requesting its optional image component explicitly; another selected component may still provide the same executable as a dependency.
 
@@ -68,6 +70,14 @@ Agent CLIs are not installed in the base image. `ags update-agents` installs sel
 ---
 
 ## Run mode (`--agent ...`)
+
+`ags --agent t3` uses the persistent repository lifecycle described in
+[T3 Code integration](T3.md). Registration records the main checkout's global
+configuration and trusted overlay; a host owner retains sidecars and leases
+after the CLI or desktop disconnects. T3's SSH alias starts/reuses that owner.
+`ags t3 stop` explicitly stops the server and container, while `ags t3 upgrade`
+recreates the environment with current image/runtime mounts and preserves mounted data.
+`--repository` selects a registered main checkout or linked worktree for management.
 
 Example:
 

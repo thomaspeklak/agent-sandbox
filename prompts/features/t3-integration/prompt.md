@@ -2,8 +2,9 @@
 
 ## Planning status and source
 
-The implementation plan was approved on 2026-10-08. Implementation has not
-started. These requirements reflect the final user decisions, which supersede
+The implementation plan was approved on 2026-10-08. Implementation and sandbox
+checks are complete on `feat/t3-integration`; live Podman/desktop smoke verification
+remains pending. These requirements reflect the final user decisions, which supersede
 earlier assistant assumptions.
 
 - Original OpenCode session: `ses_ee4012657ffep7BulAQEMgAgCg`.
@@ -102,7 +103,7 @@ failure.
 
 General Node worktree-version discovery is deferred to a GitHub follow-up. The
 integration may use AGS's existing fixed-image Node bootstrap for the npm T3
-launcher where required. No follow-up issue has been created yet.
+launcher where required. Follow-up: https://github.com/thomaspeklak/agent-sandbox/issues/23.
 
 ## Repository constraints
 

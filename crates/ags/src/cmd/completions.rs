@@ -47,8 +47,8 @@ const BASH: &str = r#"_ags_completion() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
   fi
 
-  local commands="setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes"
-  local agents="pi claude codex gemini opencode shell"
+  local commands="setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes t3"
+  local agents="pi claude codex gemini opencode t3 shell"
   local shells="fish zsh bash"
   local modes="wrappers aliases both"
 
@@ -99,6 +99,11 @@ const BASH: &str = r#"_ags_completion() {
         return 0
       fi
       COMPREPLY=( $(compgen -W "--config -h --help" -- "$cur") )
+      return 0
+      ;;
+    t3)
+      if [[ "$prev" == "--repository" ]]; then COMPREPLY=( $(compgen -d -- "$cur") ); return 0; fi
+      COMPREPLY=( $(compgen -W "status stop upgrade --repository -h --help" -- "$cur") )
       return 0
       ;;
     node|runtime|runtimes)
@@ -229,14 +234,14 @@ complete -F _ags_completion ags
 const ZSH: &str = r#"#compdef ags
 
 local -a commands agents shells modes
-commands=(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes)
-agents=(pi claude codex gemini opencode shell)
+commands=(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes t3)
+agents=(pi claude codex gemini opencode t3 shell)
 shells=(fish zsh bash)
 modes=(wrappers aliases both)
 
 if (( CURRENT == 2 )); then
   _alternative \
-    'subcommand:subcommand:(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes)' \
+    'subcommand:subcommand:(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes t3)' \
     'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help)'
   return
 fi
@@ -293,6 +298,10 @@ case "$words[2]" in
       '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
+  t3)
+    _arguments '1:action:(status stop upgrade)' '--repository[Repository checkout]:checkout:_files -/' '(-h --help)'{-h,--help}'[Show help]'
+    return
+    ;;
   node|runtime|runtimes)
     _arguments \
       '1:action:(install list)' \
@@ -312,7 +321,7 @@ case "$words[2]" in
 esac
 
 _arguments -S \
-  '--agent[Agent to run]:agent:(pi claude codex gemini opencode shell)' \
+  '--agent[Agent to run]:agent:(pi claude codex gemini opencode t3 shell)' \
   '--browser[Enable browser sidecar]' \
   '--tmux[Launch the agent inside a tmux session]' \
   '--psp[Enable podman-socket-proxy mode (policy-gated)]' \
@@ -335,8 +344,8 @@ _arguments -S \
 
 const FISH: &str = r#"complete -c ags -f
 
-set -l __ags_subcommands setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes
-set -l __ags_agents pi claude codex gemini opencode shell
+set -l __ags_subcommands setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes t3
+set -l __ags_agents pi claude codex gemini opencode t3 shell
 set -l __ags_shells fish zsh bash
 set -l __ags_modes wrappers aliases both
 
@@ -352,6 +361,9 @@ complete -c ags -n "__fish_use_subcommand" -a create-aliases -d "Create wrappers
 complete -c ags -n "__fish_use_subcommand" -a completions -d "Print completion script"
 complete -c ags -n "__fish_use_subcommand" -a tools -d "Choose sandbox tools by profession"
 complete -c ags -n "__fish_use_subcommand" -a node -d "Install or list user-managed Node versions"
+complete -c ags -n "__fish_use_subcommand" -a t3 -d "Manage T3 repository environment"
+complete -c ags -n "__fish_seen_subcommand_from t3" -a "status stop upgrade" -d "T3 environment action"
+complete -c ags -n "__fish_seen_subcommand_from t3" -l repository -r -d "Repository checkout"
 complete -c ags -n "__fish_use_subcommand" -a runtime -d "Install or list user-managed Node versions"
 complete -c ags -n "__fish_use_subcommand" -a runtimes -d "Install or list user-managed Node versions"
 

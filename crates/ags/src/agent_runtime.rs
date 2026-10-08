@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 #[path = "agent_runtime_gc.rs"]
 mod gc;
-pub use gc::{CleanupReport, Lease, pin};
+pub use gc::{CleanupReport, Lease, pin, pin_path};
 #[path = "agent_runtime_manifest.rs"]
 mod manifest;
 pub use manifest::{Publication, RuntimeManifest};

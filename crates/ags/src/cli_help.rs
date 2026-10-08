@@ -1,5 +1,5 @@
 pub const HELP_TEXT: &str = "\
-Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|shell> [flags] -- [args...]
+Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|t3|shell> [flags] -- [args...]
 
 \
 Commands:
@@ -25,6 +25,10 @@ Commands:
   tools          Choose sandbox tools and agent CLIs
 \
   node           Install or list user-managed Node.js versions
+\
+  t3             Manage a registered T3 repository environment
+\
+                 status|stop|upgrade [--repository <checkout>]
 \
 Run flags:
 \

@@ -24,6 +24,7 @@ pub mod psp;
 pub mod run_defaults;
 pub mod secrets;
 pub mod ssh;
+pub mod t3;
 pub mod trust;
 pub mod update_check;
 pub mod util;
