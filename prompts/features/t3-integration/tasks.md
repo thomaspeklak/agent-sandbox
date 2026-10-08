@@ -173,5 +173,6 @@ server/pairing/native-PTY smoke check. Keep implementation files within 500 line
   https://github.com/thomaspeklak/agent-sandbox/issues/23
 - [ ] Save the implementation walkthrough and update feature history after
   implementation and verification are complete.
-- [ ] Inspect `git status`, review the final diff, commit relevant implementation
+- [x] Inspect `git status`, review the final diff, commit relevant implementation
   files, and push the branch.
+  Implementation published as `8c44da6` on `origin/feat/t3-integration`.
