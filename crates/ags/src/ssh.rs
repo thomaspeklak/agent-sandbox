@@ -233,6 +233,15 @@ pub fn ensure_agent(
     keys: &[SshKey],
     runner: &dyn SshRunner,
 ) -> Result<SshAgentReady, SshError> {
+    fs::create_dir_all(cache_dir).map_err(|error| SshError::AgentStart(error.to_string()))?;
+    let lock = fs::File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(cache_dir.join("ssh-agent.lock"))
+        .map_err(|error| SshError::AgentStart(error.to_string()))?;
+    lock.lock()
+        .map_err(|error| SshError::AgentStart(error.to_string()))?;
     let env_path = cache_dir.join("ssh-agent.env");
     let sock_path = cache_dir.join("ssh-agent.sock");
     let mut warnings = Vec::new();

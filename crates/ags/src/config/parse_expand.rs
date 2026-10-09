@@ -197,7 +197,7 @@ fn validate_enabled_agents(list: &[String]) -> Result<Vec<Agent>, ConfigError> {
     for (index, value) in list.iter().enumerate() {
         let agent = Agent::from_id(value).ok_or_else(|| {
             ConfigError::Validation(format!(
-                "[sandbox].enabled_agents[{index}] must be one of: pi, claude, codex, gemini, opencode"
+                "[sandbox].enabled_agents[{index}] must be one of: pi, claude, codex, gemini, opencode, t3"
             ))
         })?;
         if agent == Agent::Shell {

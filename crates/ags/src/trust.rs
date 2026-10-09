@@ -108,7 +108,10 @@ pub fn resolve_repo_local_overlay(
     Ok(Some(overlay_path))
 }
 
-fn is_repo_trusted(trust_store_path: &Path, repo_root: &Path) -> Result<bool, TrustError> {
+pub(crate) fn is_repo_trusted(
+    trust_store_path: &Path,
+    repo_root: &Path,
+) -> Result<bool, TrustError> {
     Ok(load_trusted_repo_roots(trust_store_path)?.contains(repo_root))
 }
 

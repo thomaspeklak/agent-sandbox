@@ -158,11 +158,17 @@ fn resolve_binary(config_binary: &str) -> Result<PathBuf, PspError> {
 /// When `keep_on_failure` is true, PSP will retain containers on shutdown
 /// for debugging (sets `PSP_KEEP_ON_FAILURE=true`).
 pub fn start(config_binary: &str, keep_on_failure: bool) -> Result<PspGuard, PspError> {
-    let binary = resolve_binary(config_binary)?;
-
     let runtime_base = crate::util::runtime_dir().map_err(PspError::SocketDirCreate)?;
-
     let socket_dir = runtime_base.join(format!("ags-psp-{}", std::process::id()));
+    start_in(config_binary, keep_on_failure, socket_dir)
+}
+
+pub(crate) fn start_in(
+    config_binary: &str,
+    keep_on_failure: bool,
+    socket_dir: PathBuf,
+) -> Result<PspGuard, PspError> {
+    let binary = resolve_binary(config_binary)?;
     crate::util::ensure_private_dir(&socket_dir).map_err(PspError::SocketDirCreate)?;
 
     let socket_path = socket_dir.join("psp.sock");

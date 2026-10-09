@@ -54,6 +54,11 @@ pub fn profile_for_with_guards(
         Agent::Codex => codex_profile(),
         Agent::Gemini => gemini_profile(),
         Agent::Opencode => opencode_profile(),
+        Agent::T3 => AgentProfile {
+            command: pnpm_agent_command("t3"),
+            node_bootstrap: true,
+            ..AgentProfile::default()
+        },
         Agent::Shell => shell_profile(),
     };
     if root_mode && matches!(agent, Agent::Pi | Agent::Claude) {

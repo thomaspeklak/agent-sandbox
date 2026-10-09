@@ -27,6 +27,7 @@ It is designed to keep your host clean while still giving agents controlled acce
   - `codex`
   - `gemini`
   - `opencode`
+  - `t3` (persistent repository environment for T3 Code desktop)
   - `shell` (interactive bash with agent environments mounted)
 - First-run setup for SSH auth + signing keys
 - Persistent per-agent host volumes by default (lockdown uses ephemeral staged homes)
@@ -256,6 +257,33 @@ ags --agent claude --defaults -- --model opus
 
 Use `--defaults` / `-D` to prepend AGS-managed passthrough defaults for the selected harness. Today that means Claude gets `--strict-mcp-config --dangerously-skip-permissions`, Gemini gets `--yolo`, and other agents currently add nothing.
 
+### T3 Code desktop
+
+Select T3 and the providers you want in the Agent CLIs panel of `ags tools`,
+then install their runtimes and register the repository:
+
+```bash
+ags tools --packages config/tool-packages.example.json
+ags update-agents
+ags --agent t3
+```
+
+Add the printed SSH alias as an environment in T3 desktop. Connecting starts or
+reuses that repository's sandbox automatically. Main checkout and worktrees
+share one environment, and T3-created worktrees use identical absolute paths on
+the host and in the container. Jobs continue after desktop disconnect.
+
+```bash
+ags t3 status
+ags t3 stop
+ags t3 upgrade
+```
+
+T3 is installed through pnpm and AGS's verified runtime generations. Desktop and
+environment versions must match exactly; bootstrap never downloads a runtime.
+Explicit recreation preserves mounted data. See [T3 setup and lifecycle](docs/T3.md)
+for registration, storage, credentials, and the initial v0.0.45 compatibility contract.
+
 ### tmux inside the sandbox
 
 The sandbox image includes `tmux` with a minimal version-controlled config for team-pane workflows.
@@ -432,7 +460,7 @@ ags completions --shell fish > ~/.config/fish/completions/ags.fish
 
 ### Global run flags
 
-- `--agent <pi|claude|codex|gemini|opencode|shell>` (required for run mode)
+- `--agent <pi|claude|codex|gemini|opencode|t3|shell>` (required for run mode)
 - `--browser`
 - `--tmux`
 - `--stop-when-done` (requires `--tmux`)

@@ -10,9 +10,9 @@ use crate::config::{
     GitHubReleaseAssetSelector, GitHubReleaseSelection, GitHubReleaseSource, ToolDownloadArtifact,
     ToolDownloadSource, validate_github_release_source, validate_tool_download_source,
 };
-use crate::github_release_http::fetch_url;
+use crate::github_release_http::Client;
 
-const RELEASES_PER_PAGE: usize = 100;
+pub(super) const RELEASES_PER_PAGE: usize = 100;
 const MAX_REJECTION_DIAGNOSTICS: usize = 12;
 
 #[derive(Debug)]
@@ -95,7 +95,7 @@ struct GitHubReleaseAsset {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum FetchRequest {
+pub(super) enum FetchRequest {
     ReleasesPage(usize),
     ReleaseByTag(String),
     Asset(String),
@@ -117,11 +117,13 @@ pub fn resolve_github_release_source(
     source: &GitHubReleaseSource,
     minimum_release_age: u32,
 ) -> Result<ToolDownloadSource, GitHubReleaseError> {
+    validate_github_release_source(source).map_err(GitHubReleaseError::InvalidSource)?;
+    let client = Client::new(&source.repository)?;
     resolve_github_release_source_with(
         source,
         minimum_release_age,
         OffsetDateTime::now_utc(),
-        |request| fetch_request(&source.repository, request),
+        |request| client.fetch(&source.repository, request),
     )
 }
 
@@ -464,33 +466,6 @@ fn parse_release_page(repo: &str, body: &[u8]) -> Result<Vec<GitHubRelease>, Git
         repo: repo.to_owned(),
         message: error.to_string(),
     })
-}
-
-fn fetch_request(repo: &str, request: FetchRequest) -> Result<Vec<u8>, GitHubReleaseError> {
-    match request {
-        FetchRequest::ReleasesPage(page) => {
-            let url = format!(
-                "https://api.github.com/repos/{repo}/releases?per_page={RELEASES_PER_PAGE}&page={page}"
-            );
-            fetch_url(repo, &url, false)
-        }
-        FetchRequest::ReleaseByTag(tag) => {
-            let mut url = Url::parse("https://api.github.com").expect("static GitHub API URL");
-            let mut repo_segments = repo.split('/');
-            url.path_segments_mut()
-                .expect("GitHub API URL supports path segments")
-                .extend([
-                    "repos",
-                    repo_segments.next().expect("validated owner"),
-                    repo_segments.next().expect("validated repository"),
-                    "releases",
-                    "tags",
-                    &tag,
-                ]);
-            fetch_url(repo, url.as_str(), false)
-        }
-        FetchRequest::Asset(url) => fetch_url(repo, &url, true),
-    }
 }
 
 #[cfg(test)]

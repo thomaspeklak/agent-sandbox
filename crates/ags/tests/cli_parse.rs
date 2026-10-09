@@ -36,6 +36,47 @@ fn rejects_missing_agent() {
 }
 
 #[test]
+fn t3_requires_a_management_action_with_an_accurate_error() {
+    let error = parse_args(args(&["ags", "t3"])).unwrap_err();
+    assert_eq!(error, CliError::MissingT3Action);
+    assert_eq!(
+        error.to_string(),
+        "missing T3 action (expected `ags t3 status|stop|upgrade`)"
+    );
+}
+
+#[test]
+fn t3_repository_requires_a_value_with_an_accurate_error() {
+    for action in ["status", "stop", "upgrade"] {
+        for values in [
+            vec!["ags", "t3", action, "--repository"],
+            vec!["ags", "t3", action, "--repository", ""],
+        ] {
+            let error = parse_args(args(&values)).unwrap_err();
+            assert_eq!(error, CliError::MissingRepositoryValue);
+            assert_eq!(error.to_string(), "missing value for --repository");
+        }
+    }
+}
+
+#[test]
+fn t3_launch_and_management_use_distinct_command_paths() {
+    let Command::Run(options) = parse_args(args(&["ags", "--agent", "t3"])).unwrap() else {
+        panic!("expected T3 launch command");
+    };
+    assert_eq!(options.agent, Agent::T3);
+    assert!(options.passthrough_args.is_empty());
+    assert_eq!(
+        parse_args(args(&["ags", "t3", "status", "--repository", "/repo"])).unwrap(),
+        Command::Sub(SubCommand::T3(ags::cli::T3Options {
+            action: ags::cli::T3Action::Status,
+            repository: Some("/repo".into()),
+            registration: None,
+        }))
+    );
+}
+
+#[test]
 fn parses_browser_flag() {
     let cmd = parse_args(args(&["ags", "--agent", "pi", "--browser"])).unwrap();
     match cmd {

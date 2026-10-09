@@ -49,5 +49,12 @@
         }
       }
     }
+  },
+  {
+    "agent": "t3",
+    "provider": {
+      "type": "pnpm",
+      "package": "t3"
+    }
   }
 ]

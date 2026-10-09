@@ -155,7 +155,7 @@ fn stage_agent_runtime(
     })?;
     let runtime = &lease.path;
     match agent {
-        Agent::Pi | Agent::Gemini => {
+        Agent::Pi | Agent::Gemini | Agent::T3 => {
             let src = runtime.join("pnpm-home");
             stage_runtime_mount(&src, PNPM_RUNTIME_CONTAINER, stage_root, extra_mounts)?;
         }
@@ -260,7 +260,7 @@ fn home_containers(agent: Agent) -> &'static [&'static str] {
         Agent::Codex => &["/home/dev/.codex"],
         Agent::Gemini => &["/home/dev/.gemini"],
         Agent::Opencode => &["/home/dev/.config/opencode"],
-        Agent::Shell => &[],
+        Agent::T3 | Agent::Shell => &[],
     }
 }
 

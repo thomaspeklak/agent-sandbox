@@ -12,12 +12,30 @@ unsafe extern "C" {
     static mut environ: *mut *mut libc::c_char;
 }
 
-pub(super) struct SpawnedProcess {
+pub(crate) struct SpawnedProcess {
     pid: libc::pid_t,
+    reaped: Option<std::process::ExitStatus>,
 }
 
 impl SpawnedProcess {
-    pub(super) fn wait(self) -> io::Result<std::process::ExitStatus> {
+    pub(crate) fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
+        if self.reaped.is_some() {
+            return Ok(self.reaped);
+        }
+        let mut status = 0;
+        let result = unsafe { libc::waitpid(self.pid, &mut status, libc::WNOHANG) };
+        if result == self.pid {
+            self.reaped = Some(std::os::unix::process::ExitStatusExt::from_raw(status));
+        } else if result < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(self.reaped)
+    }
+
+    pub(crate) fn wait(self) -> io::Result<std::process::ExitStatus> {
+        if let Some(status) = self.reaped {
+            return Ok(status);
+        }
         let mut status = 0;
         loop {
             let result = unsafe { libc::waitpid(self.pid, &mut status, 0) };
@@ -85,7 +103,7 @@ pub(super) fn spawn_with_payload_fds(
     if result != 0 {
         return Err(io::Error::from_raw_os_error(result));
     }
-    Ok(SpawnedProcess { pid })
+    Ok(SpawnedProcess { pid, reaped: None })
 }
 
 fn duplicate_sources(payloads: &[OwnedFd], minimum: RawFd) -> io::Result<Vec<OwnedFd>> {

@@ -1,5 +1,5 @@
 pub const HELP_TEXT: &str = "\
-Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|shell> [flags] -- [args...]
+Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|t3|shell> [flags] -- [args...]
 
 \
 Commands:
@@ -25,6 +25,10 @@ Commands:
   tools          Choose sandbox tools and agent CLIs
 \
   node           Install or list user-managed Node.js versions
+\
+  t3             Manage a registered T3 repository environment
+\
+                 status|stop|upgrade [--repository <checkout>]
 \
 Run flags:
 \
@@ -130,3 +134,45 @@ Node runtime commands:
 \
   --config <path>             Use an alternate AGS config file
 ";
+
+const T3_HELP_TEXT: &str = r#"Usage: ags t3 <status|stop|upgrade> [--repository <checkout>]
+
+Manage a registered T3 repository environment.
+Start or register an environment with: ags --agent t3
+
+Commands:
+  status         Show the environment's status, SSH alias, and runtime
+  stop           Stop the T3 server and repository container
+  upgrade        Recreate using the current image/runtime; stops active jobs
+
+Flags:
+  --repository <checkout>  Select a main checkout or worktree (default: current directory)
+  -h, --help               Show help for this command
+
+Examples:
+  ags t3 status
+  ags t3 stop
+  ags t3 upgrade --repository /path/to/checkout
+"#;
+
+pub fn t3_help_text(action: Option<super::T3Action>) -> String {
+    use super::T3Action;
+    let (command, description) = match action {
+        Some(T3Action::Status) => (
+            "status",
+            "Show the registered environment's status, SSH alias, owner, and runtime as JSON.",
+        ),
+        Some(T3Action::Stop) => (
+            "stop",
+            "Stop the T3 server and repository container, preserving mounted data for a later start.",
+        ),
+        Some(T3Action::Upgrade) => (
+            "upgrade",
+            "Stop active jobs and recreate the environment using the current image/runtime, preserving mounted data.",
+        ),
+        _ => return T3_HELP_TEXT.to_owned(),
+    };
+    format!(
+        "Usage: ags t3 {command} [--repository <checkout>]\n\n{description}\n\nFlags:\n  --repository <checkout>  Select a main checkout or worktree (default: current directory)\n  -h, --help               Show help for this command\n"
+    )
+}

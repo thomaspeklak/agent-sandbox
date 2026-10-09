@@ -23,11 +23,23 @@ pub(super) fn check_agent_runtimes(ck: &mut Checker, config: &ValidatedConfig) {
             Agent::Claude => cache.join("claude-install/.local/bin/claude"),
             Agent::Codex => cache.join("pnpm-home/codex"),
             Agent::Gemini => cache.join("pnpm-home/bin/gemini"),
+            Agent::T3 => cache.join("pnpm-home/bin/t3"),
             Agent::Opencode => cache.join("opencode-install/.opencode/bin/opencode"),
             Agent::Shell => continue,
         };
         let label = format!("{} runtime", agent.display_name());
-        let present = if *agent == Agent::Codex {
+        let present = if *agent == Agent::T3 {
+            match crate::t3::installed_version(cache) {
+                Ok(version) => {
+                    ck.ok(&format!("T3 SSH runtime v{version} complete"));
+                    binary.is_file() && crate::util::is_executable(&binary)
+                }
+                Err(error) => {
+                    ck.warn(&error.to_string());
+                    false
+                }
+            }
+        } else if *agent == Agent::Codex {
             codex_runtime_present(cache)
         } else {
             binary.is_file() && crate::util::is_executable(&binary)

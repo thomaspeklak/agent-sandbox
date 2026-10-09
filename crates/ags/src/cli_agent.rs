@@ -12,16 +12,18 @@ pub enum Agent {
     Codex,
     Gemini,
     Opencode,
+    T3,
     Shell,
 }
 
 impl Agent {
-    pub const INSTALLABLE: [Self; 5] = [
+    pub const INSTALLABLE: [Self; 6] = [
         Self::Pi,
         Self::Claude,
         Self::Codex,
         Self::Gemini,
         Self::Opencode,
+        Self::T3,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -31,6 +33,7 @@ impl Agent {
             Self::Codex => "codex",
             Self::Gemini => "gemini",
             Self::Opencode => "opencode",
+            Self::T3 => "t3",
             Self::Shell => "shell",
         }
     }
@@ -42,6 +45,7 @@ impl Agent {
             Self::Codex => "Codex",
             Self::Gemini => "Gemini CLI",
             Self::Opencode => "OpenCode",
+            Self::T3 => "T3 Code",
             Self::Shell => "Shell",
         }
     }
@@ -53,6 +57,7 @@ impl Agent {
             Self::Codex => "OpenAI's coding agent CLI.",
             Self::Gemini => "Google's Gemini coding agent CLI.",
             Self::Opencode => "Provider-agnostic terminal coding agent.",
+            Self::T3 => "Persistent repository environment for the T3 Code desktop over SSH.",
             Self::Shell => "Interactive Bash shell without an agent CLI.",
         }
     }
@@ -64,6 +69,7 @@ impl Agent {
             "codex" => Some(Self::Codex),
             "gemini" => Some(Self::Gemini),
             "opencode" => Some(Self::Opencode),
+            "t3" => Some(Self::T3),
             "shell" => Some(Self::Shell),
             _ => None,
         }
