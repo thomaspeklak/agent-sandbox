@@ -22,3 +22,8 @@ Review: https://github.com/thomaspeklak/agent-sandbox/pull/24
 The relay's stdout uses a descriptor-backed socket stream to handle nonblocking
 pipe backpressure on both Node 22 (CI) and Node 24 (the sandbox image). The large
 binary-transfer regression reproduces the Node 22 failure of a file-stream writer.
+
+## Live smoke fixes
+
+- [x] Authenticate host GitHub release lookups with existing credentials and
+  preserve HTTP rejection reasons, rate-limit reset times, and recovery actions.

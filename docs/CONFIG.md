@@ -153,6 +153,7 @@ extra_dnf_packages = ["git", "gh", "openssh-clients", "ripgrep"]
   - The closed provider types are pnpm for Pi/Gemini/T3, trusted built-in installers for Claude/Codex, and a validated GitHub release policy for OpenCode; arbitrary installer commands are not accepted.
   - AGS resolves the path relative to the config layer that declared it, requires a matching content-addressed filename, and validates agent/provider compatibility.
   - `ags update-agents` resolves GitHub releases using `[update].minimum_release_age`, verifies the selected artifact digest, and installs OpenCode transactionally in its dedicated persistent volume.
+  - GitHub API metadata requests use host `GH_TOKEN`, then `GITHUB_TOKEN`, then the active host GitHub CLI login. Credentials are looked up once per resolution and are not sent to checksum or executable asset downloads. Rate-limit errors include GitHub's rejection reason and available reset/retry information; see [troubleshooting](TROUBLESHOOTING.md#ags-update-agents-fails-resolving-an-opencode-release-with-http-403).
   - During migration, the former `agent_release_source_lock` key is accepted when it contains the legacy OpenCode release source. AGS combines that source with embedded providers for the other agents; the next `ags tools` save replaces it with `agent_provider_lock`.
 
 ---

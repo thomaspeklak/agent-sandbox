@@ -110,6 +110,36 @@ podman image prune
 
 ---
 
+## `ags update-agents` fails resolving an OpenCode release with HTTP 403
+
+Release lookup uses GitHub's REST API. Anonymous requests share the small
+per-IP quota, including with other programs and machines on the same network.
+Resolving the highest compatible version may require several release-history pages.
+
+AGS authenticates API metadata requests using `GH_TOKEN`, then `GITHUB_TOKEN`,
+then the active host GitHub CLI login. Existing CLI credentials are looked up
+noninteractively once per release resolution. If no credentials are available,
+public requests still work while the anonymous quota remains available.
+
+For a rate-limit error, the diagnostic includes GitHub's reason and reset time
+or retry interval. Authenticate once on the host, then retry:
+
+```bash
+gh auth login --hostname github.com
+ags update-agents
+```
+
+Alternatively, supply `GH_TOKEN` or `GITHUB_TOKEN` through your usual host secret
+management. HTTP 401 means the supplied credentials need refreshing; an unrelated
+403 retains GitHub's actual rejection reason rather than being mislabeled as a
+rate limit. An exhausted authenticated quota still requires waiting for its reset.
+
+Tokens are passed privately to curl, not in command arguments or persistent
+files, and are not attached to checksum or executable asset downloads. A failed
+lookup does not publish a runtime candidate or change running environments.
+
+---
+
 ## `br` / `bv` / `dcg` missing inside container
 
 If catalog-selected sandbox commands are missing or stale.
