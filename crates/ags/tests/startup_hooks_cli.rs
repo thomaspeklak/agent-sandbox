@@ -676,3 +676,6 @@ sys.exit(0)
         String::from_utf8_lossy(&output.stderr).contains("surviving prepare hook op references")
     );
 }
+
+#[path = "startup_hooks/review.rs"]
+mod review_tests;

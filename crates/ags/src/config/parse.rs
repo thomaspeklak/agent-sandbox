@@ -83,7 +83,11 @@ pub fn parse_toml_str(content: &str, config_path: &Path) -> Result<ValidatedConf
         path: config_path.to_owned(),
         source: e,
     })?;
-    parse_toml_value(value, config_path, config_path, config_path)
+    let hooks = crate::hooks::parse_declarations(&value, config_path, None)
+        .map_err(ConfigError::Validation)?;
+    let mut config = parse_toml_value(value, config_path, config_path, config_path)?;
+    config.prepare_hooks = hooks;
+    Ok(config)
 }
 
 fn read_toml_value(path: &Path) -> Result<Value, ConfigError> {
@@ -103,20 +107,16 @@ fn parse_toml_value(
     tool_download_lock_config_path: &Path,
     agent_provider_lock_config_path: &Path,
 ) -> Result<ValidatedConfig, ConfigError> {
-    let raw: RawConfig = value.clone().try_into().map_err(|e| ConfigError::Toml {
+    let raw: RawConfig = value.try_into().map_err(|e| ConfigError::Toml {
         path: config_path.to_owned(),
         source: e,
     })?;
-    let hooks = crate::hooks::parse_declarations(&value, config_path, None)
-        .map_err(ConfigError::Validation)?;
-    let mut config = validate(
+    validate(
         raw,
         config_path,
         tool_download_lock_config_path,
         agent_provider_lock_config_path,
-    )?;
-    config.prepare_hooks = hooks;
-    Ok(config)
+    )
 }
 
 include!("parse_overlay.rs");

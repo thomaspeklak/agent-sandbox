@@ -9,6 +9,7 @@ use crate::secrets::{self, OsHostCommandRunner, OsSecretBackend};
 use crate::ssh::{self, OsSshRunner, SshKey};
 #[path = "lifecycle_config.rs"]
 mod config_loading;
+pub(crate) use config_loading::load_config_for_workdir;
 pub use config_loading::{load_config, resolve_repo_local_config};
 
 pub fn run_agent(opts: RunOptions) -> ExitCode {

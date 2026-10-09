@@ -20,7 +20,8 @@ args = ["--profile", "development"] # argv, not a shell command string
 
 Global declarations followed by project declarations **accumulate**, never replace.
 Use unique names to select a hook with `ags hooks test`; launch itself permits repeated
-names. At most 64 declarations are accepted per launch. Entrypoints must be executable
+names. At most 64 declarations are accepted per config file (up to 128 across the global
+config and the single project overlay). Entrypoints must be executable
 regular files, at most 64 MiB. Both native binaries and executable scripts support arguments.
 For a script use a shebang and executable permission (`chmod +x prepare-services`).
 
@@ -59,7 +60,11 @@ modify files, start services, or perform network operations.
 The private execution copy retains the entrypoint's basename, but its full `argv[0]`/script
 `$0` and directory change. `$ORIGIN` libraries and entrypoint-relative resource discovery
 may therefore fail. Use context/explicit absolute resource paths; AGS fails rather than
-falling back to unapproved original bytes. The temporary filesystem must permit execution.
+falling back to unapproved original bytes. Execution copies live in private, automatically
+cleaned `ags-hook-exec-*` directories inside `~/.local/state/ags-hook-trust`, not the system
+temporary directory, so a `noexec` system `/tmp` does not affect hooks. The state filesystem
+must permit execution; if execution is denied, verify its mount policy and the entrypoint's
+interpreter availability. AGS does not change mount policy or fall back to the original file.
 
 ## JSON protocol
 
@@ -185,7 +190,9 @@ executes only the named hook, validates its response/materialization, and prints
 contribution summary (keys/destinations only). It does not run Podman, resolve op values,
 start other hooks, or prove compatibility with every effective runtime mount. With no
 `--context`, context uses the current directory (or `--workdir PATH`) and selected `--agent`
-(default shell). An explicit JSON context cannot be combined with agent/workdir overrides.
+(default shell). `--workdir` also selects the project overlay used to find the named hook;
+without it, configuration is resolved from the current directory. An explicit JSON context
+cannot be combined with agent/workdir overrides.
 Trust prompting is AGS-owned; hooks themselves must never wait for interactive stdin.
 
 ## Example: Pi intercom namespace

@@ -101,6 +101,15 @@ impl TrustStore {
             .and_then(|_| file.sync_all())
             .map_err(|e| e.to_string())
     }
+    /// Keep executable copies off system temp mounts (which may be noexec).
+    pub(crate) fn execution_directory(&self) -> Result<tempfile::TempDir, String> {
+        self.directory()?;
+        tempfile::Builder::new()
+            .prefix("ags-hook-exec-")
+            .permissions(fs::Permissions::from_mode(0o700))
+            .tempdir_in(&self.path)
+            .map_err(|e| format!("cannot create private hook execution directory: {e}"))
+    }
     pub(crate) fn snapshot(
         &self,
         hook: &Hook,

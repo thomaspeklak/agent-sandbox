@@ -102,7 +102,9 @@ const BASH: &str = r#"_ags_completion() {
       return 0
       ;;
     hooks)
-      if [[ "$prev" == "--config" || "$prev" == "--context" || "$prev" == "--workdir" ]]; then
+      if [[ "${COMP_WORDS[2]}" == "validate" && "$COMP_CWORD" == 3 ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+      elif [[ "$prev" == "--config" || "$prev" == "--context" || "$prev" == "--workdir" ]]; then
         COMPREPLY=( $(compgen -f -- "$cur") )
       elif [[ "$prev" == "--agent" ]]; then
         COMPREPLY=( $(compgen -W "$agents" -- "$cur") )

@@ -799,3 +799,6 @@ fn source_symlink_to_protected_cache_is_rejected_and_exact_default_mount_is_repl
         "hook"
     );
 }
+
+#[path = "hooks_review_tests.rs"]
+mod review_tests;

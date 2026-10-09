@@ -120,8 +120,11 @@ fn read(path: &std::path::Path, limit: usize) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 fn test(opts: &Options, name: &str) -> Result<(), String> {
-    let mut config = crate::lifecycle::load_config(opts.config_path.as_deref())
-        .map_err(|_| "could not load hook configuration")?;
+    let mut config = crate::lifecycle::load_config_for_workdir(
+        opts.config_path.as_deref(),
+        opts.workdir.as_deref(),
+    )
+    .map_err(|_| "could not load hook configuration")?;
     let matching: Vec<_> = config
         .prepare_hooks
         .iter()

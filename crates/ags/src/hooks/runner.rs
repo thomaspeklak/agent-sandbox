@@ -48,10 +48,7 @@ pub fn run(
         if Instant::now() >= deadline {
             return Err("prepare phase timed out during snapshotting".into());
         }
-        let dir = tempfile::Builder::new()
-            .prefix("ags-hook-exec-")
-            .tempdir()
-            .map_err(|e| e.to_string())?;
+        let dir = store.execution_directory()?;
         let (path, hash) = store.snapshot(hook, dir.path())?;
         snapshots.push((dir, path, hash));
     }
@@ -147,7 +144,17 @@ fn run_one(
             cancel,
             limits.stdout_bytes,
             limits.stderr_bytes,
-        )?;
+        )
+        .map_err(|error| {
+            if error.starts_with("could not execute host program:") {
+                format!(
+                    "{error}; hook snapshots are executed under {:?}; verify that this state filesystem permits execution (not mounted noexec) and the entrypoint interpreter is available",
+                    store.path
+                )
+            } else {
+                error
+            }
+        })?;
         if !output.stderr.is_empty() {
             // Escape control codes so a diagnostic cannot spoof terminal prompts.
             eprintln!(
