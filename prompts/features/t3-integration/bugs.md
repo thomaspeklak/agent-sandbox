@@ -18,3 +18,7 @@ Review: https://github.com/thomaspeklak/agent-sandbox/pull/24
 - Real TCP relay tests cover streaming, binary backpressure, both half-close
   directions, connection refusal, and cancellation. OpenSSH lifecycle coverage
   uses `extra_dnf_packages = []` and requires the bundled Node relay asset.
+
+The relay's stdout uses a descriptor-backed socket stream to handle nonblocking
+pipe backpressure on both Node 22 (CI) and Node 24 (the sandbox image). The large
+binary-transfer regression reproduces the Node 22 failure of a file-stream writer.
