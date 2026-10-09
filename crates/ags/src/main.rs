@@ -7,6 +7,10 @@ fn main() -> ExitCode {
     let command = cli::parse_args(std::env::args());
     // T3 transport/owner modes must have pristine protocol stdio and no release check.
     match &command {
+        Err(cli::CliError::T3HelpRequested(action)) => {
+            println!("{}", cli::t3_help_text(*action));
+            return ExitCode::SUCCESS;
+        }
         Ok(Command::Sub(SubCommand::T3(options))) => {
             return try_sub("t3", ags::t3::command(options));
         }

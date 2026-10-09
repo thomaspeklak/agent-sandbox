@@ -85,10 +85,10 @@ fn absent_or_logged_out_github_cli_keeps_public_fetches_available() {
 #[test]
 fn credential_lookup_timeout_is_bounded_and_actionable() {
     let root = tempfile::tempdir().unwrap();
-    let gh = helper(root.path(), "sleep 30");
+    let gh = helper(root.path(), "while :; do :; done");
     let started = std::time::Instant::now();
     let error = stored_token_with(&gh, Duration::from_millis(30)).unwrap_err();
-    assert!(error.contains("timed out"));
+    assert!(error.contains("timed out"), "{error}");
     assert!(error.contains("GH_TOKEN"));
     assert!(started.elapsed() < Duration::from_secs(2));
 }

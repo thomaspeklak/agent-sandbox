@@ -27,3 +27,4 @@ binary-transfer regression reproduces the Node 22 failure of a file-stream write
 
 - [x] Authenticate host GitHub release lookups with existing credentials and
   preserve HTTP rejection reasons, rate-limit reset times, and recovery actions.
+- [x] Show scoped help for `ags t3 --help` and each management action.

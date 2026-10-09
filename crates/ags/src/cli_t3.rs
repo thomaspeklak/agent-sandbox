@@ -25,7 +25,7 @@ pub(super) fn parse_args(mut args: impl Iterator<Item = String>) -> Result<T3Opt
         "upgrade" => T3Action::Upgrade,
         "_owner" => T3Action::Owner,
         "_proxy" => T3Action::Proxy,
-        "-h" | "--help" => return Err(CliError::HelpRequested),
+        "-h" | "--help" => return Err(CliError::T3HelpRequested(None)),
         _ => return Err(CliError::UnexpectedPositional(command)),
     };
     let mut options = T3Options {
@@ -44,7 +44,7 @@ pub(super) fn parse_args(mut args: impl Iterator<Item = String>) -> Result<T3Opt
                 options.registration =
                     Some(args.next().ok_or(CliError::MissingConfigValue)?.into());
             }
-            "-h" | "--help" => return Err(CliError::HelpRequested),
+            "-h" | "--help" => return Err(CliError::T3HelpRequested(Some(action))),
             _ => return Err(CliError::UnexpectedFlag(arg)),
         }
     }

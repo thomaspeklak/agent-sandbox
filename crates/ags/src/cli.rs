@@ -24,6 +24,7 @@ use help::HELP_TEXT;
 use std::path::PathBuf;
 
 pub use agent::Agent;
+pub use help::t3_help_text;
 pub use node::{NodeCommand, NodeOptions};
 pub use prune::PruneWorkspaceCachesOptions;
 pub use t3::{T3Action, T3Options};
@@ -142,6 +143,7 @@ pub enum SubCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliError {
     HelpRequested,
+    T3HelpRequested(Option<T3Action>),
     MissingAgent,
     MissingAgentValue,
     MissingConfigValue,

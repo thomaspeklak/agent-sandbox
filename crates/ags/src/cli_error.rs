@@ -4,7 +4,7 @@ use std::fmt;
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::HelpRequested => f.write_str("help requested"),
+            Self::HelpRequested | Self::T3HelpRequested(_) => f.write_str("help requested"),
             Self::MissingAgent => f.write_str("missing required argument: --agent <pi|claude|codex|gemini|opencode|t3|shell>"),
             Self::MissingAgentValue => f.write_str("missing value for --agent"),
             Self::MissingConfigValue => f.write_str("missing value for --config"),
