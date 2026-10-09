@@ -26,6 +26,7 @@ fn minimal_config(tmp: &Path) -> ValidatedConfig {
     fs::create_dir_all(&cache_dir).unwrap();
 
     ValidatedConfig {
+        prepare_hooks: Vec::new(),
         config_file: tmp.join("config.toml"),
         sandbox: ValidatedSandbox {
             image: "test-image:latest".into(),

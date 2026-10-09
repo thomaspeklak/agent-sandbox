@@ -24,7 +24,8 @@ pub(crate) use tool_download::{
 };
 
 /// Root-level TOML keys whose arrays are concatenated (not replaced) during overlay merge.
-pub const ADDITIVE_ARRAY_KEYS: &[&str] = &["mount", "agent_mount", "tool", "secret"];
+pub const ADDITIVE_ARRAY_KEYS: &[&str] =
+    &["mount", "agent_mount", "tool", "secret", "prepare_hook"];
 pub use agent_provider::{AgentProviderPolicy, BuiltinAgentInstaller, LockedAgentProvider};
 pub use pnpm_version::PnpmVersion;
 pub use raw::RawConfig;

@@ -8,7 +8,9 @@ fn main() -> ExitCode {
     // Maintenance must not trigger even the background release-check network.
     let maintenance = matches!(
         &command,
-        Ok(Command::Sub(SubCommand::PruneWorkspaceCaches(_)))
+        Ok(Command::Sub(
+            SubCommand::PruneWorkspaceCaches(_) | SubCommand::Hooks(_)
+        ))
     );
     let update_check = if maintenance {
         None
@@ -81,6 +83,7 @@ fn run_update_image(config: &ValidatedConfig, opts: ags::cli::UpdateImageOptions
 fn run_subcommand(sub: SubCommand) -> ExitCode {
     // Subcommands that don't need a config file.
     match sub {
+        SubCommand::Hooks(ref opts) => return try_sub("hooks", ags::hooks::cli::run(opts)),
         SubCommand::Install(ref opts) => return try_sub("install", ags::cmd::install::run(opts)),
         SubCommand::Uninstall => return try_sub("uninstall", ags::cmd::install::uninstall()),
         SubCommand::CreateAliases(ref opts) => {
@@ -152,7 +155,8 @@ fn run_subcommand(sub: SubCommand) -> ExitCode {
             ),
         ),
         SubCommand::Node(ref opts) => try_sub("node", ags::cmd::node::run(&config, opts)),
-        SubCommand::Install(_)
+        SubCommand::Hooks(_)
+        | SubCommand::Install(_)
         | SubCommand::PruneWorkspaceCaches(_)
         | SubCommand::Uninstall
         | SubCommand::CreateAliases(_)

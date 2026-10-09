@@ -69,7 +69,7 @@ impl Agent {
         }
     }
 
-    pub(super) fn parse(value: &str) -> Result<Self, CliError> {
+    pub(crate) fn parse(value: &str) -> Result<Self, CliError> {
         Self::from_id(value).ok_or_else(|| CliError::InvalidAgent(value.to_owned()))
     }
 }

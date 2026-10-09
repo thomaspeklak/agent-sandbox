@@ -174,3 +174,14 @@ wayland = false
 [update]
 pi_spec = "@earendil-works/pi-coding-agent"
 minimum_release_age = 1440  # minutes; applies to pnpm and catalog GitHub releases
+
+# Optional host-side prepare hooks. Repeated global + project declarations ADD;
+# they do not replace one another. Approval grants execution as your host user.
+# Prefer a directly executable script so its own content changes require approval.
+# Relative executable paths are resolved from THIS config file's directory.
+# [[prepare_hook]]
+# name = "project-services"
+# executable = "./prepare-services"
+# args = ["--profile", "development"]
+# timeout_seconds = 30  # 1..300; entire phase has a fixed 60-second deadline
+# See docs/STARTUP_HOOKS.md for JSON env/files/mounts/op examples and limitations.

@@ -85,7 +85,7 @@ ags --agent pi --env BROWSER_URL=http://127.0.0.1:9222
 
 ### What happens on run
 
-1. Load and validate config.
+1. Load and validate config, then approve and run any `prepare` hooks before assets, sidecars or container creation. Merge their contributions deterministically and validate the effective launch plan.
 2. Ensure embedded assets exist on disk (`Containerfile`, `tmux.conf`, and any needed staged guard assets).
 3. If not running with `--lockdown`, resolve secrets from configured host environment, keyring, or trusted command sources. Command helpers run on the host before container startup.
 4. If not running with `--lockdown`, ensure sandbox git config exists.
@@ -561,3 +561,23 @@ Equivalent convenience targets:
 - `make install-self`
 - `make uninstall`
 - `make aliases`
+
+
+## `hooks`
+
+```sh
+ags hooks describe prepare
+ags hooks schema prepare input
+ags hooks schema prepare output
+ags hooks validate response.json # '-' reads stdin; never executes code
+ags hooks test NAME --config PATH --agent shell
+ags hooks test NAME --config PATH --context prepare-context.json
+```
+
+**`test` executes trusted HOST CODE and is not a side-effect-free dry run.** It uses
+content/declaration/argv trust checks and bounded execution, validates contributions,
+and prints only a redacted summary; it does not resolve 1Password values or launch Podman.
+`--workdir PATH` overrides the default current directory. `--context` is mutually exclusive
+with `--agent`/`--workdir`. Only `prepare` is implemented; `started`/`finished` are future events.
+See [Startup hooks](STARTUP_HOOKS.md), including entrypoint-only (not transitive) trust,
+lockdown restrictions, and opaque `--op-secret-set` precedence/pruning limitations.

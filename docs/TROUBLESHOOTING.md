@@ -721,3 +721,26 @@ Then rerun:
 ```bash
 ags doctor
 ```
+
+
+## Prepare hook refusal or failure
+
+- New/changed hooks require an interactive AGS-owned approval of host-user execution.
+  Rerun with the same config, or use `ags hooks test NAME --config PATH` to review one
+  hook. **Test executes host code; it is not an inert dry run.** Repository overlay
+  approval must be granted separately before project hook hash approval.
+- Use `ags hooks validate response.json` to check a response without execution.
+  Stdout must be one JSON response, not diagnostics; send diagnostics to stderr.
+- Timeout/output limits, nonzero exit, reserved env keys or protected/overlapping paths
+  fail closed and are not retried. Pick independent data destinations, not nested
+  overlays into existing workspace or AGS-managed mounts.
+- Native `$ORIGIN` libraries and script `$0` resource discovery may need explicit
+  absolute paths: execution uses a private approved-byte copy. AGS never falls back
+  to the mutable original entrypoint.
+- Install/update an `op` supporting `inject` for surviving hook references. Host op
+  authentication is required only at the final launch handoff, never for schema,
+  validation or the redacted hook test. In lockdown, remove/override surviving refs
+  and host mounts rather than expecting them to be silently ignored.
+
+See [Startup hooks](STARTUP_HOOKS.md) for trust, process/resource ownership and temporary
+secret-transport limitations.

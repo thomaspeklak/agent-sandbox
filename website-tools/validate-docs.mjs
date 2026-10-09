@@ -150,6 +150,62 @@ async function validateSearchIndex(htmlByPath) {
   console.log(`Validated ${entries.length} section-level search entries.`);
 }
 
+async function validateStartupHooks(htmlByPath) {
+  const guideUrl = "startup-hooks.html";
+  const guide = htmlByPath.get(join(docsDir, guideUrl)) ?? "";
+  const home = htmlByPath.get(join(docsDir, "index.html")) ?? "";
+  if (!home.includes(`<a href="./${guideUrl}"><span><strong>Startup hooks</strong>`)) {
+    failures.push("Documentation library is missing the startup hooks guide");
+  }
+  for (const [path, html] of htmlByPath) {
+    if (dirname(path) !== docsDir) continue;
+    if (!html.includes(`href="./${guideUrl}" class="sidebar-link`)) {
+      failures.push(`${relative(rootDir, path)} is missing startup hooks navigation`);
+    }
+  }
+  for (const slug of ["overview", "commands", "configuration"]) {
+    if (!htmlByPath.get(join(docsDir, `${slug}.html`))?.includes(`href="${guideUrl}"`)) {
+      failures.push(`${slug}.html is missing the mapped startup hooks guide link`);
+    }
+  }
+
+  const entries = JSON.parse(await readFile(join(docsDir, "search-index.json"), "utf8"));
+  for (const url of [guideUrl, `${guideUrl}#discover-and-test`]) {
+    if (!entries.some((entry) => entry.url === url && entry.keywords.includes("hooks"))) {
+      failures.push(`Search index is missing startup hooks entry ${url}`);
+    }
+  }
+
+  const exampleRepo = "https://github.com/thomaspeklak/ags-hook-pi-intercom-namespace";
+  if (!guide.includes(`href="${exampleRepo}"`)) {
+    failures.push("Startup hooks guide is missing the standalone Pi intercom example link");
+  }
+  const example = entries.find(
+    (entry) => entry.url === `${guideUrl}#example-pi-intercom-namespace`,
+  );
+  if (
+    !example?.text.includes("ags-hook-pi-intercom-namespace") ||
+    !example.text.includes("PI INTERCOM SCOPE ID") // Search text normalizes Markdown underscores.
+  ) {
+    failures.push("Search index is missing the Pi intercom namespace example text");
+  }
+
+  for (const direction of ["input", "output"]) {
+    const asset = `schemas/prepare-${direction}.schema.json`;
+    if (!guide.includes(`href="assets/${asset}"`)) {
+      failures.push(`Startup hooks guide is missing the ${direction} schema asset link`);
+    }
+    try {
+      const source = await readFile(join(rootDir, "docs", asset), "utf8");
+      const published = await readFile(join(docsDir, "assets", asset), "utf8");
+      JSON.parse(published);
+      if (source !== published) failures.push(`Published ${asset} differs from its source`);
+    } catch (error) {
+      failures.push(`Cannot read/parse published ${asset}: ${error.message}`);
+    }
+  }
+}
+
 async function validateSitemap(generatedPages) {
   const sitemap = await readFile(join(siteDir, "sitemap.xml"), "utf8");
   const expectedUrls = [
@@ -181,6 +237,7 @@ async function main() {
   await validateSourceCoverage(generatedPages);
   await validateHtmlLinks(htmlFiles, htmlByPath);
   await validateSearchIndex(htmlByPath);
+  await validateStartupHooks(htmlByPath);
   await validateSitemap(generatedPages);
 
   if (failures.length) {

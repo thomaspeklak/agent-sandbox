@@ -81,3 +81,45 @@ fn fish_completion_contains_subcommands() {
     assert!(script.contains("-l env -r"));
     assert!(script.contains("-l op-secret-set -s 1 -r"));
 }
+
+#[test]
+fn bash_hooks_validate_completes_files_without_changing_other_contexts() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("response.json"), "{}").unwrap();
+    let complete = |words: &[&str]| {
+        let output = std::process::Command::new("bash")
+            .current_dir(root.path())
+            .args(["--noprofile", "--norc", "-c"])
+            .arg(format!(
+                "{}\nCOMP_WORDS=(\"$@\"); COMP_CWORD=$(($#-1)); _ags_completion; printf '%s\\n' \"${{COMPREPLY[@]}}\"",
+                render(Shell::Bash)
+            ))
+            .arg("completion-test")
+            .args(words)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output.stderr);
+        String::from_utf8(output.stdout).unwrap()
+    };
+    assert_eq!(
+        complete(&["ags", "hooks", "validate", "resp"]),
+        "response.json\n"
+    );
+    assert_eq!(
+        complete(&["ags", "hooks", "validate", ""]),
+        "response.json\n"
+    );
+    assert_eq!(complete(&["ags", "hooks", "val"]), "validate\n");
+    assert_eq!(
+        complete(&["ags", "hooks", "test", "fixture", "--agent", "sh"]),
+        "shell\n"
+    );
+    assert_eq!(
+        complete(&["ags", "hooks", "test", "fixture", "--context", "resp"]),
+        "response.json\n"
+    );
+    assert_eq!(
+        complete(&["ags", "hooks", "validate", "response.json", "--he"]),
+        "--help\n"
+    );
+}
