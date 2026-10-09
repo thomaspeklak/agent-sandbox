@@ -12,6 +12,8 @@ impl fmt::Display for CliError {
             Self::MissingToolPackagesPath => f.write_str("missing tool catalog JSON path (use `ags tools <path>` or `ags tools --packages <path>`)"),
             Self::MissingNodeCommand => f.write_str("missing Node runtime command (expected `install <version>` or `list`)"),
             Self::MissingNodeVersion => f.write_str("missing Node version for `node install`"),
+            Self::MissingT3Action => f.write_str("missing T3 action (expected `ags t3 status|stop|upgrade`)"),
+            Self::MissingRepositoryValue => f.write_str("missing value for --repository"),
             Self::MissingEnvValue => f.write_str("missing value for --env (expected NAME=VALUE)"),
             Self::MissingOpSecretSetValue => f.write_str("missing value for --op-secret-set / -1"),
             Self::MissingShellValue => f.write_str("missing value for --shell"),

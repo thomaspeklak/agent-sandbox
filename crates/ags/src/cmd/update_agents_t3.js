@@ -34,4 +34,8 @@ fs.writeFileSync(path.join(root, 'version'), `${version}\n`);
 return { version, destination };
 }
 module.exports = { prepareT3Runtime };
-if (process.env.T3_PACKAGE_PATH) prepareT3Runtime(process.env.T3_PACKAGE_PATH, '/usr/local/pnpm/ags-t3-runtime');
+// The updater executes this source through stdin, where require.main is unset.
+if (require.main === module || module.id === '[stdin]') {
+  if (!process.env.T3_PACKAGE_PATH) throw new Error('T3_PACKAGE_PATH is required to prepare the T3 runtime');
+  prepareT3Runtime(process.env.T3_PACKAGE_PATH, '/usr/local/pnpm/ags-t3-runtime');
+}

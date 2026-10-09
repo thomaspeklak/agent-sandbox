@@ -1,6 +1,6 @@
 use ags::t3::compatibility;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::{fs::PermissionsExt, net::UnixListener};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -97,6 +97,7 @@ gitconfig_path = {gitconfig:?}
 auth_key = {auth:?}
 sign_key = {sign:?}
 enabled_agents = ["t3"]
+extra_dnf_packages = []
 [host_ui]
 enabled = false
 [clipboard]
@@ -298,19 +299,36 @@ fn automatic_ssh_start_reuse_disconnect_stop_upgrade_and_owner_recovery() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let initial = b"streamed binary forwarding\0\xff";
+    input.write_all(initial).unwrap();
+    let mut echoed = vec![0; initial.len()];
     child
-        .stdin
-        .take()
+        .stdout
+        .as_mut()
         .unwrap()
-        .write_all(b"forwarding with EOF")
+        .read_exact(&mut echoed)
         .unwrap();
+    assert_eq!(echoed, initial, "forwarding must stream before stdin EOF");
+    input.write_all(b"response after EOF").unwrap();
+    drop(input);
     let forwarded = child.wait_with_output().unwrap();
     assert!(
         forwarded.status.success(),
         "{}",
         String::from_utf8_lossy(&forwarded.stderr)
     );
-    assert_eq!(forwarded.stdout, b"forwarding with EOF");
+    assert_eq!(forwarded.stdout, b"response after EOF");
+    assert!(fixture.events().iter().any(|event| {
+        event
+            .as_array()
+            .is_some_and(|args| args.iter().any(|arg| arg == "/run/ags-t3/forward-tcp.js"))
+    }));
+    assert!(!fixture.events().iter().any(|event| {
+        event
+            .as_array()
+            .is_some_and(|args| args.iter().any(|arg| arg == "socat"))
+    }));
     assert_eq!(
         fixture
             .events()

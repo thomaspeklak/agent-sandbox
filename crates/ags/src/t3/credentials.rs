@@ -1,9 +1,8 @@
 use super::registration::Registration;
 use crate::config::ValidatedConfig;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, Seek, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::io;
+use std::os::fd::OwnedFd;
 
 pub fn prepare(registration: &Registration, config: &ValidatedConfig) -> io::Result<Vec<OwnedFd>> {
     let mut environment = crate::secrets::resolve_secrets_for_run(
@@ -69,7 +68,12 @@ impl crate::secrets::SecretBackend for NoninteractiveBackend {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn sealed_environment(environment: &HashMap<String, String>) -> io::Result<OwnedFd> {
+    use std::fs::File;
+    use std::io::{Seek, Write};
+    use std::os::fd::{AsRawFd, FromRawFd};
+
     let raw = unsafe {
         libc::memfd_create(
             c"ags-t3-environment".as_ptr(),
@@ -89,3 +93,15 @@ fn sealed_environment(environment: &HashMap<String, String>) -> io::Result<Owned
     }
     Ok(file.into())
 }
+
+#[cfg(not(target_os = "linux"))]
+fn sealed_environment(_: &HashMap<String, String>) -> io::Result<OwnedFd> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "sealed T3 boot descriptors require Linux",
+    ))
+}
+
+#[cfg(test)]
+#[path = "credentials_tests.rs"]
+mod tests;

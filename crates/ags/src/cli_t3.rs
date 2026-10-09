@@ -18,9 +18,7 @@ pub struct T3Options {
 }
 
 pub(super) fn parse_args(mut args: impl Iterator<Item = String>) -> Result<T3Options, CliError> {
-    let command = args
-        .next()
-        .ok_or_else(|| CliError::UnexpectedPositional("expected t3 status|stop|upgrade".into()))?;
+    let command = args.next().ok_or(CliError::MissingT3Action)?;
     let action = match command.as_str() {
         "status" => T3Action::Status,
         "stop" => T3Action::Stop,
@@ -38,8 +36,9 @@ pub(super) fn parse_args(mut args: impl Iterator<Item = String>) -> Result<T3Opt
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--repository" => {
-                options.repository =
-                    Some(args.next().ok_or(CliError::MissingMountPathValue)?.into())
+                options.repository = Some(
+                    super::required_value(args.next(), CliError::MissingRepositoryValue)?.into(),
+                )
             }
             "--registration" if matches!(action, T3Action::Owner | T3Action::Proxy) => {
                 options.registration =

@@ -375,7 +375,7 @@ rm -rf /opt/claude-home/* /opt/claude-home/.[!.]* /opt/claude-home/..?*"#
     };
     let t3_runtime = if enabled_agents.contains(&Agent::T3) {
         format!(
-            "T3_PACKAGE_PATH=\"$(pnpm_dependency_path {})\" node <<'AGS_T3_RUNTIME'\n{}\nAGS_T3_RUNTIME",
+            "T3_PACKAGE_PATH=\"$(pnpm_dependency_path {})\"\nexport T3_PACKAGE_PATH\nnode <<'AGS_T3_RUNTIME'\n{}\nAGS_T3_RUNTIME",
             shell_quote(pnpm::package(Agent::T3, pi_spec, providers)?),
             include_str!("update_agents_t3.js")
         )

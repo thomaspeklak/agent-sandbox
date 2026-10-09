@@ -3,8 +3,33 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { prepareT3Runtime } = require('../src/cmd/update_agents_t3.js');
 const { snapshot } = require('../src/cmd/update_agents_manifest.js');
+
+const preparer = path.resolve(__dirname, '../src/cmd/update_agents_t3.js');
+
+test('direct and stdin execution reject missing or empty T3 package paths', () => {
+  const source = fs.readFileSync(preparer, 'utf8');
+  for (const value of [undefined, '']) {
+    const env = { ...process.env };
+    delete env.T3_PACKAGE_PATH;
+    if (value !== undefined) env.T3_PACKAGE_PATH = value;
+    for (const args of [[preparer], []]) {
+      const result = spawnSync(process.execPath, args, { env, input: source, encoding: 'utf8' });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /T3_PACKAGE_PATH is required/);
+    }
+  }
+});
+
+test('importing the preparer does not run it even when T3_PACKAGE_PATH is set', () => {
+  const result = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(preparer)})`], {
+    env: { ...process.env, T3_PACKAGE_PATH: '/nonexistent/t3-package' },
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ags-t3-runtime-'));
@@ -35,6 +60,20 @@ test('pnpm bundle becomes an independent complete exact-version SSH runtime', t 
   fs.writeFileSync(path.join(data.platform, 'node_modules/native/module.node'), 'mutated install');
   assert.equal(fs.readFileSync(path.join(destination, 'node_modules/native/module.node'), 'utf8'), 'native v1');
   assert.equal(fs.readFileSync(path.join(destination, 'client/index.html'), 'utf8'), 'web');
+});
+
+test('updater stdin execution prepares the bundle when the package path is present', t => {
+  const data = fixture(t);
+  const source = fs.readFileSync(preparer, 'utf8')
+    .replace("'/usr/local/pnpm/ags-t3-runtime'", JSON.stringify(data.view));
+  const result = spawnSync(process.execPath, [], {
+    env: { ...process.env, T3_PACKAGE_PATH: data.packageRoot },
+    input: source,
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(path.join(data.view, 'version'), 'utf8'), '0.0.45\n');
+  assert.equal(fs.readFileSync(path.join(data.view, 'versions/0.0.45/.install-complete'), 'utf8'), '0.0.45\n');
 });
 
 test('T3-only inventory detects native, web, monitor, and compatibility changes', t => {

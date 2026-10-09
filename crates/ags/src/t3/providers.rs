@@ -128,6 +128,7 @@ pub fn prepare(registration: &Registration, config: &ValidatedConfig) -> io::Res
             include_str!("environment-bootstrap.py"),
         ),
         ("stop-server", include_str!("stop-server.py")),
+        ("forward-tcp.js", include_str!("forward-tcp.js")),
         (
             "onepassword-bootstrap",
             include_str!("../../../../agent/onepassword-bootstrap"),

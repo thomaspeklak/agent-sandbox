@@ -104,10 +104,14 @@ elif args[0] == "exec":
                 os.kill(value["server_pid"], 15)
             except ProcessLookupError:
                 pass
-    elif "socat" in args:
-        data = sys.stdin.buffer.read()
-        sys.stdout.buffer.write(data)
-        sys.stdout.buffer.flush()
+    elif "/run/ags-t3/forward-tcp.js" in args:
+        assert args == ["exec", "-i", "c" * 64, "/usr/bin/node", "/run/ags-t3/forward-tcp.js"]
+        assets = next(mount["Source"] for mount in state()["Mounts"]
+                      if mount["Destination"] == "/run/ags-t3")
+        assert (Path(assets) / "forward-tcp.js").is_file()
+        while data := sys.stdin.buffer.read1(65536):
+            sys.stdout.buffer.write(data)
+            sys.stdout.buffer.flush()
     else:
         raise RuntimeError(f"unexpected exec operation {args}")
 else:

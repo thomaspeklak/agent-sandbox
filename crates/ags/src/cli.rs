@@ -149,6 +149,8 @@ pub enum CliError {
     MissingToolPackagesPath,
     MissingNodeCommand,
     MissingNodeVersion,
+    MissingT3Action,
+    MissingRepositoryValue,
     MissingEnvValue,
     MissingOpSecretSetValue,
     MissingShellValue,

@@ -178,9 +178,8 @@ impl Handler for Bridge {
                 "exec",
                 "-i",
                 &target,
-                "socat",
-                "STDIO",
-                "TCP:127.0.0.1:3773",
+                "/usr/bin/node",
+                "/run/ags-t3/forward-tcp.js",
             ])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
