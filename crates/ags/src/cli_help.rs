@@ -22,6 +22,8 @@ Commands:
 \
   completions    Print shell completion script to stdout
 \
+  hooks          describe prepare | schema prepare input/output | validate FILE/- | test NAME (executes HOST CODE)
+\
   tools          Choose sandbox tools and agent CLIs
 \
   node           Install or list user-managed Node.js versions

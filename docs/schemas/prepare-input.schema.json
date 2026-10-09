@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "AGS prepare input v1",
+  "required": [
+    "version",
+    "event",
+    "launch_id",
+    "project",
+    "workdir",
+    "agent"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "event": {
+      "const": "prepare"
+    },
+    "launch_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "workdir": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "agent": {
+      "enum": [
+        "pi",
+        "claude",
+        "codex",
+        "gemini",
+        "opencode",
+        "shell"
+      ]
+    }
+  }
+}

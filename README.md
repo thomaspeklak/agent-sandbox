@@ -592,3 +592,20 @@ cargo test -p ags
 - Additional agent/profile support
 - Better cross-platform behavior and install UX
 - Safer defaults and security hardening
+
+
+### Host startup preparation
+
+Optional cumulative `[[prepare_hook]]` declarations run host executables before container
+creation and contribute environment values, generated files, bind mounts and 1Password
+references. Approval grants **host-user execution**, tracking the entrypoint bytes and
+argv—not imported code/libraries or scripts passed as interpreter arguments. Deterministic
+merge, bounded parallel execution, protected targets and redacted discoverability commands
+are described in [Startup hooks v1](docs/STARTUP_HOOKS.md).
+
+```sh
+ags hooks describe prepare
+ags hooks schema prepare output
+ags hooks validate response.json # inert validation
+ags hooks test NAME --agent shell # executes trusted HOST CODE; not a dry run
+```

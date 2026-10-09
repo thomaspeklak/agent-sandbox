@@ -31,12 +31,22 @@ pub fn parse_and_validate_with_overlay(
     overlay_path: Option<&Path>,
 ) -> Result<ValidatedConfig, ConfigError> {
     let mut merged = read_toml_value(base_path)?;
+    let mut hooks = crate::hooks::parse_declarations(&merged, base_path, None)
+        .map_err(ConfigError::Validation)?;
     let mut tool_download_lock_config_path = base_path;
     let mut agent_provider_lock_config_path = base_path;
 
     if let Some(overlay_path) = overlay_path {
         let overlay = read_toml_value(overlay_path)?;
         reject_overlay_command_secrets(&overlay, overlay_path)?;
+        let project = overlay_path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or(Path::new("."));
+        hooks.extend(
+            crate::hooks::parse_declarations(&overlay, overlay_path, Some(project))
+                .map_err(ConfigError::Validation)?,
+        );
         if overlay
             .get("sandbox")
             .and_then(Value::as_table)
@@ -57,12 +67,14 @@ pub fn parse_and_validate_with_overlay(
         merge_toml_value(&mut merged, overlay, &[]);
     }
 
-    parse_toml_value(
+    let mut config = parse_toml_value(
         merged,
         base_path,
         tool_download_lock_config_path,
         agent_provider_lock_config_path,
-    )
+    )?;
+    config.prepare_hooks = hooks;
+    Ok(config)
 }
 
 /// Parse and validate config from a TOML string (useful for testing).
@@ -91,62 +103,23 @@ fn parse_toml_value(
     tool_download_lock_config_path: &Path,
     agent_provider_lock_config_path: &Path,
 ) -> Result<ValidatedConfig, ConfigError> {
-    let raw: RawConfig = value.try_into().map_err(|e| ConfigError::Toml {
+    let raw: RawConfig = value.clone().try_into().map_err(|e| ConfigError::Toml {
         path: config_path.to_owned(),
         source: e,
     })?;
-    validate(
+    let hooks = crate::hooks::parse_declarations(&value, config_path, None)
+        .map_err(ConfigError::Validation)?;
+    let mut config = validate(
         raw,
         config_path,
         tool_download_lock_config_path,
         agent_provider_lock_config_path,
-    )
+    )?;
+    config.prepare_hooks = hooks;
+    Ok(config)
 }
 
-fn reject_overlay_command_secrets(overlay: &Value, overlay_path: &Path) -> Result<(), ConfigError> {
-    let Some(root) = overlay.as_table() else {
-        return Ok(());
-    };
-
-    if let Some(secrets) = root.get("secret").and_then(Value::as_array) {
-        for (index, secret) in secrets.iter().enumerate() {
-            if secret
-                .as_table()
-                .is_some_and(|table| table.contains_key("command"))
-            {
-                return Err(ConfigError::Validation(format!(
-                    "repo-local config {} may not define [[secret]] #{index}.command; command secret sources are allowed only in the user/global config",
-                    overlay_path.display()
-                )));
-            }
-        }
-    }
-
-    if let Some(tools) = root.get("tool").and_then(Value::as_array) {
-        for (tool_index, tool) in tools.iter().enumerate() {
-            let Some(secrets) = tool
-                .as_table()
-                .and_then(|table| table.get("secret"))
-                .and_then(Value::as_array)
-            else {
-                continue;
-            };
-            for (secret_index, secret) in secrets.iter().enumerate() {
-                if secret
-                    .as_table()
-                    .is_some_and(|table| table.contains_key("command"))
-                {
-                    return Err(ConfigError::Validation(format!(
-                        "repo-local config {} may not define [[tool]] #{tool_index}.secret[{secret_index}].command; command secret sources are allowed only in the user/global config",
-                        overlay_path.display()
-                    )));
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
+include!("parse_overlay.rs");
 
 fn validate(
     raw: RawConfig,
@@ -190,6 +163,7 @@ fn validate(
         .map_err(ConfigError::Validation)?;
     Ok(ValidatedConfig {
         config_file: config_path.to_owned(),
+        prepare_hooks: Vec::new(),
         sandbox,
         mounts,
         tools,

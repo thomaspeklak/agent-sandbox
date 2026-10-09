@@ -1,14 +1,15 @@
 //! Top-level agent launch lifecycle.
 
-use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::cli::{Agent, RunOptions};
-use crate::config::{self, ValidatedConfig};
+
 use crate::onepassword::{BootstrapAssetGuard, SourceRef};
 use crate::secrets::{self, OsHostCommandRunner, OsSecretBackend};
 use crate::ssh::{self, OsSshRunner, SshKey};
-use crate::trust::StdioRepoConfigPrompter;
+#[path = "lifecycle_config.rs"]
+mod config_loading;
+pub use config_loading::{load_config, resolve_repo_local_config};
 
 pub fn run_agent(opts: RunOptions) -> ExitCode {
     // Parse sources before any host lookup. They remain metadata until Podman
@@ -49,6 +50,29 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         );
         return ExitCode::from(2);
     }
+
+    // Prepare hooks are approved and validated before any sidecar/container startup.
+    let workdir = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("error: cannot determine working directory: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let hook_materialized = if config.prepare_hooks.is_empty() {
+        None
+    } else {
+        let prepared = crate::hooks::Context::new(&workdir, opts.agent)
+            .and_then(|context| crate::hooks::prepare(&config.prepare_hooks, &context))
+            .and_then(|contributions| contributions.materialize(&mut config, &opts));
+        match prepared {
+            Ok(materialized) => Some(materialized),
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    };
 
     // 2. Ensure embedded assets are on disk
     if let Err(e) = crate::assets::ensure_image_build_context(&config.sandbox.containerfile) {
@@ -94,12 +118,15 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         None
     };
 
-    let resolved_secrets = secrets::resolve_secrets_for_run(
+    let mut resolved_secrets = secrets::resolve_secrets_for_run(
         &config.secrets,
         &OsSecretBackend,
         &OsHostCommandRunner,
         opts.lockdown,
     );
+    if let Some(hooks) = &hook_materialized {
+        hooks.filter_default_secrets(&mut resolved_secrets);
+    }
 
     if !opts.lockdown {
         let sign_key_container = "/home/dev/.ssh/ags-agent-signing.pub";
@@ -284,15 +311,6 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         .as_ref()
         .map(|_| format!("ags-{}-{pid}", opts.agent.as_str()));
 
-    // 7. Working directory
-    let workdir = match std::env::current_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("error: cannot determine working directory: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-
     let bootstrap_asset = if sources.is_empty() {
         None
     } else {
@@ -306,8 +324,18 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
     };
     let bootstrap_host_path = bootstrap_asset.as_ref().map(BootstrapAssetGuard::path);
 
+    let mut extra_mounts = _lockdown_session
+        .as_ref()
+        .map(|s| s.extra_mounts.clone())
+        .unwrap_or_default();
+    if let Some(hooks) = &hook_materialized {
+        extra_mounts.extend(hooks.mounts.clone());
+    }
+    let effective_env = hook_materialized
+        .as_ref()
+        .map_or(opts.env.as_slice(), |h| h.env.as_slice());
     // 8. Build launch plan
-    let plan = match crate::plan::build_launch_plan(
+    let mut plan = match crate::plan::build_launch_plan(
         &config,
         &workdir,
         opts.agent,
@@ -328,12 +356,9 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
                 .map(|g| g.runtime_dir.as_path()),
             psp_socket: _psp_guard.as_ref().map(|g| g.socket_path.as_path()),
             psp_session_id: psp_session_id.as_deref(),
-            extra_mounts: _lockdown_session
-                .as_ref()
-                .map(|s| s.extra_mounts.as_slice())
-                .unwrap_or(&[]),
+            extra_mounts: &extra_mounts,
             extra_mount_dirs: &opts.add_dirs,
-            env: &opts.env,
+            env: effective_env,
             stop_when_done: opts.stop_when_done,
             root_mode: opts.root,
             wayland_passthrough: opts.wayland_compositor_passthrough
@@ -350,6 +375,16 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+
+    if let Some(hooks) = &hook_materialized {
+        hooks.finish_plan_env(&mut plan);
+    }
+    if let Some(hooks) = &hook_materialized
+        && let Err(e) = hooks.validate_plan(&plan)
+    {
+        eprintln!("error: {e}");
+        return ExitCode::FAILURE;
+    }
 
     if matches!(opts.agent, Agent::Pi | Agent::Claude) {
         if opts.root {
@@ -383,6 +418,13 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
         }
     }
 
+    if let Some(hooks) = &hook_materialized
+        && let Err(e) = hooks.inject_secrets(&mut plan)
+    {
+        eprintln!("error: {e}");
+        return ExitCode::FAILURE;
+    }
+
     // 9. Resolve 1Password payloads only at the final Podman handoff.
     let result = if sources.is_empty() {
         crate::podman::execute(&plan, &opts.passthrough_args)
@@ -396,44 +438,4 @@ pub fn run_agent(opts: RunOptions) -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-pub fn load_config(override_path: Option<&Path>) -> Result<ValidatedConfig, ExitCode> {
-    let config_path = override_path
-        .map(PathBuf::from)
-        .unwrap_or_else(crate::config::default_config_path);
-
-    if !config_path.exists() {
-        if let Err(e) = crate::config::create_default_config(&config_path) {
-            eprintln!("error: could not create default config: {e}");
-            return Err(ExitCode::from(2));
-        }
-        eprintln!("Created default config: {}", config_path.display());
-    }
-
-    let repo_local_config = resolve_repo_local_config(&config_path);
-
-    config::parse_and_validate_with_overlay(&config_path, repo_local_config.as_deref()).map_err(
-        |e| {
-            eprintln!("error: {e}");
-            ExitCode::from(2)
-        },
-    )
-}
-
-pub fn resolve_repo_local_config(config_path: &Path) -> Option<PathBuf> {
-    std::env::current_dir().ok().and_then(|cwd| {
-        match crate::trust::resolve_repo_local_overlay(
-            &cwd,
-            config_path,
-            &crate::trust::default_trust_store_path(),
-            &StdioRepoConfigPrompter,
-        ) {
-            Ok(path) => path,
-            Err(err) => {
-                eprintln!("warning: could not load repo trust state: {err}");
-                None
-            }
-        }
-    })
 }

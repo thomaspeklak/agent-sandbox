@@ -177,3 +177,32 @@ fn same_existing_path(a: &Path, b: &Path) -> bool {
     };
     a == b
 }
+
+/// Detect declarations inertly when overlay approval was denied or unavailable.
+/// Preserve the legacy skip convention for overlays without hooks, and the
+/// explicit same-file config selection (which is loaded as the primary config).
+pub fn refuse_unloaded_hook_overlay(cwd: &Path, global_config: &Path) -> Result<(), String> {
+    let Some(root) = crate::git::repo_root(cwd) else {
+        return Ok(());
+    };
+    let overlay = root.join(".ags/config.toml");
+    if same_existing_path(&overlay, global_config) {
+        return Ok(());
+    }
+    let Ok(content) = fs::read_to_string(&overlay) else {
+        return Ok(());
+    };
+    let Ok(value) = content.parse::<toml::Value>() else {
+        return Ok(());
+    };
+    if value
+        .get("prepare_hook")
+        .is_some_and(|hooks| !hooks.as_array().is_some_and(Vec::is_empty))
+    {
+        return Err(format!(
+            "project config {} declares prepare hooks but overlay trust was not granted; rerun AGS in an interactive terminal to approve the repository config, then review each hook hash/argv and approve HOST USER execution. No hooks were executed",
+            overlay.display()
+        ));
+    }
+    Ok(())
+}

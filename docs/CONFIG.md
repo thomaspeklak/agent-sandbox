@@ -40,6 +40,7 @@ Merge rules:
   - `[[agent_mount]]`
   - `[[tool]]`
   - `[[secret]]`
+  - `[[prepare_hook]]` (global + project host executable declarations)
 - other arrays are replaced by the repo-local value
 
 This lets a project add mounts, tools, and non-command secrets locally without copying your full personal config. For host security, repo-local overlays cannot define `command` secret sources, including under `[[tool.secret]]`.
@@ -554,3 +555,19 @@ minimum_release_age = 1440 # minutes
 - Prefer `optional=true` for machine-specific paths.
 - Prefer `mode="ro"` unless writes are necessary.
 - Keep browser section disabled unless you actively use it.
+
+
+## `[[prepare_hook]]`
+
+Optional host startup preparation. Global and project lists accumulate; contributions
+merge as defaults < global hooks < project hooks < explicit known-key CLI options.
+Entry-point content/declaration/argv approval is separate from repository-overlay trust.
+A discovered untrusted project overlay declaring hooks fails instead of silently dropping
+those declarations. Native executables and directly executable scripts support arguments.
+
+See [Startup hooks](STARTUP_HOOKS.md) for the versioned JSON protocol, schemas, examples,
+reserved targets/keys, concurrency/deadlines, 1Password batching, trust limitations and
+resource ownership. Hook paths are literal absolute paths or relative to their declaring
+config file; unlike general mount/secret config paths they do not expand `~` or environment
+variables. `--lockdown` still executes approved host hooks, but rejects surviving hook
+secret references and host bind mounts; it permits protected literal env/generated files.
