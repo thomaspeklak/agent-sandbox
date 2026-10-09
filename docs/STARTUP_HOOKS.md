@@ -187,3 +187,20 @@ start other hooks, or prove compatibility with every effective runtime mount. Wi
 `--context`, context uses the current directory (or `--workdir PATH`) and selected `--agent`
 (default shell). An explicit JSON context cannot be combined with agent/workdir overrides.
 Trust prompting is AGS-owned; hooks themselves must never wait for interactive stdin.
+
+## Example: Pi intercom namespace
+
+[ags-hook-pi-intercom-namespace](https://github.com/thomaspeklak/ags-hook-pi-intercom-namespace)
+is a standalone MIT-licensed prepare hook that sets `PI_INTERCOM_SCOPE_ID` for `pi`
+and `shell` launches. Its default `project` mode uses the repository name (for example,
+`agent-sandbox`) to group sessions across worktrees. Optional `worktree` mode adds the
+checkout folder name when multiple actual checkouts exist. Explicit `global` mode emits
+an empty scope to join other unscoped sessions; it does not bridge to scoped sessions.
+For supported non-`pi`/`shell` agents, the hook is a no-op and leaves any inherited scope
+unchanged. Names are routing conveniences, not authentication or guaranteed isolation;
+repository or checkout names can collide.
+
+AGS does not install or enable this hook. Install it separately, review its executable
+and configuration, declare it as a prepare hook, and grant normal AGS host-execution
+approval. See the linked repository for setup, configuration, naming limitations, and
+the MIT license. Setting a scope alone does not establish intercom broker reachability.

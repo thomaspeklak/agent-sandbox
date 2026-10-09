@@ -176,6 +176,20 @@ async function validateStartupHooks(htmlByPath) {
     }
   }
 
+  const exampleRepo = "https://github.com/thomaspeklak/ags-hook-pi-intercom-namespace";
+  if (!guide.includes(`href="${exampleRepo}"`)) {
+    failures.push("Startup hooks guide is missing the standalone Pi intercom example link");
+  }
+  const example = entries.find(
+    (entry) => entry.url === `${guideUrl}#example-pi-intercom-namespace`,
+  );
+  if (
+    !example?.text.includes("ags-hook-pi-intercom-namespace") ||
+    !example.text.includes("PI INTERCOM SCOPE ID") // Search text normalizes Markdown underscores.
+  ) {
+    failures.push("Search index is missing the Pi intercom namespace example text");
+  }
+
   for (const direction of ["input", "output"]) {
     const asset = `schemas/prepare-${direction}.schema.json`;
     if (!guide.includes(`href="assets/${asset}"`)) {
