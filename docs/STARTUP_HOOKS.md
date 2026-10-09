@@ -174,7 +174,8 @@ ags hooks test development-services --config /path/to/config.toml --agent shell
 ags hooks test development-services --context prepare-context.json --config /path/to/config.toml
 ```
 
-Schemas are published in `docs/schemas/prepare-{input,output}.schema.json`. JSON Schema
+Schemas are published as [prepare input](schemas/prepare-input.schema.json) and
+[prepare output](schemas/prepare-output.schema.json) in `docs/schemas/`. JSON Schema
 covers structural/static rules; the validator additionally enforces protected paths/keyspace,
 byte bounds and contribution overlaps. Host existence and effective launch-plan checks are
 contextual and cannot all be represented by JSON Schema.

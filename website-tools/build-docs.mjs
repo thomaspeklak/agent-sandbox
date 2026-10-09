@@ -50,6 +50,16 @@ const documents = [
     keywords: ["config", "toml", "mount", "secret", "browser", "clipboard"],
   },
   {
+    slug: "startup-hooks",
+    source: "docs/STARTUP_HOOKS.md",
+    title: "Startup prepare hooks",
+    navTitle: "Startup hooks",
+    group: "operate",
+    description:
+      "Prepare launches with trusted host executables, a versioned JSON protocol, and validated environment, file, and mount contributions.",
+    keywords: ["startup", "prepare", "hooks", "trust", "schema", "validate"],
+  },
+  {
     slug: "onepassword",
     source: "docs/ONEPASSWORD.md",
     title: "1Password Secure Note sets",
@@ -157,6 +167,13 @@ const documents = [
 const sourceToDocument = new Map(
   documents.map((document) => [normalize(resolve(rootDir, document.source)), document]),
 );
+const documentAssets = [
+  "schemas/prepare-input.schema.json",
+  "schemas/prepare-output.schema.json",
+];
+const sourceToAsset = new Map(
+  documentAssets.map((asset) => [resolve(rootDir, "docs", asset), `assets/${asset}`]),
+);
 
 function escapeHtml(value) {
   return String(value)
@@ -226,6 +243,11 @@ function rewriteHref(href, sourcePath) {
   const targetDocument = sourceToDocument.get(target);
   if (targetDocument) {
     return `${targetDocument.slug}.html${fragment ? `#${fragment}` : ""}`;
+  }
+
+  const targetAsset = sourceToAsset.get(target);
+  if (targetAsset) {
+    return `${targetAsset}${fragment ? `#${fragment}` : ""}`;
   }
 
   if (target === resolve(rootDir, "agent-sandbox-logo.webp")) {
@@ -681,6 +703,11 @@ function renderDocsHome(searchEntryCount, latestRelease) {
 async function main() {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputAssetsDir, { recursive: true });
+  for (const asset of documentAssets) {
+    const destination = join(outputAssetsDir, asset);
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(join(rootDir, "docs", asset), destination);
+  }
 
   const searchIndex = [];
   let latestRelease = "current";
