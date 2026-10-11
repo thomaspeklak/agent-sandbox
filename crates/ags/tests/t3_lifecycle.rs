@@ -208,13 +208,31 @@ command = [{python:?}, {lookup:?}, {secret:?}]
             .map(|line| serde_json::from_str(line).unwrap())
             .collect()
     }
+    fn private_dir(&self) -> std::path::PathBuf {
+        fs::read_dir(self.root.path().join("data/ags/t3/identity"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path()
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
         let status = self.ags(&["t3", "status"]);
-        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&status.stdout)
-            && let Some(pid) = value["owner_pid"].as_u64()
-        {
+        let value = serde_json::from_slice::<serde_json::Value>(&status.stdout).ok();
+        let pid = value
+            .as_ref()
+            .and_then(|value| value["owner_pid"].as_u64())
+            .or_else(|| {
+                let identities =
+                    fs::read_dir(self.root.path().join("data/ags/t3/identity")).ok()?;
+                identities.flatten().find_map(|entry| {
+                    let bytes = fs::read(entry.path().join("owner-process.json")).ok()?;
+                    serde_json::from_slice::<serde_json::Value>(&bytes).ok()?["pid"].as_u64()
+                })
+            });
+        if let Some(pid) = pid {
             unsafe {
                 libc::kill(pid as i32, libc::SIGTERM);
             }
@@ -235,6 +253,160 @@ impl Drop for Fixture {
             }
         }
     }
+}
+
+#[test]
+fn podman_image_id_formats_and_legacy_metadata_survive_status_reconnect_and_upgrade() {
+    for image in ["a".repeat(64), format!("sha256:{}", "a".repeat(64))] {
+        let fixture = Fixture::new();
+        fs::write(fixture.root.path().join("image-id"), image).unwrap();
+        let config = fixture.root.path().join("config.toml");
+        let output = fixture.ags(&["--agent", "t3", "--config", config.to_str().unwrap()]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let status = fixture.status();
+        let alias = status["ssh_alias"].as_str().unwrap();
+        let metadata = fixture.private_dir().join("environment.json");
+        let mut spec: serde_json::Value =
+            serde_json::from_slice(&fs::read(&metadata).unwrap()).unwrap();
+        assert_eq!(spec["image"], format!("sha256:{}", "a".repeat(64)));
+        // Existing AGS installations saved Podman's unprefixed .Id verbatim.
+        spec["image"] = "a".repeat(64).into();
+        fs::write(&metadata, serde_json::to_vec(&spec).unwrap()).unwrap();
+        assert_eq!(fixture.status()["runtime"], "0.0.45");
+        assert!(fixture.ags(&["t3", "stop"]).status.success());
+        unsafe {
+            libc::kill(status["owner_pid"].as_u64().unwrap() as i32, libc::SIGTERM);
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while fixture.private_dir().join("owner-process.json").exists() && Instant::now() < deadline
+        {
+            if fixture.status()["owner_running"] == false {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let offline = fixture.status();
+        assert_eq!(offline["owner_running"], false);
+        assert_eq!(offline["runtime"], "0.0.45");
+        let result = fixture.ssh(alias, launch("0.0.45"), true);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            fixture
+                .events()
+                .iter()
+                .filter(|event| event[0] == "create")
+                .count(),
+            1
+        );
+        // Exercise upgrade from legacy metadata as well as fresh inspection.
+        fs::write(&metadata, serde_json::to_vec(&spec).unwrap()).unwrap();
+        fixture.generation("0.0.46");
+        let output = fixture.ags(&["t3", "upgrade"]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fixture.status()["runtime"], "0.0.46");
+        assert_eq!(
+            fixture
+                .events()
+                .iter()
+                .filter(|event| event[0] == "create")
+                .count(),
+            2
+        );
+    }
+}
+
+#[test]
+fn malformed_image_inspection_fails_before_creating_or_persisting_an_environment() {
+    for image in ["localhost/test:latest", "sha256:bad", ""] {
+        let fixture = Fixture::new();
+        fs::write(fixture.root.path().join("image-id"), image).unwrap();
+        let config = fixture.root.path().join("config.toml");
+        let result = fixture.ags(&["--agent", "t3", "--config", config.to_str().unwrap()]);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("invalid pinned image ID"));
+        assert!(!fixture.private_dir().join("environment.json").exists());
+        assert!(!fixture.events().iter().any(|event| event[0] == "create"));
+    }
+}
+
+#[test]
+fn desktop_request_variants_launch_and_pair_without_executing_incoming_scripts() {
+    let fixture = Fixture::new();
+    let config = fixture.root.path().join("config.toml");
+    let output = fixture.ags(&["--agent", "t3", "--config", config.to_str().unwrap()]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let alias = fixture.status()["ssh_alias"].as_str().unwrap().to_owned();
+    let notice = String::from_utf8_lossy(&output.stdout);
+    assert!(notice.contains(&alias));
+    assert!(notice.contains("no listening SSH port (leave port at default 22)"));
+    assert!(notice.contains("SSH config:"));
+    let settings = fixture
+        .command("ssh")
+        .args(["-G", "-F"])
+        .arg(fixture.root.path().join("home/.ssh/config"))
+        .arg(&alias)
+        .output()
+        .unwrap();
+    assert!(settings.status.success());
+    let settings = String::from_utf8_lossy(&settings.stdout);
+    assert!(settings.contains("port 22\n"));
+    assert!(settings.contains("user dev\n"));
+    assert!(settings.contains("proxycommand ") && settings.contains(" t3 _proxy --registration "));
+    let marker = fixture.root.path().join("incoming-script-executed");
+    for (script, is_launch) in [
+        (include_str!("fixtures/t3_desktop_launch.sh"), true),
+        (include_str!("fixtures/t3_desktop_pair.sh"), false),
+    ] {
+        let script = script.replace("@@EXECUTION_MARKER@@", marker.to_str().unwrap());
+        let script = script
+            .lines()
+            .map(|line| format!("  {line}\r\n"))
+            .collect::<String>();
+        let result = fixture.ssh(&alias, script.clone(), is_launch);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        if is_launch {
+            assert_eq!(value["remotePort"], 3773);
+            assert_eq!(value["serverKind"], "external");
+        } else {
+            assert_eq!(value["credential"], "fixture-pairing");
+        }
+        assert!(!marker.exists());
+        let before = fixture.events().len();
+        let mismatch = fixture.ssh(&alias, script.replace("0.0.45", "0.0.46"), is_launch);
+        assert!(!mismatch.status.success());
+        assert!(String::from_utf8_lossy(&mismatch.stderr).contains("desktop requests 0.0.46"));
+        assert_eq!(fixture.events().len(), before);
+    }
+    assert_eq!(
+        fixture
+            .events()
+            .iter()
+            .filter(|event| event[0] == "create")
+            .count(),
+        1
+    );
+    assert_eq!(fixture.container()["State"]["Running"], true);
 }
 
 #[test]
@@ -366,8 +538,13 @@ fn automatic_ssh_start_reuse_disconnect_stop_upgrade_and_owner_recovery() {
     );
     assert_eq!(fixture.status()["runtime"], "0.0.46");
     assert_eq!(fs::read_to_string(&history).unwrap(), "persistent history");
+    let upgraded_owner = fixture.status()["owner_pid"].as_u64().unwrap();
+    assert_ne!(
+        upgraded_owner, owner,
+        "explicit upgrade must load the current AGS executable"
+    );
     unsafe {
-        libc::kill(owner as i32, libc::SIGKILL);
+        libc::kill(upgraded_owner as i32, libc::SIGKILL);
     }
     std::thread::sleep(Duration::from_millis(100));
     let result = fixture.ssh(&alias, launch("0.0.46"), true);
@@ -376,7 +553,10 @@ fn automatic_ssh_start_reuse_disconnect_stop_upgrade_and_owner_recovery() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    assert_ne!(fixture.status()["owner_pid"].as_u64().unwrap(), owner);
+    assert_ne!(
+        fixture.status()["owner_pid"].as_u64().unwrap(),
+        upgraded_owner
+    );
     assert_eq!(fs::read_to_string(&history).unwrap(), "persistent history");
     let events = fs::read_to_string(fixture.root.path().join("events.jsonl")).unwrap();
     assert!(!events.contains("first-fixture-value") && !events.contains("second-fixture-value"));

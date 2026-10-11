@@ -46,7 +46,9 @@ unchecked in `tasks.md`, and feature history remains in progress.
 - Reconcile stale owned containers and orphaned owner process groups before reuse;
   preserve stable sidecar bind paths across owner recovery.
 - Recognize versioned upstream shell templates as data and dispatch typed
-  operations. Incoming scripts, embedded installers, and downloaders never execute.
+  operations. Launch/pairing recognition reads request fields and the exact runtime
+  version rather than comparing the entire installer script. Incoming scripts,
+  embedded installers, and downloaders never execute.
 - Implement separate stdout/stderr, EOF, exit status, cancellation, and bounded
   loopback TCP forwarding. OpenSSH tests caught and fixed binary stdout buffering
   and child-pipe EOF handling.
@@ -55,6 +57,11 @@ unchecked in `tasks.md`, and feature history remains in progress.
   of durable registration, Podman container configuration, and argv.
 - Add validated retained-generation pinning; updates leave active environments
   pinned, and explicit recreation preserves mounted data.
+- Normalize full Podman image IDs with or without `sha256:`, including previously
+  saved metadata, before pinning and comparing container image identity.
+- Explicit upgrade replaces the persistent owner with the current AGS executable,
+  adopting transport fixes as well as the image/runtime. Startup explains the local
+  ProxyCommand, default SSH port, and managed SSH config path.
 
 ## Verification performed
 

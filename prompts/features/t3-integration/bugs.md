@@ -28,3 +28,24 @@ binary-transfer regression reproduces the Node 22 failure of a file-stream write
 - [x] Authenticate host GitHub release lookups with existing credentials and
   preserve HTTP rejection reasons, rate-limit reset times, and recovery actions.
 - [x] Show scoped help for `ags t3 --help` and each management action.
+
+## Desktop connection smoke fixes
+
+- [x] Replace brittle full-script matching in desktop SSH bootstrap and pairing;
+  cover equivalent request serialization and installer variants independently
+  of AGS's template renderer.
+- [x] Accept full Podman image IDs with or without the `sha256:` prefix during
+  startup, status, reconnect, and upgrade, including existing saved metadata.
+- [x] Explain the managed SSH alias and port handling in launch output and docs.
+- [x] Reload the persistent owner on explicit upgrade so an updated AGS binary's
+  SSH compatibility fixes take effect without manually killing the old owner.
+
+Regression coverage exercises real OpenSSH launch/pairing with reduced desktop
+request fixtures containing fatal installer code, harmless quote/whitespace/CRLF
+changes, and exact-version mismatch checks. The installer never executes.
+Lifecycle tests cover both Podman image ID formats, legacy saved metadata,
+offline status, cold reconnect, malformed inspection, and owner replacement on
+upgrade. Full Rust tests pass with `--test-threads=1` (parallel runs encountered
+intermittent sandbox `ETXTBSY` in unrelated executable-fixture tests); formatting,
+Clippy, and all 34 clipboard/T3 Node tests pass. Host desktop smoke verification
+remains pending because this session runs inside the sandbox.

@@ -31,13 +31,9 @@ pub fn specification(registration: &Registration) -> io::Result<Option<Specifica
     if !path.exists() {
         return Ok(None);
     }
-    let spec: Specification = serde_json::from_slice(&fs::read(path)?)?;
-    let image = spec.image.strip_prefix("sha256:").unwrap_or("");
-    if image.len() != 64 || !image.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(io::Error::other(
-            "invalid pinned image ID in T3 environment metadata",
-        ));
-    }
+    let mut spec: Specification = serde_json::from_slice(&fs::read(path)?)?;
+    spec.image = container::normalized_image_id(&spec.image)
+        .map_err(|error| io::Error::other(format!("{error} in T3 environment metadata")))?;
     Ok(Some(spec))
 }
 
@@ -134,10 +130,12 @@ impl Environment {
                 "{{.Id}}",
                 &config.sandbox.image,
             ])?;
-            String::from_utf8(value.stdout)
-                .map_err(io::Error::other)?
-                .trim()
-                .to_owned()
+            container::normalized_image_id(
+                &String::from_utf8(value.stdout).map_err(io::Error::other)?,
+            )
+            .map_err(|error| {
+                io::Error::other(format!("{error} returned by Podman image inspection"))
+            })?
         };
         let assets = super::providers::prepare(registration, &config)?;
         crate::git::ensure_gitconfig(

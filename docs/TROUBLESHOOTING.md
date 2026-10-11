@@ -18,8 +18,14 @@ selected in `ags tools` and installed with `ags update-agents`.
   `ags update-agents` followed by explicit `ags t3 upgrade`. The update's release-age
   policy still applies. Reconnect never downloads a replacement runtime.
 - **Unsupported SSH bootstrap:** AGS recognizes the v0.0.45 release contract.
-  Align desktop/runtime and update AGS's compatibility adapter rather than
-  allowing an unknown installer script to run.
+  This means the request could not be recognized, not that the versions differ.
+  Older AGS builds required an exact installer-script match and could reject a
+  matching desktop. Update AGS; current errors identify the unrecognized part of
+  the request. Then run `ags t3 upgrade` to reload the persistent owner with the
+  new AGS binary. Runtime updates alone do not fix bootstrap classification.
+- **Invalid pinned image ID after a successful launch:** older AGS builds saved
+  Podman's full image ID verbatim but required a `sha256:` prefix when reading it.
+  Update AGS; both full ID formats are now accepted, including existing metadata.
 - **Untrusted/missing registered overlay:** run `ags --agent t3` interactively
   with the registered config to prepare trust. Automatic startup fails instead
   of silently dropping the overlay.

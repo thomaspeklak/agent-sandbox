@@ -25,6 +25,29 @@ pub fn ensure(registration: &Registration, environment: &[(String, String)]) -> 
     crate::util::ensure_private_dir(&directory)?;
     let startup = lock(&directory.join("startup.lock"))?;
     startup.lock()?;
+    ensure_locked(registration, environment)
+}
+
+pub fn upgrade(registration: &Registration) -> io::Result<()> {
+    registration.load_config()?;
+    let directory = registration.runtime_dir()?;
+    crate::util::ensure_private_dir(&directory)?;
+    let startup = lock(&directory.join("startup.lock"))?;
+    startup.lock()?;
+    if request(registration, "stop").is_err() {
+        super::container::stop(registration)?;
+    }
+    // A persistent owner can still be running the executable from before an
+    // AGS update. Explicit recreation must adopt transport fixes as well as the
+    // image/runtime. Serialize it with cold starts and retain the SSH identity.
+    super::owner_process::recover(registration)?;
+    ensure_locked(registration, &[])?;
+    request(registration, "upgrade")?;
+    Ok(())
+}
+
+fn ensure_locked(registration: &Registration, environment: &[(String, String)]) -> io::Result<()> {
+    let directory = registration.runtime_dir()?;
     if request(registration, "ping").is_ok() {
         return Ok(());
     }

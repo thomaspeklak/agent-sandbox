@@ -74,6 +74,15 @@ pub fn id(registration: &Registration) -> io::Result<String> {
     )
 }
 
+pub fn normalized_image_id(value: &str) -> io::Result<String> {
+    let value = value.trim();
+    let digest = value.strip_prefix("sha256:").unwrap_or(value);
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(io::Error::other("invalid pinned image ID"));
+    }
+    Ok(format!("sha256:{}", digest.to_ascii_lowercase()))
+}
+
 pub fn validate_layout(
     container: &Value,
     plan: &crate::plan::LaunchPlan,
@@ -83,7 +92,11 @@ pub fn validate_layout(
     if labels["io.ags.t3.generation"].as_str() != spec.generation.to_str()
         || labels["io.ags.t3.configuration"] != spec.configuration
         || labels["io.ags.t3.mounts"] != spec.mounts
-        || container["Image"] != spec.image
+        || container["Image"]
+            .as_str()
+            .and_then(|image| normalized_image_id(image).ok())
+            .as_ref()
+            != Some(&spec.image)
     {
         return Err(io::Error::other(
             "T3 container metadata differs from its registered environment; use explicit `ags t3 upgrade`",

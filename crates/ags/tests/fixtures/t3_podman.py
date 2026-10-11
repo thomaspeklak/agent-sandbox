@@ -30,6 +30,10 @@ def version(value):
             return (Path(mount["Source"]) / "version").read_text().strip()
     raise RuntimeError("missing managed runtime mount")
 
+def image_id():
+    path = root / "image-id"
+    return path.read_text().strip() if path.exists() else "sha256:" + "a" * 64
+
 if args == ["--version"]:
     print("podman version 5.6.0")
 elif args[:1] == ["version"]:
@@ -39,7 +43,7 @@ elif args[:3] == ["system", "connection", "list"]:
 elif args[:2] == ["image", "exists"]:
     pass
 elif args[:2] == ["image", "inspect"]:
-    print("sha256:" + "a" * 64)
+    print(image_id())
 elif args[:2] == ["container", "exists"]:
     sys.exit(0 if state() else 1)
 elif args[:2] == ["container", "inspect"]:
@@ -57,7 +61,7 @@ elif args[0] == "create":
             mounts.append({"Source": source, "Destination": destination, "RW": mode == "rw"})
         if arg == "-e":
             environment.append(args[index + 1])
-    save({"Id": "c" * 64, "Image": "sha256:" + "a" * 64, "Config": {"Labels": labels, "Env": environment},
+    save({"Id": "c" * 64, "Image": image_id(), "Config": {"Labels": labels, "Env": environment},
           "Mounts": mounts, "State": {"Running": False}, "ready": False})
     print("fixture-container")
 elif args[0] == "start":

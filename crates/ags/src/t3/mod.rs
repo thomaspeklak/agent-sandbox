@@ -28,9 +28,14 @@ pub fn run(options: &RunOptions) -> io::Result<()> {
     owner::ensure(&registration, &options.env)?;
     owner::request(&registration, "start")?;
     println!(
-        "T3 repository environment ready: {}\nAdd SSH connection '{}' in the T3 desktop.\nDiagnostics: {}\nStop with `ags t3 stop`.",
+        "T3 repository environment ready: {}\nAdd SSH connection '{}' in the T3 desktop.\nSSH transport: local ProxyCommand; no listening SSH port (leave port at default 22).\nSSH config: {}\nDiagnostics: {}\nStatus with `ags t3 status`; stop with `ags t3 stop`.",
         registration.repository.main.display(),
         registration.alias(),
+        registration
+            .data_root
+            .join("ssh")
+            .join(format!("{}.conf", registration.repository.id))
+            .display(),
         registration.private_dir()?.join("owner.log").display()
     );
     Ok(())
@@ -78,8 +83,7 @@ pub fn command(options: &T3Options) -> io::Result<()> {
             Ok(())
         }
         T3Action::Upgrade => {
-            owner::ensure(&registration, &[])?;
-            owner::request(&registration, "upgrade")?;
+            owner::upgrade(&registration)?;
             println!("T3 repository environment upgraded; mounted data was preserved.");
             Ok(())
         }
