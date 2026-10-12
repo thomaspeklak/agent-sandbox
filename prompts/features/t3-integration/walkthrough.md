@@ -69,6 +69,14 @@ unchecked in `tasks.md`, and feature history remains in progress.
 
 ## Verification performed
 
+PR #24 follow-up fixes preflight registered launch values before owner replacement,
+handoff the reacquired snapshot without durable values, and propagate owner stop
+errors/timeouts in both stop and upgrade. Browser-enabled cold starts validate
+and refresh a changed persisted command using the existing pinned image/runtime.
+Regression coverage includes missing/exported/changing credential sources, owner
+ERR responses, response timeouts, ownerless stop, browser-port changes across
+reconnect/recovery, and bounded owner-exit waits before concurrent cold launches.
+
 The follow-up [global environment management](../t3-environment-management/prompt.md)
 supersedes current-directory management defaults: status discovers all registrations,
 IDs select single environments, and global stop/upgrade use unchecked checkboxes

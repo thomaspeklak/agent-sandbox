@@ -72,7 +72,7 @@ elif args[0] == "create":
         if arg == "-e":
             environment.append(args[index + 1])
     identifier = hashlib.sha256(name.encode()).hexdigest() if multi.is_dir() else "c" * 64
-    save({"Id": identifier, "Image": image_id(), "Config": {"Labels": labels, "Env": environment},
+    save({"Id": identifier, "Image": args[-5], "Config": {"Labels": labels, "Env": environment, "Cmd": args[-4:]},
           "Mounts": mounts, "State": {"Running": False}, "ready": False})
     print("fixture-container")
 elif args[0] == "start":
@@ -99,6 +99,8 @@ elif args[0] == "exec":
         value["ready"] = True
         value["server_pid"] = os.getpid()
         value["secret_hash"] = hashlib.sha256(environment.get("T3_TEST_SECRET", "").encode()).hexdigest()
+        value["boot_environment_hashes"] = {name: hashlib.sha256(secret.encode()).hexdigest()
+                                            for name, secret in environment.items()}
         save(value)
         while state() and state()["State"]["Running"]:
             time.sleep(0.025)

@@ -65,3 +65,31 @@ server configuration, directory browsing/prefix completion, regular-file
 exclusion, and native PTY through real authenticated RPC. The full serialized
 Rust suite, formatting, Clippy, 34 Node tests, and verifier shell syntax pass.
 Desktop-UI/real-Podman mount verification remains a host-side smoke check.
+
+## New PR #24 lifecycle feedback
+
+- [x] Reacquire registered `--env` values before upgrade stops/replaces the owner;
+  pass the captured values to the replacement and report missing names without
+  interrupting the current environment.
+- [x] Propagate owner-reported stop failures and timeouts; fall back to direct
+  container stop only when the owner's control endpoint is absent/refused.
+- [x] Refresh a browser-enabled container's persisted proxy command when a new
+  sidecar receives a different port, retaining pinned image/runtime and mounted data.
+- [x] Replace the cold-connection test's fixed owner-shutdown sleep with a bounded
+  wait that verifies shutdown before concurrent SSH connections begin.
+
+Six new lifecycle regressions and a bounded-response unit test cover these fixes.
+The missing-values, owner-ERR, and stale-browser-port regressions were observed
+failing before their respective fixes. Registered values are reacquired in memory
+before stop/recovery and passed to the new owner; missing names leave the current
+owner/container running. Stop and upgrade share strict absent/refused-endpoint
+fallback and propagate operational errors/timeouts. Browser reconnect/recovery
+refreshes the persisted command while keeping the image/runtime pinned and
+mounted history/identity intact. Cold-start and recovery tests wait for the owned
+process to exit rather than sleeping for an assumed shutdown duration.
+
+Final validation passes: locked fetch, formatting, all-target Clippy, the complete
+serialized Rust suite (292 unit tests and 24 T3 lifecycle tests), 34 Node tests,
+and diff checks. Actual container/browser-proxy smoke verification remains a
+host-side check; the regression uses a real loopback browser with the existing
+Podman protocol fixture.

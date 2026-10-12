@@ -5,33 +5,7 @@ use std::io;
 use std::os::fd::OwnedFd;
 
 pub fn prepare(registration: &Registration, config: &ValidatedConfig) -> io::Result<Vec<OwnedFd>> {
-    let mut environment = crate::secrets::resolve_secrets_for_run(
-        &config.secrets,
-        &NoninteractiveBackend,
-        &crate::secrets::OsHostCommandRunner,
-        false,
-    );
-    for name in &config.sandbox.passthrough_env {
-        if !environment.contains_key(name)
-            && let Ok(value) = std::env::var(name)
-        {
-            environment.insert(name.clone(), value);
-        }
-    }
-    environment.retain(|name, _| !name.starts_with("OP_"));
-    for name in &registration.settings.env_names {
-        match std::env::var(name) {
-            Ok(value) => {
-                environment.insert(name.clone(), value);
-            }
-            Err(_) if environment.contains_key(name) => {}
-            Err(_) => {
-                return Err(io::Error::other(format!(
-                    "T3 cold start needs registered --env {name}; prepare its source interactively or configure a reacquirable secret"
-                )));
-            }
-        }
-    }
+    let environment = resolve_environment(registration, config)?;
     let mut descriptors = vec![sealed_environment(&environment)?];
     let sources = registration
         .settings
@@ -47,6 +21,63 @@ pub fn prepare(registration: &Registration, config: &ValidatedConfig) -> io::Res
             .map(|item| item.into_fd()),
     );
     Ok(descriptors)
+}
+
+/// Reacquire registered launch values before replacing a live owner. Only names
+/// are durable; the returned snapshot is passed in memory to the replacement.
+pub fn registered_environment(
+    registration: &Registration,
+    config: &ValidatedConfig,
+) -> io::Result<Vec<(String, String)>> {
+    if registration.settings.env_names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let environment = resolve_environment(registration, config)?;
+    Ok(registration
+        .settings
+        .env_names
+        .iter()
+        .map(|name| (name.clone(), environment[name].clone()))
+        .collect())
+}
+
+fn resolve_environment(
+    registration: &Registration,
+    config: &ValidatedConfig,
+) -> io::Result<HashMap<String, String>> {
+    let mut environment = crate::secrets::resolve_secrets_for_run(
+        &config.secrets,
+        &NoninteractiveBackend,
+        &crate::secrets::OsHostCommandRunner,
+        false,
+    );
+    for name in &config.sandbox.passthrough_env {
+        if !environment.contains_key(name)
+            && let Ok(value) = std::env::var(name)
+        {
+            environment.insert(name.clone(), value);
+        }
+    }
+    environment.retain(|name, _| !name.starts_with("OP_"));
+    let mut missing = Vec::new();
+    for name in &registration.settings.env_names {
+        match std::env::var(name) {
+            Ok(value) => {
+                environment.insert(name.clone(), value);
+            }
+            Err(_) if environment.contains_key(name) => {}
+            Err(_) => {
+                missing.push(name.as_str());
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Err(io::Error::other(format!(
+            "T3 cold start needs registered --env {}; export the values in this shell or configure reacquirable secret sources before upgrading/reconnecting",
+            missing.join(", ")
+        )));
+    }
+    Ok(environment)
 }
 
 struct NoninteractiveBackend;

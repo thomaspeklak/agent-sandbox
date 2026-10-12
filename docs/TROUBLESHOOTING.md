@@ -48,7 +48,12 @@ report individual failures without preventing other selected actions.
   their parent mount; newly added external paths can require recreation.
 - **Credential lookup/unlock failure:** prepare SSH keys and 1Password access
   interactively, or configure a reacquirable secret source. Registered transient
-  environment values must be available on cold start.
+  environment values must be available on cold start. Upgrade checks registered
+  `--env` values before interrupting the current environment; export the reported
+  names in the upgrade shell or configure matching secret sources, then retry.
+- **Stop reports an owner error or timeout:** inspect the owner's diagnostics;
+  AGS preserves the failure instead of silently retrying container shutdown.
+  Direct container fallback requires an absent/refused owner endpoint.
 - **Owner failure:** inspect the reported private log. Reconnection recovers
   owned stale services/container state; an unrelated container-name collision
   is rejected and is never removed automatically.

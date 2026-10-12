@@ -173,6 +173,16 @@ impl Environment {
             create(registration, &plan, &spec)?;
         } else if let Some(container) = &inspected {
             super::container::validate_layout(container, &plan, &spec)?;
+            // Browser sidecars acquire a fresh host port on cold start. The
+            // proxy is embedded in the persisted container command, so an old
+            // command must be replaced using the same pinned image/runtime.
+            if registration.settings.browser
+                && container["Config"]["Cmd"]
+                    != serde_json::json!(["bash", "-lc", plan.entrypoint, "_"])
+            {
+                container::output(&["rm", &container::id(registration)?])?;
+                create(registration, &plan, &spec)?;
+            }
         }
         write_json(&registration.private_dir()?.join("environment.json"), &spec)?;
         container::output(&["start", &container::id(registration)?])?;

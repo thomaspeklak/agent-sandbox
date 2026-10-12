@@ -216,6 +216,24 @@ command = [{python:?}, {lookup:?}, {secret:?}]
             .unwrap()
             .path()
     }
+
+    fn wait_for_owner_exit(&self, pid: u64) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let alive = fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+                stat.rsplit_once(')')
+                    .is_some_and(|(_, fields)| fields.split_whitespace().next() != Some("Z"))
+            });
+            if !alive {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "owner {pid} did not exit before the deadline"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -290,14 +308,7 @@ fn podman_image_id_formats_and_legacy_metadata_survive_status_reconnect_and_upgr
         unsafe {
             libc::kill(status["owner_pid"].as_u64().unwrap() as i32, libc::SIGTERM);
         }
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while fixture.private_dir().join("owner-process.json").exists() && Instant::now() < deadline
-        {
-            if fixture.status()["owner_running"] == false {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
+        fixture.wait_for_owner_exit(status["owner_pid"].as_u64().unwrap());
         let offline = fixture.status();
         assert_eq!(offline["owner_running"], false);
         assert_eq!(offline["runtime"], "0.0.45");
@@ -659,7 +670,7 @@ fn automatic_ssh_start_reuse_disconnect_stop_upgrade_and_owner_recovery() {
     unsafe {
         libc::kill(upgraded_owner as i32, libc::SIGKILL);
     }
-    std::thread::sleep(Duration::from_millis(100));
+    fixture.wait_for_owner_exit(upgraded_owner);
     let result = fixture.ssh(&alias, launch("0.0.46"), true);
     assert!(
         result.status.success(),
@@ -693,7 +704,7 @@ fn simultaneous_cold_connections_start_one_owner_and_container() {
     unsafe {
         libc::kill(status["owner_pid"].as_u64().unwrap() as i32, libc::SIGTERM);
     }
-    std::thread::sleep(Duration::from_millis(150));
+    fixture.wait_for_owner_exit(status["owner_pid"].as_u64().unwrap());
     fs::write(&binary, "#!/bin/sh\nexit 0\n").unwrap();
     fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
     let alias = status["ssh_alias"].as_str().unwrap();
@@ -802,6 +813,9 @@ fn new_external_worktrees_require_explicit_recreation_and_disabled_t3_rejects_ne
 
 #[path = "support/t3_management_tests.rs"]
 mod management_tests;
+
+#[path = "support/t3_review_tests.rs"]
+mod review_tests;
 
 #[test]
 fn revoked_overlay_trust_does_not_silently_boot_with_global_config() {

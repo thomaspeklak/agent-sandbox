@@ -1,5 +1,4 @@
 use super::{
-    container,
     inventory::{self, Entry},
     owner,
     registration::Registration,
@@ -153,12 +152,7 @@ fn status_result(entries: &[Entry]) -> io::Result<()> {
 
 fn perform(registration: &Registration, action: T3Action) -> io::Result<()> {
     match action {
-        T3Action::Stop => {
-            if owner::request(registration, "stop").is_err() {
-                container::stop(registration)?;
-            }
-            Ok(())
-        }
+        T3Action::Stop => owner::stop(registration),
         T3Action::Upgrade => owner::upgrade(registration),
         _ => Err(io::Error::other("invalid T3 management action")),
     }

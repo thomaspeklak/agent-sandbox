@@ -29,19 +29,19 @@ pub fn ensure(registration: &Registration, environment: &[(String, String)]) -> 
 }
 
 pub fn upgrade(registration: &Registration) -> io::Result<()> {
-    registration.load_config()?;
+    let config = registration.load_config()?;
     let directory = registration.runtime_dir()?;
     crate::util::ensure_private_dir(&directory)?;
     let startup = lock(&directory.join("startup.lock"))?;
     startup.lock()?;
-    if request(registration, "stop").is_err() {
-        super::container::stop(registration)?;
-    }
+    // Missing transient launch values must not interrupt the current server.
+    let environment = super::credentials::registered_environment(registration, &config)?;
+    stop(registration)?;
     // A persistent owner can still be running the executable from before an
     // AGS update. Explicit recreation must adopt transport fixes as well as the
     // image/runtime. Serialize it with cold starts and retain the SSH identity.
     super::owner_process::recover(registration)?;
-    ensure_locked(registration, &[])?;
+    ensure_locked(registration, &environment)?;
     request(registration, "upgrade")?;
     Ok(())
 }
@@ -111,6 +111,27 @@ pub fn request(registration: &Registration, command: &str) -> io::Result<String>
         command,
         Duration::from_secs(if command == "ping" { 1 } else { 180 }),
     )
+}
+
+/// An absent/refused endpoint means no owner received the stop. An owner error
+/// or a timeout must be reported rather than retried behind the owner's state.
+pub fn stop(registration: &Registration) -> io::Result<()> {
+    stop_with_timeout(registration, Duration::from_secs(180))
+}
+
+fn stop_with_timeout(registration: &Registration, timeout: Duration) -> io::Result<()> {
+    match request_with_timeout(registration, "stop", timeout) {
+        Ok(_) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+            ) =>
+        {
+            super::container::stop(registration)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub fn status(registration: &Registration) -> io::Result<String> {
@@ -305,3 +326,7 @@ async fn control_connection(mut stream: tokio::net::UnixStream, state: Shared) -
     stream.write_all(response.as_bytes()).await?;
     stream.shutdown().await
 }
+
+#[cfg(test)]
+#[path = "owner_tests.rs"]
+mod tests;
