@@ -20,6 +20,16 @@ pub fn prepare(registration: &Registration, config: &ValidatedConfig) -> io::Res
     if !settings.is_object() {
         return Err(io::Error::other("T3 settings must be a JSON object"));
     }
+    // The desktop otherwise starts browsing ~/ in T3's isolated application
+    // home, where the checkout is not visible. Use the native picker setting so
+    // suggestions retain the real same-path Git/worktree identities.
+    if settings
+        .get("addProjectBaseDirectory")
+        .and_then(Value::as_str)
+        .is_none_or(|directory| directory.trim().is_empty())
+    {
+        settings["addProjectBaseDirectory"] = json!(registration.repository.main);
+    }
     if settings.get("providers").is_none() {
         settings["providers"] = json!({});
     }

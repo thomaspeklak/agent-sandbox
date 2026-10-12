@@ -342,6 +342,105 @@ fn malformed_image_inspection_fails_before_creating_or_persisting_an_environment
 }
 
 #[test]
+fn folder_picker_defaults_to_checkout_and_preserves_custom_directory_on_upgrade() {
+    let fixture = Fixture::new();
+    let config = fixture.root.path().join("config.toml");
+    let result = fixture.ags(&["--agent", "t3", "--config", config.to_str().unwrap()]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let home = fixture.container()["Mounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|mount| {
+            mount["Destination"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("/home"))
+        })
+        .unwrap()["Source"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let settings_path = Path::new(&home).join(".t3/userdata/settings.json");
+    let read_settings = || -> serde_json::Value {
+        serde_json::from_slice(&fs::read(&settings_path).unwrap()).unwrap()
+    };
+    let checkout = fixture.root.path().join("repo");
+    assert_eq!(
+        read_settings()["addProjectBaseDirectory"],
+        checkout.to_str().unwrap()
+    );
+    assert!(fixture.events().iter().any(|event| {
+        event.as_array().is_some_and(|args| {
+            args.windows(2)
+                .any(|pair| pair[0] == "--workdir" && pair[1] == checkout.to_str().unwrap())
+                && args.iter().any(|arg| arg == "serve")
+        })
+    }));
+    if let Ok(binary) = std::env::var("AGS_T3_NATIVE_BINARY") {
+        let result = fixture
+            .command("node")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/t3_native_server.cjs"))
+            .args([
+                binary.as_str(),
+                Path::new(&home).join(".t3").to_str().unwrap(),
+                checkout.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    // Older registrations can have no picker setting or an empty default.
+    for value in [
+        None,
+        Some(serde_json::json!("")),
+        Some(serde_json::json!("  ")),
+    ] {
+        let mut settings = read_settings();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("addProjectBaseDirectory");
+        if let Some(value) = value {
+            settings["addProjectBaseDirectory"] = value;
+        }
+        fs::write(&settings_path, serde_json::to_vec(&settings).unwrap()).unwrap();
+        let result = fixture.ags(&["t3", "upgrade"]);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            read_settings()["addProjectBaseDirectory"],
+            checkout.to_str().unwrap()
+        );
+    }
+    let mut settings = read_settings();
+    settings["addProjectBaseDirectory"] = serde_json::json!("~/.t3/worktrees");
+    settings["defaultRuntimeMode"] = serde_json::json!("full-access");
+    fs::write(&settings_path, serde_json::to_vec(&settings).unwrap()).unwrap();
+    let result = fixture.ags(&["t3", "upgrade"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        read_settings()["addProjectBaseDirectory"],
+        "~/.t3/worktrees"
+    );
+    assert_eq!(read_settings()["defaultRuntimeMode"], "full-access");
+}
+
+#[test]
 fn desktop_request_variants_launch_and_pair_without_executing_incoming_scripts() {
     let fixture = Fixture::new();
     let config = fixture.root.path().join("config.toml");
@@ -608,9 +707,11 @@ fn simultaneous_cold_connections_start_one_owner_and_container() {
             .events()
             .iter()
             .filter(|event| event[0] == "exec"
-                && event[1]
-                    .as_str()
-                    .is_some_and(|arg| arg.starts_with("--preserve-fds=")))
+                && event
+                    .as_array()
+                    .is_some_and(|args| args.iter().any(|arg| arg
+                        .as_str()
+                        .is_some_and(|arg| arg.starts_with("--preserve-fds=")))))
             .count(),
         1
     );

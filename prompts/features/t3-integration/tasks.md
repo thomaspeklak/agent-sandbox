@@ -141,6 +141,9 @@ server/pairing/native-PTY smoke check. Keep implementation files within 500 line
   terminal readiness.
 - [ ] Exercise an unchanged v0.0.45 desktop's cold bootstrap, server reuse,
   pairing, forwarding, and teardown against the bridge.
+- [x] Verify generated picker settings and prefix autocomplete against the
+  published v0.0.45 server's filesystem RPC, including existing-setting recovery.
+- [ ] Verify desktop folder selection/autocomplete in the live repository container.
 - [x] Prove exact mismatch and unknown bootstrap rejection cause zero installer
   or download execution, including pairing and an already-running server.
 - [x] Verify concurrent cold starts and main/linked-worktree identity equality.

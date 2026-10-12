@@ -62,6 +62,10 @@ unchecked in `tasks.md`, and feature history remains in progress.
 - Explicit upgrade replaces the persistent owner with the current AGS executable,
   adopting transport fixes as well as the image/runtime. Startup explains the local
   ProxyCommand, default SSH port, and managed SSH config path.
+- Initialize the native `addProjectBaseDirectory` picker setting to the mounted
+  main checkout when absent/empty, preserving user preferences. Set the server's
+  exec working directory explicitly. No alternate checkout path or symlink is
+  needed: the desktop starts its filesystem RPC at the existing same-path mount.
 
 ## Verification performed
 
@@ -81,6 +85,11 @@ unchecked in `tasks.md`, and feature history remains in progress.
   platform bundle passed server startup, pairing, and native PTY
   open/write/resize/close with permission-read-only runtime files. This is a
   standalone backend test, not a live Podman bind-mount or desktop-UI test.
+- Reproduced the missing picker setting in the lifecycle fixture, then exercised
+  generated AGS settings with the published v0.0.45 server. Its `server.getConfig`
+  and `filesystem.browse` RPCs verify the checkout start path, directory-prefix
+  completion (including spaces), and exclusion of regular files. The updater's
+  native verification now exercises the same browse probe as well as PTY readiness.
 - Regenerated the standalone Glimpse lockfile to match the workspace dependency
   resolution after adding SSH/runtime dependencies.
 

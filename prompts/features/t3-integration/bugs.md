@@ -49,3 +49,19 @@ upgrade. Full Rust tests pass with `--test-threads=1` (parallel runs encountered
 intermittent sandbox `ETXTBSY` in unrelated executable-fixture tests); formatting,
 Clippy, and all 34 clipboard/T3 Node tests pass. Host desktop smoke verification
 remains pending because this session runs inside the sandbox.
+
+## Folder picker smoke fix
+
+- [x] Start T3's folder picker in the mounted registered checkout instead of
+  its isolated application home; verify prefix autocomplete through the native
+  filesystem RPC, preserve user-selected picker settings, and explicitly set
+  the server's working directory.
+
+The regression failed before the fix because `addProjectBaseDirectory` was
+missing. The lifecycle test now covers fresh setup, missing/empty legacy values,
+explicit Podman exec workdir, and preserved custom settings through upgrade.
+Running it with the published v0.0.45 platform binary also verifies the decoded
+server configuration, directory browsing/prefix completion, regular-file
+exclusion, and native PTY through real authenticated RPC. The full serialized
+Rust suite, formatting, Clippy, 34 Node tests, and verifier shell syntax pass.
+Desktop-UI/real-Podman mount verification remains a host-side smoke check.

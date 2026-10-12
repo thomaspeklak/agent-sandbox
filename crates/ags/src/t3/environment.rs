@@ -213,6 +213,8 @@ impl Environment {
         let count = descriptors.len() - 1;
         let args = vec![
             "exec".into(),
+            "--workdir".into(),
+            registration.repository.main.display().to_string(),
             format!("--preserve-fds={}", descriptors.len()),
             container::id(registration)?,
             "/run/ags-t3/environment-bootstrap".into(),

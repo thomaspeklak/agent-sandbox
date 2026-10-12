@@ -26,6 +26,12 @@ selected in `ags tools` and installed with `ags update-agents`.
 - **Invalid pinned image ID after a successful launch:** older AGS builds saved
   Podman's full image ID verbatim but required a `sha256:` prefix when reading it.
   Update AGS; both full ID formats are now accepted, including existing metadata.
+- **Folder picker/autocomplete shows no checkout:** older AGS builds left T3's
+  picker at `~/`, which resolves to its isolated application home. Updated AGS
+  initializes `addProjectBaseDirectory` to the mounted main checkout when the
+  setting is absent or empty. Install the updated AGS binary, run `ags t3 upgrade`,
+  and reconnect the desktop. An existing non-empty picker preference is preserved
+  and can be changed in T3's settings.
 - **Untrusted/missing registered overlay:** run `ags --agent t3` interactively
   with the registered config to prepare trust. Automatic startup fails instead
   of silently dropping the overlay.
