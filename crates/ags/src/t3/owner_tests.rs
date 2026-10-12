@@ -38,14 +38,18 @@ fn a_stop_response_timeout_is_propagated_without_direct_container_fallback() {
         },
     };
     let listener = UnixListener::bind(root.path().join("control.sock")).unwrap();
+    let (finished, wait_for_timeout) = std::sync::mpsc::channel();
     let owner = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         let mut request = String::new();
         stream.read_to_string(&mut request).unwrap();
         assert_eq!(request, "stop\n");
-        std::thread::sleep(Duration::from_millis(200));
+        wait_for_timeout.recv().unwrap();
     });
-    let error = stop_with_timeout(&registration, Duration::from_millis(20)).unwrap_err();
+    let result = stop_with_timeout(&registration, Duration::from_millis(20));
+    finished.send(()).unwrap();
+    owner.join().unwrap();
+    let error = result.unwrap_err();
     assert!(
         matches!(
             error.kind(),
@@ -53,5 +57,4 @@ fn a_stop_response_timeout_is_propagated_without_direct_container_fallback() {
         ),
         "{error}"
     );
-    owner.join().unwrap();
 }
