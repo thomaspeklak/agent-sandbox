@@ -58,3 +58,10 @@ PSP integration tests remain ignored as configured. Real terminal interaction is
 tested through a controlling pseudo-terminal, with Podman operations represented
 by the existing protocol fixture. Original live Podman/T3 desktop smoke checks
 remain tracked separately in the T3 integration feature.
+
+## Publication
+
+Implementation commit `c4fce14` was pushed to `feat/t3-integration` after
+validation and diff review. Install the updated AGS binary to use the new command
+scope and checkbox selection; existing environments change only when selected
+for an explicit action.

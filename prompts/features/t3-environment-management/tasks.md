@@ -6,4 +6,4 @@
 - [x] Add parser, inventory/lifecycle, and pseudo-terminal regression coverage.
 - [x] Update documentation and completions.
 - [x] Run validation and review the diff.
-- [ ] Commit and push the implementation.
+- [x] Commit and push the implementation.
