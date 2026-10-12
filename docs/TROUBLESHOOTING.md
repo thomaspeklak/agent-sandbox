@@ -8,6 +8,59 @@ ags doctor
 
 Most issues are visible in doctor output.
 
+## T3 connection, version, and lifecycle errors
+
+Start with `ags t3 status` from any directory. It lists all registrations,
+environment IDs, server/container state, errors, runtime, and private owner-log
+locations. Use `ags t3 status ENVIRONMENT` (or `--repository PATH`) for one instance. Confirm T3 is
+selected in `ags tools` and installed with `ags update-agents`.
+
+Global stop/upgrade show an unchecked checkbox list of working environments.
+Select which instances to interrupt with Space, then Enter. For a stopped or
+unavailable instance needing recovery, use its ID explicitly:
+`ags t3 upgrade ENVIRONMENT`. In a non-interactive shell, supply an ID/path or
+explicit `--all`; bulk actions exclude stopped/unavailable registrations and
+report individual failures without preventing other selected actions.
+
+- **Desktop/runtime mismatch:** use the matching desktop version, or run
+  `ags update-agents` followed by explicit `ags t3 upgrade`. The update's release-age
+  policy still applies. Reconnect never downloads a replacement runtime.
+- **Unsupported SSH bootstrap:** AGS recognizes the v0.0.45 release contract.
+  This means the request could not be recognized, not that the versions differ.
+  Older AGS builds required an exact installer-script match and could reject a
+  matching desktop. Update AGS; current errors identify the unrecognized part of
+  the request. Then run `ags t3 upgrade` to reload the persistent owner with the
+  new AGS binary. Runtime updates alone do not fix bootstrap classification.
+- **Invalid pinned image ID after a successful launch:** older AGS builds saved
+  Podman's full image ID verbatim but required a `sha256:` prefix when reading it.
+  Update AGS; both full ID formats are now accepted, including existing metadata.
+- **Folder picker/autocomplete shows no checkout:** older AGS builds left T3's
+  picker at `~/`, which resolves to its isolated application home. Updated AGS
+  initializes `addProjectBaseDirectory` to the mounted main checkout when the
+  setting is absent or empty. Install the updated AGS binary, run `ags t3 upgrade`,
+  and reconnect the desktop. An existing non-empty picker preference is preserved
+  and can be changed in T3's settings.
+- **Untrusted/missing registered overlay:** run `ags --agent t3` interactively
+  with the registered config to prepare trust. Automatic startup fails instead
+  of silently dropping the overlay.
+- **Worktree or configuration layout changed:** explicitly recreate with
+  `ags t3 upgrade`. T3's default worktrees under its home are already covered by
+  their parent mount; newly added external paths can require recreation.
+- **Credential lookup/unlock failure:** prepare SSH keys and 1Password access
+  interactively, or configure a reacquirable secret source. Registered transient
+  environment values must be available on cold start. Upgrade checks registered
+  `--env` values before interrupting the current environment; export the reported
+  names in the upgrade shell or configure matching secret sources, then retry.
+- **Stop reports an owner error or timeout:** inspect the owner's diagnostics;
+  AGS preserves the failure instead of silently retrying container shutdown.
+  Direct container fallback requires an absent/refused owner endpoint.
+- **Owner failure:** inspect the reported private log. Reconnection recovers
+  owned stale services/container state; an unrelated container-name collision
+  is rejected and is never removed automatically.
+
+Closing the desktop intentionally leaves jobs running. Stop them with
+`ags t3 stop`. See [T3 integration](T3.md) for persistent storage and upgrades.
+
 ---
 
 ## Large journal, `user.log`, or `syslog` containing AGS terminal output
@@ -79,6 +132,36 @@ Superseded component images become dangling and are not removed automatically. R
 ```bash
 podman image prune
 ```
+
+---
+
+## `ags update-agents` fails resolving an OpenCode release with HTTP 403
+
+Release lookup uses GitHub's REST API. Anonymous requests share the small
+per-IP quota, including with other programs and machines on the same network.
+Resolving the highest compatible version may require several release-history pages.
+
+AGS authenticates API metadata requests using `GH_TOKEN`, then `GITHUB_TOKEN`,
+then the active host GitHub CLI login. Existing CLI credentials are looked up
+noninteractively once per release resolution. If no credentials are available,
+public requests still work while the anonymous quota remains available.
+
+For a rate-limit error, the diagnostic includes GitHub's reason and reset time
+or retry interval. Authenticate once on the host, then retry:
+
+```bash
+gh auth login --hostname github.com
+ags update-agents
+```
+
+Alternatively, supply `GH_TOKEN` or `GITHUB_TOKEN` through your usual host secret
+management. HTTP 401 means the supplied credentials need refreshing; an unrelated
+403 retains GitHub's actual rejection reason rather than being mislabeled as a
+rate limit. An exhausted authenticated quota still requires waiting for its reset.
+
+Tokens are passed privately to curl, not in command arguments or persistent
+files, and are not attached to checksum or executable asset downloads. A failed
+lookup does not publish a runtime candidate or change running environments.
 
 ---
 

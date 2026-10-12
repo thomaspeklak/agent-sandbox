@@ -42,12 +42,40 @@ pub struct Lease {
 }
 
 pub fn pin(cache: &Path) -> io::Result<Arc<Lease>> {
+    pin_selected(cache, None)
+}
+
+/// Pin a validated retained generation before recovering/recreating an environment.
+pub fn pin_path(cache: &Path, requested: &Path) -> io::Result<Arc<Lease>> {
+    pin_selected(cache, Some(requested))
+}
+
+fn pin_selected(cache: &Path, requested: Option<&Path>) -> io::Result<Arc<Lease>> {
     let root = cache.join(ROOT);
     // Register legacy selections too, including launches before the first update.
     fs::create_dir_all(&root)?;
     let gate = Lock::open(&root.join("cleanup.lock"))?;
     gate.0.lock_shared()?;
-    let path = selected(cache)?;
+    let path = if let Some(requested) = requested {
+        let requested = requested.canonicalize()?;
+        let root = root.canonicalize()?;
+        if requested.parent() != Some(root.as_path())
+            || !requested
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("generation-"))
+            || RUNTIME_DIRS
+                .iter()
+                .any(|suffix| !requested.join(suffix).is_dir())
+            || requested.join(".installing").exists()
+        {
+            return Err(io::Error::other(
+                "invalid retained agent runtime generation",
+            ));
+        }
+        requested
+    } else {
+        selected(cache)?
+    };
     let lease_path = if path != cache {
         path.join(".lease")
     } else {

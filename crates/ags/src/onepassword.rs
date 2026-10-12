@@ -117,6 +117,9 @@ pub(crate) enum OnePasswordError {
         source: SourceRef,
         status: Option<i32>,
     },
+    TimedOut {
+        source: SourceRef,
+    },
     PayloadStat {
         source: SourceRef,
         kind: std::io::ErrorKind,
@@ -157,6 +160,10 @@ impl fmt::Display for OnePasswordError {
                     status.unwrap_or(-1)
                 )
             }
+            Self::TimedOut { source } => write!(
+                f,
+                "op lookup timed out for {source}; prepare credentials interactively before reconnecting"
+            ),
             Self::PayloadStat { source, kind } => {
                 write!(
                     f,
@@ -215,6 +222,22 @@ pub(crate) fn prepare(sources: &[SourceRef]) -> Result<Vec<PreparedItem>, OnePas
     prepare_with_op(sources, Path::new("op"))
 }
 
+pub(crate) fn prepare_noninteractive(
+    sources: &[SourceRef],
+) -> Result<Vec<PreparedItem>, OnePasswordError> {
+    sources
+        .iter()
+        .cloned()
+        .map(|source| {
+            prepare_one(
+                source,
+                Path::new("op"),
+                Some(std::time::Duration::from_secs(30)),
+            )
+        })
+        .collect()
+}
+
 fn prepare_with_op(
     sources: &[SourceRef],
     op_path: &Path,
@@ -222,11 +245,15 @@ fn prepare_with_op(
     sources
         .iter()
         .cloned()
-        .map(|source| prepare_one(source, op_path))
+        .map(|source| prepare_one(source, op_path, None))
         .collect()
 }
 
-fn prepare_one(source: SourceRef, op_path: &Path) -> Result<PreparedItem, OnePasswordError> {
+fn prepare_one(
+    source: SourceRef,
+    op_path: &Path,
+    timeout: Option<std::time::Duration>,
+) -> Result<PreparedItem, OnePasswordError> {
     let fd = create_memfd().map_err(|error| OnePasswordError::Memfd(error.kind()))?;
     let mut attempts = 0;
     let status = loop {
@@ -237,16 +264,50 @@ fn prepare_one(source: SourceRef, op_path: &Path) -> Result<PreparedItem, OnePas
         let mut op = Command::new(op_path);
         op.args(["item", "get", source.item(), "--vault", source.vault()])
             .args(["--format=json", "--reveal"])
-            .stdin(Stdio::inherit())
+            .stdin(if timeout.is_some() {
+                Stdio::null()
+            } else {
+                Stdio::inherit()
+            })
             .stderr(Stdio::inherit())
             .stdout(Stdio::from(stdout));
-        match op.status() {
+        #[cfg(unix)]
+        if timeout.is_some() {
+            use std::os::unix::process::CommandExt;
+            op.process_group(0);
+        }
+        match op.spawn().and_then(|mut child| {
+            if let Some(timeout) = timeout {
+                let deadline = std::time::Instant::now() + timeout;
+                loop {
+                    if let Some(status) = child.try_wait()? {
+                        return Ok(status);
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        unsafe {
+                            libc::kill(-(child.id() as i32), libc::SIGKILL);
+                        }
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "op lookup timed out",
+                        ));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+            }
+            child.wait()
+        }) {
             Ok(status) => break status,
             Err(error) if error.raw_os_error() == Some(libc::ETXTBSY) && attempts < 3 => {
                 attempts += 1;
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
             Err(error) => {
+                if error.kind() == std::io::ErrorKind::TimedOut {
+                    return Err(OnePasswordError::TimedOut { source });
+                }
                 return Err(OnePasswordError::Spawn {
                     source: source.clone(),
                     kind: error.kind(),

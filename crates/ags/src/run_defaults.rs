@@ -8,7 +8,7 @@ pub fn passthrough_args(agent: Agent) -> &'static [&'static str] {
     match agent {
         Agent::Claude => CLAUDE_PASSTHROUGH_DEFAULTS,
         Agent::Gemini => GEMINI_PASSTHROUGH_DEFAULTS,
-        Agent::Pi | Agent::Codex | Agent::Opencode | Agent::Shell => &[],
+        Agent::Pi | Agent::Codex | Agent::Opencode | Agent::T3 | Agent::Shell => &[],
     }
 }
 

@@ -82,7 +82,7 @@ const SANDBOX_FIELDS: &[ScalarFieldSchema] = &[
         key: "enabled_agents",
         kind: ScalarFieldKind::StringList,
         required: false,
-        default_input: "pi, claude, codex, gemini, opencode",
+        default_input: "pi, claude, codex, gemini, opencode, t3",
     },
     ScalarFieldSchema {
         key: "extra_dnf_packages",

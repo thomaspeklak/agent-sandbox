@@ -1,5 +1,5 @@
 pub const HELP_TEXT: &str = "\
-Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|shell> [flags] -- [args...]
+Usage: ags [command] --agent <pi|claude|codex|gemini|opencode|t3|shell> [flags] -- [args...]
 
 \
 Commands:
@@ -25,6 +25,10 @@ Commands:
   tools          Choose sandbox tools and agent CLIs
 \
   node           Install or list user-managed Node.js versions
+\
+  t3             Manage a registered T3 repository environment
+\
+                 status|stop|upgrade [--repository <checkout>]
 \
 Run flags:
 \
@@ -130,3 +134,62 @@ Node runtime commands:
 \
   --config <path>             Use an alternate AGS config file
 ";
+
+const T3_HELP_TEXT: &str = r#"Usage: ags t3 <status|stop|upgrade> [environment | --repository <checkout> | --all]
+
+Manage all registered T3 environments from any directory.
+Start or register an environment with: ags --agent t3
+
+Commands:
+  status         List all registered environments and their status as JSON
+  stop           Choose working environments to stop using unchecked checkboxes
+  upgrade        Choose working environments to upgrade; interrupts active jobs
+
+Flags:
+  environment              Target the environment ID (SSH alias) shown by status
+  --repository <checkout>  Target one main checkout or worktree explicitly
+  --all                    Stop/upgrade all working environments without prompting
+  -h, --help               Show help for this command
+
+Global stop/upgrade require a terminal for selection, or explicit --all.
+Escape/Ctrl-C or an empty selection leaves all environments unchanged.
+
+Examples:
+  ags t3 status
+  ags t3 upgrade
+  ags t3 stop ags-t3-0123456789abcdef
+  ags t3 upgrade --repository /path/to/checkout
+  ags t3 upgrade --all
+"#;
+
+pub fn t3_help_text(action: Option<super::T3Action>) -> String {
+    use super::T3Action;
+    let (command, description) = match action {
+        Some(T3Action::Status) => (
+            "status",
+            "List all registered environments as JSON, including environment IDs, repository paths, owner/server/container state, runtime, and errors. With a selector, return one JSON object.",
+        ),
+        Some(T3Action::Stop) => (
+            "stop",
+            "Choose working T3 environments to stop, preserving mounted data for a later start. A selector stops one environment directly.",
+        ),
+        Some(T3Action::Upgrade) => (
+            "upgrade",
+            "Stop active jobs and recreate selected working environments using the current image/runtime, preserving mounted data. A selector upgrades one environment directly, including a stopped environment.",
+        ),
+        _ => return T3_HELP_TEXT.to_owned(),
+    };
+    let bulk = if action == Some(T3Action::Status) {
+        ""
+    } else {
+        "  --all                    Act on all working environments without prompting\n\nWithout a selector, use unchecked checkboxes (Space to toggle, Enter to apply).\nEscape/Ctrl-C or an empty selection changes nothing. Without a terminal,\nsupply a selector or --all. Selected environments will be interrupted.\n"
+    };
+    let selectors = if action == Some(T3Action::Status) {
+        "environment | --repository <checkout>"
+    } else {
+        "environment | --repository <checkout> | --all"
+    };
+    format!(
+        "Usage: ags t3 {command} [{selectors}]\n\n{description}\n\nFlags:\n  environment              Select an environment ID (SSH alias) from status\n  --repository <checkout>  Select one main checkout or worktree explicitly\n  -h, --help               Show help for this command\n{bulk}"
+    )
+}

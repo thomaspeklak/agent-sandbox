@@ -67,17 +67,18 @@ function snapshot(agents, dependencies, roots) {
       for (const name of fs.readdirSync(file).sort()) tree(root, key, pnpm, path.join(relative, name));
     }
   }
-  if (agents.some(agent => agent === 'pi' || agent === 'gemini')) {
+  if (agents.some(agent => ['pi', 'gemini', 't3'].includes(agent))) {
     for (const [name, dependency] of Object.entries(dependencies).sort()) {
       const marker = dependency.path.indexOf('/node_modules/');
       if (marker < 0) throw new Error(`unexpected pnpm dependency path for ${name}`);
       const install = fs.realpathSync(dependency.path.slice(0, marker));
       tree(path.join(install, 'node_modules'), `pnpm:${name}`, true);
     }
-    for (const agent of agents.filter(agent => agent === 'pi' || agent === 'gemini')) {
+    for (const agent of agents.filter(agent => ['pi', 'gemini', 't3'].includes(agent))) {
       add(path.join(roots['pnpm-home'], 'bin', agent), `launcher:${agent}`, true);
     }
   }
+  if (agents.includes('t3')) tree(path.join(roots['pnpm-home'], 'ags-t3-runtime'), 't3:ssh-runtime');
   if (agents.includes('codex')) {
     tree(fs.realpathSync(path.join(roots['codex-install'], 'packages/standalone/current')), 'codex:release');
     add(path.join(roots['pnpm-home'], 'codex'), 'launcher:codex');

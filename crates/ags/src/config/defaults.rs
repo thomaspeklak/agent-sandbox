@@ -80,7 +80,7 @@ passthrough_env = [
   "AI_GATEWAY_API_KEY",
   "OPENCODE_API_KEY",
 ]
-enabled_agents = ["pi", "claude", "codex", "gemini", "opencode"]
+enabled_agents = ["pi", "claude", "codex", "gemini", "opencode", "t3"]
 extra_dnf_packages = [
   "git",
   "gh",
