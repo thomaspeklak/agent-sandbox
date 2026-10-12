@@ -275,9 +275,16 @@ the host and in the container. Jobs continue after desktop disconnect.
 
 ```bash
 ags t3 status
-ags t3 stop
-ags t3 upgrade
+ags t3 stop                           # choose working instances via checkboxes
+ags t3 upgrade                        # choose which instances to interrupt
+ags t3 upgrade ags-t3-0123456789abcdef  # one environment ID copied from status
+ags t3 upgrade --all                   # explicit bulk automation opt-in
 ```
+
+Management works from any directory. Status includes all registered environments;
+global stop/upgrade start with every checkbox unchecked. Space selects, Enter
+applies, and Escape/Ctrl-C cancels. An environment ID or `--repository PATH`
+targets one instance directly, including a stopped environment for upgrade.
 
 T3 is installed through pnpm and AGS's verified runtime generations. Desktop and
 environment versions must match exactly; bootstrap never downloads a runtime.

@@ -14,6 +14,7 @@ impl fmt::Display for CliError {
             Self::MissingNodeVersion => f.write_str("missing Node version for `node install`"),
             Self::MissingT3Action => f.write_str("missing T3 action (expected `ags t3 status|stop|upgrade`)"),
             Self::MissingRepositoryValue => f.write_str("missing value for --repository"),
+            Self::ConflictingT3Selectors => f.write_str("choose one T3 environment, --repository, or --all"),
             Self::MissingEnvValue => f.write_str("missing value for --env (expected NAME=VALUE)"),
             Self::MissingOpSecretSetValue => f.write_str("missing value for --op-secret-set / -1"),
             Self::MissingShellValue => f.write_str("missing value for --shell"),

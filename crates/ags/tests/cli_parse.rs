@@ -72,6 +72,8 @@ fn t3_launch_and_management_use_distinct_command_paths() {
             action: ags::cli::T3Action::Status,
             repository: Some("/repo".into()),
             registration: None,
+            environment: None,
+            all: false,
         }))
     );
 }

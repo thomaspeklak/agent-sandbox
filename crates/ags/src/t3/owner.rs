@@ -106,12 +106,24 @@ fn ensure_locked(registration: &Registration, environment: &[(String, String)]) 
 }
 
 pub fn request(registration: &Registration, command: &str) -> io::Result<String> {
+    request_with_timeout(
+        registration,
+        command,
+        Duration::from_secs(if command == "ping" { 1 } else { 180 }),
+    )
+}
+
+pub fn status(registration: &Registration) -> io::Result<String> {
+    request_with_timeout(registration, "status", Duration::from_secs(2))
+}
+
+fn request_with_timeout(
+    registration: &Registration,
+    command: &str,
+    timeout: Duration,
+) -> io::Result<String> {
     let mut stream = UnixStream::connect(registration.runtime_dir()?.join("control.sock"))?;
-    stream.set_read_timeout(Some(Duration::from_secs(if command == "ping" {
-        1
-    } else {
-        180
-    })))?;
+    stream.set_read_timeout(Some(timeout))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     stream.write_all(format!("{command}\n").as_bytes())?;
     stream.shutdown(std::net::Shutdown::Write)?;
@@ -121,7 +133,10 @@ pub fn request(registration: &Registration, command: &str) -> io::Result<String>
         return Err(io::Error::other(error.trim().to_owned()));
     }
     if response.is_empty() {
-        return Err(io::Error::other("T3 owner returned no readiness response"));
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "T3 owner returned no readiness response",
+        ));
     }
     Ok(response)
 }
@@ -262,11 +277,17 @@ async fn control_connection(mut stream: tokio::net::UnixStream, state: Shared) -
             }
             "status" => {
                 let spec = super::environment::specification(&state.registration)?;
+                let running = state.environment.as_mut().is_some_and(|environment| {
+                    environment
+                        .process
+                        .as_mut()
+                        .is_some_and(|process| matches!(process.try_wait(), Ok(None)))
+                });
                 Ok(format!(
                     "{}\n",
                     serde_json::json!({"repository": state.registration.repository.main,
                     "owner_pid": std::process::id(),
-                    "ssh_alias": state.registration.alias(), "running": state.environment.is_some(),
+                    "ssh_alias": state.registration.alias(), "running": running,
                     "runtime": spec.as_ref().map(|spec| &spec.version),
                     "generation": spec.as_ref().map(|spec| &spec.generation),
                     "diagnostics": state.registration.private_dir()?.join("owner.log")})

@@ -103,7 +103,10 @@ const BASH: &str = r#"_ags_completion() {
       ;;
     t3)
       if [[ "$prev" == "--repository" ]]; then COMPREPLY=( $(compgen -d -- "$cur") ); return 0; fi
-      COMPREPLY=( $(compgen -W "status stop upgrade --repository -h --help" -- "$cur") )
+      if (( COMP_CWORD == 2 )); then COMPREPLY=( $(compgen -W "status stop upgrade -h --help" -- "$cur") ); return 0; fi
+      local t3_flags="--repository -h --help"
+      if [[ "${COMP_WORDS[2]:-}" == stop || "${COMP_WORDS[2]:-}" == upgrade ]]; then t3_flags="$t3_flags --all"; fi
+      COMPREPLY=( $(compgen -W "$t3_flags" -- "$cur") )
       return 0
       ;;
     node|runtime|runtimes)
@@ -299,7 +302,9 @@ case "$words[2]" in
     return
     ;;
   t3)
-    _arguments '1:action:(status stop upgrade)' '--repository[Repository checkout]:checkout:_files -/' '(-h --help)'{-h,--help}'[Show help]'
+    local t3_bulk=()
+    if [[ "$words[3]" == stop || "$words[3]" == upgrade ]]; then t3_bulk=('--all[Act on all working environments without prompting]'); fi
+    _arguments '1:command:(t3)' '2:action:(status stop upgrade)' '3:environment ID:' '--repository[Repository checkout]:checkout:_files -/' "${t3_bulk[@]}" '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
   node|runtime|runtimes)
@@ -364,6 +369,7 @@ complete -c ags -n "__fish_use_subcommand" -a node -d "Install or list user-mana
 complete -c ags -n "__fish_use_subcommand" -a t3 -d "Manage T3 repository environment"
 complete -c ags -n "__fish_seen_subcommand_from t3" -a "status stop upgrade" -d "T3 environment action"
 complete -c ags -n "__fish_seen_subcommand_from t3" -l repository -r -d "Repository checkout"
+complete -c ags -n "__fish_seen_subcommand_from t3; and __fish_seen_subcommand_from stop upgrade" -l all -d "Act on all working environments without prompting"
 complete -c ags -n "__fish_use_subcommand" -a runtime -d "Install or list user-managed Node versions"
 complete -c ags -n "__fish_use_subcommand" -a runtimes -d "Install or list user-managed Node versions"
 

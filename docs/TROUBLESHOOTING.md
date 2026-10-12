@@ -10,9 +10,17 @@ Most issues are visible in doctor output.
 
 ## T3 connection, version, and lifecycle errors
 
-Start with `ags t3 status` in the repository (or use `--repository PATH`). It
-reports the SSH alias, runtime, and private owner-log location. Confirm T3 is
+Start with `ags t3 status` from any directory. It lists all registrations,
+environment IDs, server/container state, errors, runtime, and private owner-log
+locations. Use `ags t3 status ENVIRONMENT` (or `--repository PATH`) for one instance. Confirm T3 is
 selected in `ags tools` and installed with `ags update-agents`.
+
+Global stop/upgrade show an unchecked checkbox list of working environments.
+Select which instances to interrupt with Space, then Enter. For a stopped or
+unavailable instance needing recovery, use its ID explicitly:
+`ags t3 upgrade ENVIRONMENT`. In a non-interactive shell, supply an ID/path or
+explicit `--all`; bulk actions exclude stopped/unavailable registrations and
+report individual failures without preventing other selected actions.
 
 - **Desktop/runtime mismatch:** use the matching desktop version, or run
   `ags update-agents` followed by explicit `ags t3 upgrade`. The update's release-age

@@ -153,6 +153,7 @@ pub enum CliError {
     MissingNodeVersion,
     MissingT3Action,
     MissingRepositoryValue,
+    ConflictingT3Selectors,
     MissingEnvValue,
     MissingOpSecretSetValue,
     MissingShellValue,

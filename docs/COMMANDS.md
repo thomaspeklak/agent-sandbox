@@ -10,7 +10,7 @@ This document explains what each `ags` command does and what side effects to exp
 ags [command]
 ags --agent <pi|claude|codex|gemini|opencode|t3|shell> [--browser] [--tmux] [--stop-when-done] [--psp] [--psp-keep] [--yolo] [--root] [--lockdown] [--wayland-compositor-passthrough] [--defaults|-D] [--config PATH] [--add-dir PATH ...] [--env NAME=VALUE ...] -- [agent args...]
 ags node <install VERSION|list> [--config PATH]
-ags t3 <status|stop|upgrade> [--repository PATH]
+ags t3 <status|stop|upgrade> [ENVIRONMENT | --repository PATH | --all]
 ```
 
 Subcommands:
@@ -75,9 +75,18 @@ Agent CLIs are not installed in the base image. `ags update-agents` installs sel
 [T3 Code integration](T3.md). Registration records the main checkout's global
 configuration and trusted overlay; a host owner retains sidecars and leases
 after the CLI or desktop disconnects. T3's SSH alias starts/reuses that owner.
-`ags t3 stop` explicitly stops the server and container, while `ags t3 upgrade`
-recreates the environment with current image/runtime mounts and preserves mounted data.
-`--repository` selects a registered main checkout or linked worktree for management.
+`ags t3 status` lists all registered environments as JSON, including stable
+environment IDs, stopped instances, and per-instance errors. It works from any
+directory. Global `ags t3 stop` and `ags t3 upgrade` present unchecked checkboxes
+for working instances; select with Space and apply with Enter. Escape/Ctrl-C or
+no selection changes nothing. Stop shuts down selected servers/containers;
+upgrade recreates them with current image/runtime mounts and preserves mounted data.
+An optional environment ID copied from status, or `--repository PATH`, targets
+one instance directly. `--all` explicitly acts on every working instance without
+prompting, including in scripts. Selectors cannot be combined; `status` does not
+accept `--all`. Selected actions run sequentially, continue after individual
+failures, and return nonzero if any selected action fails. See [T3 lifecycle](T3.md)
+for status fields, eligibility, and stopped-environment recovery.
 
 Example:
 

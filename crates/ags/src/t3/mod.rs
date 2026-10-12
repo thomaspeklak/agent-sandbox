@@ -6,11 +6,14 @@ mod dispatch;
 mod environment;
 mod environment_plan;
 mod identity;
+mod inventory;
+mod management;
 mod owner;
 mod owner_process;
 mod providers;
 mod registration;
 pub mod repository;
+mod selection;
 mod sidecars;
 mod ssh_agent;
 mod transport;
@@ -42,20 +45,14 @@ pub fn run(options: &RunOptions) -> io::Result<()> {
 }
 
 pub fn command(options: &T3Options) -> io::Result<()> {
-    let path = if let Some(path) = &options.registration {
-        path.clone()
-    } else {
-        let repository = repository::Repository::resolve(
-            &options
-                .repository
-                .clone()
-                .unwrap_or(std::env::current_dir()?),
-        )?;
-        registration::root()?
-            .join("registry")
-            .join(format!("{}.json", repository.id))
-    };
-    let registration = Registration::read(&path).map_err(|error| {
+    if !matches!(options.action, T3Action::Owner | T3Action::Proxy) {
+        return management::command(options);
+    }
+    let path = options
+        .registration
+        .as_ref()
+        .ok_or_else(|| io::Error::other("missing T3 owner registration"))?;
+    let registration = Registration::read(path).map_err(|error| {
         io::Error::other(format!(
             "cannot load T3 environment ({error}); register it with `ags --agent t3`"
         ))
@@ -63,30 +60,7 @@ pub fn command(options: &T3Options) -> io::Result<()> {
     match options.action {
         T3Action::Owner => owner::run(registration),
         T3Action::Proxy => owner::proxy(&registration),
-        T3Action::Status => {
-            match owner::request(&registration, "status") {
-                Ok(status) => print!("{status}"),
-                Err(_) => println!(
-                    "{}",
-                    serde_json::json!({"repository": registration.repository.main,
-                    "ssh_alias": registration.alias(), "owner_running": false,
-                    "runtime": environment::specification(&registration)?.map(|spec| spec.version)})
-                ),
-            }
-            Ok(())
-        }
-        T3Action::Stop => {
-            if owner::request(&registration, "stop").is_err() {
-                container::stop(&registration)?;
-            }
-            println!("T3 repository environment stopped.");
-            Ok(())
-        }
-        T3Action::Upgrade => {
-            owner::upgrade(&registration)?;
-            println!("T3 repository environment upgraded; mounted data was preserved.");
-            Ok(())
-        }
+        _ => unreachable!("public actions are dispatched to management"),
     }
 }
 

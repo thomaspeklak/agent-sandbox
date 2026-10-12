@@ -69,6 +69,11 @@ unchecked in `tasks.md`, and feature history remains in progress.
 
 ## Verification performed
 
+The follow-up [global environment management](../t3-environment-management/prompt.md)
+supersedes current-directory management defaults: status discovers all registrations,
+IDs select single environments, and global stop/upgrade use unchecked checkboxes
+or explicit `--all`. Original live Podman/desktop integration checks remain pending.
+
 - `cargo fmt --check`
 - `cargo clippy -p ags -- -D warnings`
 - `cargo fetch --locked`

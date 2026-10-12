@@ -60,7 +60,8 @@ fn t3_help_is_scoped_and_available_without_repository_config_or_external_tools()
         assert!(text.starts_with("Usage: ags t3 <status|stop|upgrade>"));
         assert!(text.contains("ags --agent t3"));
         assert!(text.contains("--repository <checkout>"));
-        assert!(text.contains("default: current directory"));
+        assert!(text.contains("all registered T3 environments"));
+        assert!(text.contains("--all"));
         assert!(text.contains("Examples:"));
         assert!(!text.contains("Run flags:") && !text.contains("Update-image flags:"));
         assert!(!text.contains("update-agents"));
@@ -77,10 +78,15 @@ fn t3_action_help_describes_each_operation_without_loading_registration() {
     ] {
         for flag in ["-h", "--help"] {
             let text = help(&["t3", action, "--repository", "/nonexistent/worktree", flag]);
-            assert!(text.starts_with(&format!("Usage: ags t3 {action} [--repository <checkout>]")));
+            assert!(text.starts_with(&format!(
+                "Usage: ags t3 {action} [environment | --repository <checkout>"
+            )));
             assert!(text.contains(description));
             assert!(text.contains("--repository <checkout>"));
             assert!(!text.contains("Run flags:"));
+            if action != "status" {
+                assert!(text.contains("unchecked checkboxes") && text.contains("--all"));
+            }
         }
     }
 }

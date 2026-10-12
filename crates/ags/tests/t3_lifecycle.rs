@@ -7,15 +7,14 @@ use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 fn runner(version: &str) -> String {
-    let runner = compatibility::RUNNER
+    compatibility::RUNNER
         .replace("@@T3_NODE_ENV_SCRIPT@@", "prepend_path_if_dir() { :; }")
         .replace("@@T3_NODE_SCRIPT_PATH@@", "''")
         .replace("@@T3_ARCHIVE_VERSION@@", &format!("'{version}'"))
         .replace(
             "@@T3_RELEASE_BASE_URL@@",
             "'https://invalid.example/releases'",
-        );
-    runner
+        )
 }
 
 fn launch(version: &str) -> String {
@@ -164,11 +163,12 @@ command = [{python:?}, {lookup:?}, {secret:?}]
         update.publish().unwrap();
     }
     fn status(&self) -> serde_json::Value {
-        let output = self.ags(&["t3", "status"]);
+        let output = self.ags(&["t3", "status", "--repository", "."]);
         assert!(
             output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
         );
         serde_json::from_slice(&output.stdout).unwrap()
     }
@@ -219,38 +219,42 @@ command = [{python:?}, {lookup:?}, {secret:?}]
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let status = self.ags(&["t3", "status"]);
+        let status = self.ags(&["t3", "status", "--repository", "."]);
         let value = serde_json::from_slice::<serde_json::Value>(&status.stdout).ok();
-        let pid = value
+        let mut pids: std::collections::HashSet<_> = value
             .as_ref()
             .and_then(|value| value["owner_pid"].as_u64())
-            .or_else(|| {
-                let identities =
-                    fs::read_dir(self.root.path().join("data/ags/t3/identity")).ok()?;
-                identities.flatten().find_map(|entry| {
-                    let bytes = fs::read(entry.path().join("owner-process.json")).ok()?;
-                    serde_json::from_slice::<serde_json::Value>(&bytes).ok()?["pid"].as_u64()
-                })
-            });
-        if let Some(pid) = pid {
+            .into_iter()
+            .collect();
+        if let Ok(identities) = fs::read_dir(self.root.path().join("data/ags/t3/identity")) {
+            for entry in identities.flatten() {
+                if let Ok(bytes) = fs::read(entry.path().join("owner-process.json"))
+                    && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes)
+                    && let Some(pid) = value["pid"].as_u64()
+                {
+                    pids.insert(pid);
+                }
+            }
+        }
+        for pid in pids {
             unsafe {
                 libc::kill(pid as i32, libc::SIGTERM);
             }
-            let deadline = Instant::now() + Duration::from_secs(3);
-            while Instant::now() < deadline
-                && self
-                    .root
-                    .path()
-                    .join("runtime/ags")
-                    .read_dir()
-                    .is_ok_and(|entries| {
-                        entries
-                            .flatten()
-                            .any(|entry| entry.path().join("control.sock").exists())
-                    })
-            {
-                std::thread::sleep(Duration::from_millis(25));
-            }
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline
+            && self
+                .root
+                .path()
+                .join("runtime/ags")
+                .read_dir()
+                .is_ok_and(|entries| {
+                    entries
+                        .flatten()
+                        .any(|entry| entry.path().join("control.sock").exists())
+                })
+        {
+            std::thread::sleep(Duration::from_millis(25));
         }
     }
 }
@@ -277,7 +281,12 @@ fn podman_image_id_formats_and_legacy_metadata_survive_status_reconnect_and_upgr
         spec["image"] = "a".repeat(64).into();
         fs::write(&metadata, serde_json::to_vec(&spec).unwrap()).unwrap();
         assert_eq!(fixture.status()["runtime"], "0.0.45");
-        assert!(fixture.ags(&["t3", "stop"]).status.success());
+        assert!(
+            fixture
+                .ags(&["t3", "stop", "--repository", "."])
+                .status
+                .success()
+        );
         unsafe {
             libc::kill(status["owner_pid"].as_u64().unwrap() as i32, libc::SIGTERM);
         }
@@ -309,7 +318,7 @@ fn podman_image_id_formats_and_legacy_metadata_survive_status_reconnect_and_upgr
         // Exercise upgrade from legacy metadata as well as fresh inspection.
         fs::write(&metadata, serde_json::to_vec(&spec).unwrap()).unwrap();
         fixture.generation("0.0.46");
-        let output = fixture.ags(&["t3", "upgrade"]);
+        let output = fixture.ags(&["t3", "upgrade", "--repository", "."]);
         assert!(
             output.status.success(),
             "{}",
@@ -412,7 +421,7 @@ fn folder_picker_defaults_to_checkout_and_preserves_custom_directory_on_upgrade(
             settings["addProjectBaseDirectory"] = value;
         }
         fs::write(&settings_path, serde_json::to_vec(&settings).unwrap()).unwrap();
-        let result = fixture.ags(&["t3", "upgrade"]);
+        let result = fixture.ags(&["t3", "upgrade", "--repository", "."]);
         assert!(
             result.status.success(),
             "{}",
@@ -427,7 +436,7 @@ fn folder_picker_defaults_to_checkout_and_preserves_custom_directory_on_upgrade(
     settings["addProjectBaseDirectory"] = serde_json::json!("~/.t3/worktrees");
     settings["defaultRuntimeMode"] = serde_json::json!("full-access");
     fs::write(&settings_path, serde_json::to_vec(&settings).unwrap()).unwrap();
-    let result = fixture.ags(&["t3", "upgrade"]);
+    let result = fixture.ags(&["t3", "upgrade", "--repository", "."]);
     assert!(
         result.status.success(),
         "{}",
@@ -617,7 +626,12 @@ fn automatic_ssh_start_reuse_disconnect_stop_upgrade_and_owner_recovery() {
     assert!(String::from_utf8_lossy(&mismatch.stderr).contains("No runtime was downloaded"));
     assert_eq!(fixture.events().len(), before);
     fixture.generation("0.0.46");
-    assert!(fixture.ags(&["t3", "stop"]).status.success());
+    assert!(
+        fixture
+            .ags(&["t3", "stop", "--repository", "."])
+            .status
+            .success()
+    );
     assert!(fixture.ssh(&alias, stop, false).status.success());
     assert_eq!(fixture.container()["State"]["Running"], false);
     fs::write(fixture.root.path().join("secret"), "second-fixture-value").unwrap();
@@ -629,7 +643,7 @@ fn automatic_ssh_start_reuse_disconnect_stop_upgrade_and_owner_recovery() {
     );
     assert_ne!(fixture.container()["secret_hash"], first_hash);
     assert_eq!(fixture.status()["runtime"], "0.0.45");
-    let upgraded = fixture.ags(&["t3", "upgrade"]);
+    let upgraded = fixture.ags(&["t3", "upgrade", "--repository", "."]);
     assert!(
         upgraded.status.success(),
         "{}",
@@ -750,7 +764,7 @@ fn new_external_worktrees_require_explicit_recreation_and_disabled_t3_rejects_ne
     assert!(String::from_utf8_lossy(&response.stderr).contains("outside the live T3 mount layout"));
     assert_eq!(fixture.events().len(), before);
     assert_eq!(fixture.container()["State"]["Running"], true);
-    let upgraded = fixture.ags(&["t3", "upgrade"]);
+    let upgraded = fixture.ags(&["t3", "upgrade", "--repository", "."]);
     assert!(
         upgraded.status.success(),
         "{}",
@@ -777,9 +791,17 @@ fn new_external_worktrees_require_explicit_recreation_and_disabled_t3_rejects_ne
     assert!(String::from_utf8_lossy(&response.stderr).contains("T3 is disabled"));
     assert_eq!(fixture.events().len(), before);
     assert_eq!(fixture.container()["State"]["Running"], true);
-    assert!(fixture.ags(&["t3", "stop"]).status.success());
+    assert!(
+        fixture
+            .ags(&["t3", "stop", "--repository", "."])
+            .status
+            .success()
+    );
     assert_eq!(fixture.container()["State"]["Running"], false);
 }
+
+#[path = "support/t3_management_tests.rs"]
+mod management_tests;
 
 #[test]
 fn revoked_overlay_trust_does_not_silently_boot_with_global_config() {

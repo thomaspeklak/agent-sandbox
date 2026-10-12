@@ -11,6 +11,16 @@ from pathlib import Path
 root = Path(os.environ["AGS_T3_TEST_ROOT"])
 state_path = root / "container.json"
 args = sys.argv[1:]
+multi = root / "containers"
+if multi.is_dir():
+    name = next((arg for arg in args if arg.startswith("ags-t3-")), None)
+    if name:
+        state_path = multi / f"{name}.json"
+    else:
+        for candidate in multi.glob("*.json"):
+            if json.loads(candidate.read_text())["Id"] in args:
+                state_path = candidate
+                break
 with (root / "events.lock").open("a+") as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
     with (root / "events.jsonl").open("a") as events:
@@ -61,7 +71,8 @@ elif args[0] == "create":
             mounts.append({"Source": source, "Destination": destination, "RW": mode == "rw"})
         if arg == "-e":
             environment.append(args[index + 1])
-    save({"Id": "c" * 64, "Image": image_id(), "Config": {"Labels": labels, "Env": environment},
+    identifier = hashlib.sha256(name.encode()).hexdigest() if multi.is_dir() else "c" * 64
+    save({"Id": identifier, "Image": image_id(), "Config": {"Labels": labels, "Env": environment},
           "Mounts": mounts, "State": {"Running": False}, "ready": False})
     print("fixture-container")
 elif args[0] == "start":
@@ -109,7 +120,7 @@ elif args[0] == "exec":
             except ProcessLookupError:
                 pass
     elif "/run/ags-t3/forward-tcp.js" in args:
-        assert args == ["exec", "-i", "c" * 64, "/usr/bin/node", "/run/ags-t3/forward-tcp.js"]
+        assert args == ["exec", "-i", state()["Id"], "/usr/bin/node", "/run/ags-t3/forward-tcp.js"]
         assets = next(mount["Source"] for mount in state()["Mounts"]
                       if mount["Destination"] == "/run/ags-t3")
         assert (Path(assets) / "forward-tcp.js").is_file()
