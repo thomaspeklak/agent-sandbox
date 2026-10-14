@@ -95,9 +95,10 @@ impl Environment {
                 .as_ref()
                 .is_some_and(|spec| spec.configuration != configuration)
         {
-            return Err(io::Error::other(
-                "registered T3 environment configuration changed; use explicit `ags t3 upgrade` to recreate it",
-            ));
+            return Err(io::Error::other(format!(
+                "registered T3 environment configuration changed; recreate it with `ags t3 upgrade {}` or select it in `ags t3 upgrade`",
+                registration.alias(),
+            )));
         }
         let inspected = container::inspect(registration)?;
         if inspected.is_some() {

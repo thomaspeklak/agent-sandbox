@@ -303,7 +303,7 @@ case "$words[2]" in
     ;;
   t3)
     local t3_bulk=()
-    if [[ "$words[3]" == stop || "$words[3]" == upgrade ]]; then t3_bulk=('--all[Act on all working environments without prompting]'); fi
+    if [[ "$words[3]" == stop || "$words[3]" == upgrade ]]; then t3_bulk=('--all[Act on all eligible environments without prompting]'); fi
     _arguments '1:command:(t3)' '2:action:(status stop upgrade)' '3:environment ID:' '--repository[Repository checkout]:checkout:_files -/' "${t3_bulk[@]}" '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
@@ -369,7 +369,7 @@ complete -c ags -n "__fish_use_subcommand" -a node -d "Install or list user-mana
 complete -c ags -n "__fish_use_subcommand" -a t3 -d "Manage T3 repository environment"
 complete -c ags -n "__fish_seen_subcommand_from t3" -a "status stop upgrade" -d "T3 environment action"
 complete -c ags -n "__fish_seen_subcommand_from t3" -l repository -r -d "Repository checkout"
-complete -c ags -n "__fish_seen_subcommand_from t3; and __fish_seen_subcommand_from stop upgrade" -l all -d "Act on all working environments without prompting"
+complete -c ags -n "__fish_seen_subcommand_from t3; and __fish_seen_subcommand_from stop upgrade" -l all -d "Act on all eligible environments without prompting"
 complete -c ags -n "__fish_use_subcommand" -a runtime -d "Install or list user-managed Node versions"
 complete -c ags -n "__fish_use_subcommand" -a runtimes -d "Install or list user-managed Node versions"
 

@@ -143,12 +143,12 @@ Start or register an environment with: ags --agent t3
 Commands:
   status         List all registered environments and their status as JSON
   stop           Choose working environments to stop using unchecked checkboxes
-  upgrade        Choose working environments to upgrade; interrupts active jobs
+  upgrade        Choose registered environments to recreate, including stopped ones
 
 Flags:
   environment              Target the environment ID (SSH alias) shown by status
   --repository <checkout>  Target one main checkout or worktree explicitly
-  --all                    Stop/upgrade all working environments without prompting
+  --all                    Upgrade all valid registrations; stop all working instances
   -h, --help               Show help for this command
 
 Global stop/upgrade require a terminal for selection, or explicit --all.
@@ -175,14 +175,14 @@ pub fn t3_help_text(action: Option<super::T3Action>) -> String {
         ),
         Some(T3Action::Upgrade) => (
             "upgrade",
-            "Stop active jobs and recreate selected working environments using the current image/runtime, preserving mounted data. A selector upgrades one environment directly, including a stopped environment.",
+            "Stop active jobs and recreate selected registered environments using the current image/runtime, preserving mounted data. Stopped/unavailable instances with valid registrations can be selected for recovery. A selector upgrades one environment directly.",
         ),
         _ => return T3_HELP_TEXT.to_owned(),
     };
     let bulk = if action == Some(T3Action::Status) {
         ""
     } else {
-        "  --all                    Act on all working environments without prompting\n\nWithout a selector, use unchecked checkboxes (Space to toggle, Enter to apply).\nEscape/Ctrl-C or an empty selection changes nothing. Without a terminal,\nsupply a selector or --all. Selected environments will be interrupted.\n"
+        "  --all                    Act on all eligible environments without prompting\n\nWithout a selector, use unchecked checkboxes (Space to toggle, Enter to apply).\nEscape/Ctrl-C or an empty selection changes nothing. Without a terminal,\nsupply a selector or --all. Upgrade includes stopped registrations and starts them;\nrunning selections will be interrupted. Stop includes only working instances.\n"
     };
     let selectors = if action == Some(T3Action::Status) {
         "environment | --repository <checkout>"

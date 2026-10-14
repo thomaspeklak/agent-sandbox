@@ -43,7 +43,7 @@ fn list_shows_unchecked_environment_details_and_scrolls_to_later_rows() {
             registration: None,
             status: serde_json::json!({"environment": format!("env-{index}"),
             "ssh_alias": format!("ssh-{index}"), "runtime": "0.0.45",
-            "repository": format!("/repo-{index} with spaces")}),
+            "repository": format!("/repo-{index} with spaces"), "state": "stopped"}),
         })
         .collect();
     let references = entries.iter().collect::<Vec<_>>();
@@ -53,11 +53,31 @@ fn list_shows_unchecked_environment_details_and_scrolls_to_later_rows() {
         .draw(|frame| selection.render(frame, &references, "upgrade"))
         .unwrap();
     let screen = format!("{}", terminal.backend());
-    assert!(screen.contains("[ ] env-0 (SSH ssh-0) | T3 0.0.45"));
+    assert!(screen.contains("[ ] env-0 [stopped] | T3 0.0.45"));
+    assert!(screen.contains("SSH ssh-0") && screen.contains("stopped instances will start"));
     assert!(screen.contains("/repo-0 with spaces") && screen.contains("0 selected"));
     selection.handle(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
     terminal
         .draw(|frame| selection.render(frame, &references, "upgrade"))
         .unwrap();
     assert!(format!("{}", terminal.backend()).contains("[ ] env-11"));
+}
+
+#[test]
+fn recovery_list_shows_unavailable_state_and_diagnostic_without_selecting_it() {
+    let entry = Entry {
+        registration: None,
+        status: serde_json::json!({"environment": "orphan", "ssh_alias": "ssh-orphan",
+            "runtime": "0.0.45", "repository": "/repo", "state": "unavailable",
+            "error": "container has no responsive owner"}),
+    };
+    let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(100, 16)).unwrap();
+    let mut selection = Selection::new(1);
+    terminal
+        .draw(|frame| selection.render(frame, &[&entry], "upgrade"))
+        .unwrap();
+    let screen = format!("{}", terminal.backend());
+    assert!(screen.contains("[ ] orphan [unavailable] | T3 0.0.45"));
+    assert!(screen.contains("Status: container has no responsive owner"));
+    assert!(screen.contains("0 selected"));
 }

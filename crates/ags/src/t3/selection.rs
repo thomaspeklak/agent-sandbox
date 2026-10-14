@@ -11,7 +11,7 @@ use std::io::{self, IsTerminal};
 pub fn choose(entries: &[&Entry], action: &str) -> io::Result<Option<Vec<usize>>> {
     if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
         return Err(io::Error::other(format!(
-            "global T3 {action} requires an interactive terminal; supply an environment identifier, --repository, or --all to explicitly select all working environments"
+            "global T3 {action} requires an interactive terminal; supply an environment identifier, --repository, or --all to explicitly select all eligible environments"
         )));
     }
     enable_raw_mode()?;
@@ -93,28 +93,47 @@ impl Selection {
             Constraint::Length(2),
         ])
         .areas(frame.area());
-        frame.render_widget(Paragraph::new(format!(
-            "Choose T3 environments to {action}.\nSelected environments will be interrupted; mounted data is preserved."
-        )).wrap(Wrap { trim: false }), notice);
+        let impact = if action == "upgrade" {
+            "Running instances will restart; stopped instances will start. Mounted data is preserved."
+        } else {
+            "Selected running instances will stop. Mounted data is preserved."
+        };
+        frame.render_widget(
+            Paragraph::new(format!("Choose T3 environments to {action}.\n{impact}"))
+                .wrap(Wrap { trim: false }),
+            notice,
+        );
         let items = entries
             .iter()
             .enumerate()
             .map(|(index, entry)| {
                 let checkbox = if self.checked[index] { "[x]" } else { "[ ]" };
-                ListItem::new(vec![
+                let mut lines = vec![
                     Line::from(format!(
-                        "{checkbox} {} (SSH {}) | T3 {}",
+                        "{checkbox} {} [{}] | T3 {}",
                         text(&entry.status["environment"]),
-                        text(&entry.status["ssh_alias"]),
+                        text(&entry.status["state"]),
                         text(&entry.status["runtime"])
                     )),
                     Line::from(format!("    {}", text(&entry.status["repository"]))),
-                ])
+                    Line::from(format!("    SSH {}", text(&entry.status["ssh_alias"]))),
+                ];
+                if entry.status.get("error").is_some() {
+                    lines.push(Line::from(format!(
+                        "    Status: {}",
+                        text(&entry.status["error"])
+                    )));
+                }
+                ListItem::new(lines)
             })
             .collect::<Vec<_>>();
         frame.render_stateful_widget(
             List::new(items)
-                .block(Block::bordered().title("Working environments"))
+                .block(Block::bordered().title(if action == "upgrade" {
+                    "Registered environments"
+                } else {
+                    "Working environments"
+                }))
                 .highlight_style(Style::default().fg(Color::Cyan))
                 .highlight_symbol("> "),
             list,

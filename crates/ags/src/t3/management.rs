@@ -46,22 +46,38 @@ pub fn command(options: &T3Options) -> io::Result<()> {
     for entry in &entries {
         if let Some(error) = entry.status["error"].as_str() {
             eprintln!(
-                "Skipping {}: {error}",
+                "{} {}: {error}",
+                if eligible(entry, options.action) {
+                    "Status"
+                } else {
+                    "Skipping"
+                },
                 entry.status["environment"]
                     .as_str()
                     .unwrap_or("unknown environment")
             );
         }
     }
-    let working: Vec<_> = entries.iter().filter(|entry| entry.working()).collect();
-    if working.is_empty() {
-        println!("No working T3 environments to {}.", verb(options.action));
+    let candidates: Vec<_> = entries
+        .iter()
+        .filter(|entry| eligible(entry, options.action))
+        .collect();
+    if candidates.is_empty() {
+        println!(
+            "No {} T3 environments to {}.",
+            if options.action == T3Action::Upgrade {
+                "valid registered"
+            } else {
+                "working"
+            },
+            verb(options.action)
+        );
         return Ok(());
     }
     let selected = if options.all {
-        (0..working.len()).collect()
+        (0..candidates.len()).collect()
     } else {
-        selection::choose(&working, verb(options.action))?.unwrap_or_default()
+        selection::choose(&candidates, verb(options.action))?.unwrap_or_default()
     };
     if selected.is_empty() {
         println!("No T3 environments selected; nothing changed.");
@@ -70,17 +86,24 @@ pub fn command(options: &T3Options) -> io::Result<()> {
     let mut succeeded = 0;
     let mut failed = 0;
     for index in selected {
-        let registration = working[index].registration.as_ref().unwrap();
-        // Selection can stay open while another invocation stops an environment.
-        // Do not unexpectedly restart a stopped instance from a stale checklist.
+        let previous = candidates[index];
+        let registration = previous.registration.as_ref().unwrap();
+        // A stopped selection explicitly opts into startup. Do not interrupt
+        // newly started work or reverse a later stop using a stale checklist.
         let result = registration
             .path()
             .map(|path| Entry::read(&path))
             .and_then(|entry| {
-                if !entry.working() {
+                if previous.working() && !entry.working() {
                     return Err(io::Error::other(
                         "environment is no longer working; inspect `ags t3 status`",
                     ));
+                }
+                if !eligible(&entry, options.action) || entry.status["state"] != previous.status["state"] {
+                    return Err(io::Error::other(format!(
+                        "environment state changed since selection; reopen the checklist with `ags t3 {}` or inspect `ags t3 status`",
+                        verb(options.action),
+                    )));
                 }
                 perform(entry.registration.as_ref().unwrap(), options.action)
             });
@@ -109,6 +132,16 @@ pub fn command(options: &T3Options) -> io::Result<()> {
         )));
     }
     Ok(())
+}
+
+fn eligible(entry: &Entry, action: T3Action) -> bool {
+    match action {
+        // A valid registration can be explicitly recreated even when its
+        // current server/container is stopped or its status needs recovery.
+        T3Action::Upgrade => entry.registration.is_some(),
+        T3Action::Stop => entry.working(),
+        _ => false,
+    }
 }
 
 fn target(options: &T3Options) -> io::Result<Option<PathBuf>> {

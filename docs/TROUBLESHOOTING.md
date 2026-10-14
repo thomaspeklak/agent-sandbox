@@ -15,12 +15,14 @@ environment IDs, server/container state, errors, runtime, and private owner-log
 locations. Use `ags t3 status ENVIRONMENT` (or `--repository PATH`) for one instance. Confirm T3 is
 selected in `ags tools` and installed with `ags update-agents`.
 
-Global stop/upgrade show an unchecked checkbox list of working environments.
-Select which instances to interrupt with Space, then Enter. For a stopped or
-unavailable instance needing recovery, use its ID explicitly:
-`ags t3 upgrade ENVIRONMENT`. In a non-interactive shell, supply an ID/path or
-explicit `--all`; bulk actions exclude stopped/unavailable registrations and
-report individual failures without preventing other selected actions.
+Global stop offers working environments. Global upgrade offers all valid
+registrations, including stopped/unavailable instances needing recovery, with
+state shown in the unchecked list. Select with Space, then Enter. Selecting a
+stopped instance explicitly starts it. An ID or `--repository PATH` also targets
+one instance directly, including `ags t3 upgrade --repository .` from its checkout.
+In a non-interactive shell, supply an ID/path or explicit `--all`; bulk upgrade
+includes stopped registrations, while bulk stop includes only working instances.
+Individual failures do not prevent other selected actions.
 
 - **Desktop/runtime mismatch:** use the matching desktop version, or run
   `ags update-agents` followed by explicit `ags t3 upgrade`. The update's release-age
@@ -44,7 +46,9 @@ report individual failures without preventing other selected actions.
   with the registered config to prepare trust. Automatic startup fails instead
   of silently dropping the overlay.
 - **Worktree or configuration layout changed:** explicitly recreate with
-  `ags t3 upgrade`. T3's default worktrees under its home are already covered by
+  `ags t3 upgrade` and select the environment, or run
+  `ags t3 upgrade --repository .` from the checkout. A failed startup can leave the
+  instance stopped; global upgrade includes it for recovery. T3's default worktrees under its home are already covered by
   their parent mount; newly added external paths can require recreation.
 - **Credential lookup/unlock failure:** prepare SSH keys and 1Password access
   interactively, or configure a reacquirable secret source. Registered transient

@@ -26,3 +26,12 @@ The user requested implementation of all changes discussed in this session.
 6. Add parser/help, inventory/lifecycle, and real pseudo-terminal selection tests.
    Update lifecycle documentation and completions. Run formatting, Clippy, the
    serialized Rust suite, relevant Node tests, and diff checks; commit and push.
+
+## Recovery correction from live smoke feedback
+
+The working-only upgrade filter above is superseded: global upgrade must offer
+all valid registrations, including stopped/unavailable instances, with state and
+diagnostics in the unchecked list. Explicit selection opts into startup of a
+stopped instance. Global stop remains working-only. Recheck the displayed state
+before acting so a later stop is not reversed and newly started work is not
+interrupted by a stale selection. Apply the same eligibility to `--all`.

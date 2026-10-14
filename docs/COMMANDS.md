@@ -77,12 +77,13 @@ configuration and trusted overlay; a host owner retains sidecars and leases
 after the CLI or desktop disconnects. T3's SSH alias starts/reuses that owner.
 `ags t3 status` lists all registered environments as JSON, including stable
 environment IDs, stopped instances, and per-instance errors. It works from any
-directory. Global `ags t3 stop` and `ags t3 upgrade` present unchecked checkboxes
-for working instances; select with Space and apply with Enter. Escape/Ctrl-C or
+directory. Global `ags t3 stop` offers working instances; `ags t3 upgrade` offers
+all valid registrations, including stopped/unavailable instances needing recovery.
+The unchecked list shows each state; select with Space and apply with Enter. Escape/Ctrl-C or
 no selection changes nothing. Stop shuts down selected servers/containers;
 upgrade recreates them with current image/runtime mounts and preserves mounted data.
 An optional environment ID copied from status, or `--repository PATH`, targets
-one instance directly. `--all` explicitly acts on every working instance without
+one instance directly. `--all` explicitly acts on every eligible instance without
 prompting, including in scripts. Selectors cannot be combined; `status` does not
 accept `--all`. Selected actions run sequentially, continue after individual
 failures, and return nonzero if any selected action fails. See [T3 lifecycle](T3.md)

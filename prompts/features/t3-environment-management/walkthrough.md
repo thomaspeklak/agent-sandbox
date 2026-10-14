@@ -23,11 +23,13 @@
   Enter applies. Escape, Ctrl-C, and an empty selection change nothing.
 - Terminal state is restored before actions. Global interactive selection uses
   stdin/stderr; scripts must select an environment/path or explicitly pass
-  `--all` to act on every working instance.
-- Stopped/unavailable instances appear in status but are excluded from global
-  actions. Explicit targeting retains stopped-instance upgrade and recovery.
-- Recheck working state before each selected action, so a stopped instance is
-  not unexpectedly restarted from an outdated checklist. Execute sequentially,
+  `--all` to act on every eligible instance.
+- Global upgrade includes all valid registrations with state displayed, including
+  stopped/unavailable instances needing recovery. Global stop remains working-only.
+  Selecting a stopped instance explicitly opts into startup; invalid registry files
+  remain excluded. Explicit targeting retains single-instance upgrade and recovery.
+- Recheck state before each selected action, so later stops are not reversed and
+  newly started work is not interrupted from an outdated checklist. Execute sequentially,
   continue after individual failures, report outcomes, and return nonzero on
   any selected failure. Existing mounted-data and SSH-identity preservation stay
   within the existing lifecycle implementation.
@@ -65,3 +67,14 @@ Implementation commit `c4fce14` was pushed to `feat/t3-integration` after
 validation and diff review. Install the updated AGS binary to use the new command
 scope and checkbox selection; existing environments change only when selected
 for an explicit action.
+
+## Stopped-environment recovery follow-up
+
+The configuration-change smoke report reproduced a gap: failed startup left an
+instance stopped, and the working-only global upgrade filter returned no choices.
+The global upgrade picker and `--all` now use registration validity rather than
+running status. The picker labels state and status errors, starts stopped
+instances only when selected, and keeps state-transition guards. Regression
+coverage exercises the exact configuration-change sequence, ownerless-container
+recovery, stopped-list cancellation, mixed-state bulk upgrade, and startup while
+the picker is open. Scoped configuration-change guidance includes the environment ID.

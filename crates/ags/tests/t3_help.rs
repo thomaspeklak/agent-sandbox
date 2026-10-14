@@ -87,6 +87,9 @@ fn t3_action_help_describes_each_operation_without_loading_registration() {
             if action != "status" {
                 assert!(text.contains("unchecked checkboxes") && text.contains("--all"));
             }
+            if action == "upgrade" {
+                assert!(text.contains("Stopped/unavailable") && text.contains("starts them"));
+            }
         }
     }
 }

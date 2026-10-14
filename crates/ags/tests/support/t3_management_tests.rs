@@ -100,9 +100,22 @@ impl Environments {
     }
 
     fn pty_with_stop(&self, action: &str, keys: &str, stop_before: Option<&str>) -> Value {
+        self.pty_with_hooks(action, keys, stop_before, None)
+    }
+
+    fn pty_with_hooks(
+        &self,
+        action: &str,
+        keys: &str,
+        stop_before: Option<&str>,
+        upgrade_before: Option<&str>,
+    ) -> Value {
         let mut command = self.fixture.command("python3");
         if let Some(target) = stop_before {
             command.env("AGS_T3_TEST_STOP_BEFORE_SELECT", target);
+        }
+        if let Some(target) = upgrade_before {
+            command.env("AGS_T3_TEST_UPGRADE_BEFORE_SELECT", target);
         }
         let output = command
             .current_dir(self.fixture.root.path())
@@ -114,7 +127,11 @@ impl Environments {
         let result: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(
             result["exit"],
-            if stop_before.is_some() { 1 } else { 0 },
+            if stop_before.is_some() || upgrade_before.is_some() {
+                1
+            } else {
+                0
+            },
             "{result}"
         );
         assert_eq!(result["sent"], true, "{result}");
@@ -186,7 +203,7 @@ fn targeted_actions_change_only_one_environment_and_allow_stopped_upgrade() {
 }
 
 #[test]
-fn noninteractive_global_actions_require_opt_in_and_bulk_actions_include_only_working_instances() {
+fn noninteractive_actions_require_opt_in_and_bulk_upgrade_includes_stopped_registrations() {
     let environments = Environments::new();
     let rows = environments.rows();
     for action in ["stop", "upgrade"] {
@@ -208,9 +225,9 @@ fn noninteractive_global_actions_require_opt_in_and_bulk_actions_include_only_wo
     environments.fixture.generation("0.0.46");
     let output = environments.global(&["t3", "upgrade", "--all"]);
     success(&output);
-    assert!(String::from_utf8_lossy(&output.stdout).contains("1 succeeded, 0 failed"));
-    assert_eq!(environments.status(first)["state"], "stopped");
-    assert_eq!(environments.status(first)["runtime"], "0.0.45");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("2 succeeded, 0 failed"));
+    assert_eq!(environments.status(first)["state"], "running");
+    assert_eq!(environments.status(first)["runtime"], "0.0.46");
     assert_eq!(environments.status(second)["runtime"], "0.0.46");
     success(&environments.global(&["t3", "stop", "--all"]));
     assert!(
@@ -475,5 +492,137 @@ fn an_instance_stopped_while_the_checklist_is_open_is_not_restarted() {
     assert_eq!(
         environments.status(second)["owner_pid"],
         rows[1]["owner_pid"]
+    );
+}
+
+#[test]
+fn global_upgrade_offers_a_stopped_environment_after_configuration_change_blocks_startup() {
+    let fixture = Fixture::new();
+    let config = fixture.root.path().join("config.toml");
+    success(&fixture.ags(&["--agent", "t3", "--config", config.to_str().unwrap()]));
+    let before = fixture.status();
+    let home = fixture.container()["Mounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|mount| mount["Destination"].as_str().unwrap().ends_with("/home"))
+        .unwrap()["Source"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let history = Path::new(&home).join(".t3/userdata/recovery-history");
+    fs::write(&history, "retained history").unwrap();
+    success(&fixture.ags(&["t3", "stop", "--repository", "."]));
+    fs::write(
+        &config,
+        fs::read_to_string(&config).unwrap().replace(
+            "localhost/t3-fixture:latest",
+            "localhost/t3-fixture:changed",
+        ),
+    )
+    .unwrap();
+    let failed = fixture.ags(&["--agent", "t3", "--config", config.to_str().unwrap()]);
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("configuration changed"));
+    assert_eq!(fixture.status()["state"], "stopped");
+    let output = fixture
+        .command("python3")
+        .current_dir(fixture.root.path())
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/t3_manage_pty.py"))
+        .args(["200d", env!("CARGO_BIN_EXE_ags"), "t3", "upgrade"])
+        .output()
+        .unwrap();
+    success(&output);
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["sent"], true, "{result}");
+    assert_eq!(result["exit"], 0, "{result}");
+    assert_eq!(result["restored"], true, "{result}");
+    assert!(result["output"].as_str().unwrap().contains("[stopped]"));
+    assert_eq!(fixture.status()["running"], true);
+    assert_eq!(fixture.status()["environment"], before["environment"]);
+    assert_eq!(fs::read_to_string(history).unwrap(), "retained history");
+}
+
+#[test]
+fn global_upgrade_recovers_an_ownerless_container_and_skips_invalid_registrations() {
+    let fixture = Fixture::new();
+    let config = fixture.root.path().join("config.toml");
+    success(&fixture.ags(&["--agent", "t3", "--config", config.to_str().unwrap()]));
+    let before = fixture.status();
+    let pid = before["owner_pid"].as_u64().unwrap();
+    unsafe {
+        libc::kill(pid as i32, libc::SIGKILL);
+    }
+    fixture.wait_for_owner_exit(pid);
+    assert_eq!(fixture.container()["State"]["Running"], true);
+    let unavailable = fixture.ags(&["t3", "status", "--repository", "."]);
+    assert!(!unavailable.status.success());
+    let status: Value = serde_json::from_slice(&unavailable.stdout).unwrap();
+    assert_eq!(status["state"], "unavailable");
+    let invalid = fixture
+        .root
+        .path()
+        .join("data/ags/t3/registry")
+        .join(format!("{}.json", "f".repeat(64)));
+    fs::write(&invalid, "invalid json").unwrap();
+    fs::set_permissions(&invalid, fs::Permissions::from_mode(0o600)).unwrap();
+    fixture.generation("0.0.46");
+    let output = fixture
+        .command(env!("CARGO_BIN_EXE_ags"))
+        .current_dir(fixture.root.path())
+        .args(["t3", "upgrade", "--all"])
+        .output()
+        .unwrap();
+    success(&output);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("1 succeeded, 0 failed"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Skipping ags-t3-ffffffffffffffff"));
+    assert_eq!(fixture.status()["running"], true);
+    assert_eq!(fixture.status()["runtime"], "0.0.46");
+    assert_eq!(fixture.status()["environment"], before["environment"]);
+}
+
+#[test]
+fn cancelling_global_upgrade_with_only_stopped_instances_does_not_start_them() {
+    let environments = Environments::new();
+    success(&environments.global(&["t3", "stop", "--all"]));
+    let before = environments.rows();
+    assert!(before.iter().all(|entry| entry["state"] == "stopped"));
+    for keys in ["0d", "201b", "2003"] {
+        let result = environments.pty("upgrade", keys);
+        assert!(result["output"].as_str().unwrap().contains("[stopped]"));
+        assert_eq!(environments.rows(), before);
+    }
+}
+
+#[test]
+fn stopped_selection_that_starts_while_the_picker_is_open_is_not_interrupted() {
+    let environments = Environments::new();
+    let rows = environments.rows();
+    let first = rows[0]["environment"].as_str().unwrap();
+    let second = rows[1]["environment"].as_str().unwrap();
+    success(&environments.global(&["t3", "stop", first]));
+    environments.fixture.generation("0.0.46");
+    let result = environments.pty_with_hooks("upgrade", "200d", None, Some(first));
+    assert!(
+        result["output"]
+            .as_str()
+            .unwrap()
+            .contains("environment state changed since selection")
+    );
+    assert_eq!(environments.status(first)["state"], "running");
+    assert_eq!(environments.status(first)["runtime"], "0.0.46");
+    assert_eq!(
+        environments.status(second)["owner_pid"],
+        rows[1]["owner_pid"]
+    );
+    assert_eq!(environments.status(second)["runtime"], "0.0.45");
+    assert_eq!(
+        environments
+            .fixture
+            .events()
+            .iter()
+            .filter(|event| event[0] == "create")
+            .count(),
+        3
     );
 }

@@ -39,6 +39,9 @@ try:
                 if target := os.environ.get("AGS_T3_TEST_STOP_BEFORE_SELECT"):
                     subprocess.run([sys.argv[2], "t3", "stop", target],
                                    stdin=subprocess.DEVNULL, capture_output=True, check=True)
+                if target := os.environ.get("AGS_T3_TEST_UPGRADE_BEFORE_SELECT"):
+                    subprocess.run([sys.argv[2], "t3", "upgrade", target],
+                                   stdin=subprocess.DEVNULL, capture_output=True, check=True)
                 os.write(master, keys)
                 sent = True
             if not data:
