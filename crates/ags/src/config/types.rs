@@ -11,6 +11,7 @@ use super::{LockedAgentProvider, LockedToolDownload};
 #[derive(Debug, Clone)]
 pub struct ValidatedConfig {
     pub config_file: PathBuf,
+    pub prepare_hooks: Vec<crate::hooks::Hook>,
     pub sandbox: ValidatedSandbox,
     pub mounts: Vec<ValidatedMount>,
     pub tools: Vec<ValidatedTool>,

@@ -163,3 +163,22 @@ fn invalid_documents_are_redacted() {
         assert!(!error.contains(item), "{error}");
     }
 }
+
+#[test]
+fn opaque_cli_item_keeps_final_precedence_over_prepared_hook_environment() {
+    // Hook field references/literals have already entered the inherited container
+    // env when the opaque CLI bootstrap runs. Its existing overwrite policy wins.
+    let item = r#"{"category":"SECURE_NOTE","fields":[{"label":"PREPARED_TOKEN","value":"opaque-item-value"}]}"#;
+    let output = run(
+        &[item],
+        &[
+            "python3",
+            "-c",
+            "import os; assert os.environ['PREPARED_TOKEN']=='opaque-item-value'",
+        ],
+        &[("PREPARED_TOKEN", "prepared-hook-value")],
+    );
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("opaque-item-value"));
+}

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "AGS prepare output v1",
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "allOf": [
+          {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "HOME",
+                    "PATH",
+                    "BASH_ENV",
+                    "ENV",
+                    "SHELLOPTS",
+                    "BASHOPTS",
+                    "CDPATH",
+                    "IFS",
+                    "NODE_OPTIONS",
+                    "NODE_PATH",
+                    "PYTHONPATH",
+                    "PYTHONHOME",
+                    "RUSTUP_HOME",
+                    "CARGO_HOME",
+                    "GOPATH",
+                    "GOCACHE",
+                    "SCCACHE_DIR",
+                    "CACHEPOT_DIR",
+                    "SSH_AUTH_SOCK",
+                    "GIT_CONFIG_GLOBAL",
+                    "BROWSER",
+                    "GLIMPSE_BINARY_PATH",
+                    "DOCKER_HOST",
+                    "TESTCONTAINERS_HOST_OVERRIDE",
+                    "PSP_SESSION_ID",
+                    "DISABLE_AUTOUPDATER",
+                    "OPENCODE_DISABLE_AUTOUPDATE",
+                    "OPENCODE_CONFIG_CONTENT",
+                    "OPENCODE_CONFIG",
+                    "OPENCODE_CONFIG_DIR",
+                    "OPENCODE_TUI_CONFIG",
+                    "CODEX_HOME",
+                    "GEMINI_CLI_HOME",
+                    "GEMINI_CLI_SYSTEM_SETTINGS_PATH",
+                    "GEMINI_CLI_SYSTEM_DEFAULTS_PATH",
+                    "GEMINI_CLI_TRUSTED_FOLDERS_PATH",
+                    "PI_CODING_AGENT_DIR",
+                    "NPM_CONFIG_PREFIX",
+                    "WAYLAND_DISPLAY",
+                    "XDG_CONFIG_HOME",
+                    "XDG_RUNTIME_DIR",
+                    "XDG_SESSION_TYPE"
+                  ]
+                },
+                {
+                  "pattern": "^(AGS_|OP_|PNPM_|MISE_|LD_|DCG_|PI_GUARD_|GIT_CONFIG_|CLAUDE_)"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^[^\\x00\\r\\n]*$"
+          },
+          {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "pattern": "^op://[A-Za-z0-9 _\\-.%]+/[A-Za-z0-9 _\\-.%]+/(?:[A-Za-z0-9 _\\-.%]+/)?[A-Za-z0-9 _\\-.%]+$"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "destination",
+          "content"
+        ],
+        "properties": {
+          "destination": {
+            "type": "string",
+            "pattern": "^/(?!.*(?:\\x00|\\n|:|//|/\\.\\.?(/|$))).+[^/]$",
+            "description": "Must also pass AGS protected-destination and effective-plan overlap validation."
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "mounts": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "destination",
+          "mode"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "pattern": "^/[^\\x00\\n:]*$"
+          },
+          "destination": {
+            "type": "string",
+            "pattern": "^/(?!.*(?:\\x00|\\n|:|//|/\\.\\.?(/|$))).+[^/]$",
+            "description": "Must also pass AGS protected-destination and effective-plan overlap validation."
+          },
+          "mode": {
+            "enum": [
+              "ro",
+              "rw"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

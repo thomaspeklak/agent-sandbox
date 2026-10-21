@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-13
+
+Prepare your sandbox before it starts: trusted startup hooks can connect a launch to your own host-side tooling without custom AGS builds or container images.
+
+### Added
+
+- Declare optional `[[prepare_hook]]` executables in global or project configuration. Hooks receive a versioned JSON launch context and contribute environment values, generated read-only files, host bind mounts, and 1Password references before container creation.
+- Compose global and project hooks with deterministic precedence: later declarations win within each scope, project hooks override global hooks, and explicit known-key CLI options take priority. Hooks run in bounded parallel batches with timeouts, output limits, and peer cancellation on failure.
+- Explore the protocol with `ags hooks describe` and `ags hooks schema`, validate responses without execution using `ags hooks validate`, or run one approved hook with `ags hooks test`. Test output is redacted; **testing executes host code and is not a dry run**. Shell completions include the new commands.
+- Resolve surviving hook `op://` references together in one deduplicated `op inject` batch. Known-key overrides discard unused references before lookup; existing `--op-secret-set` Secure Note injection keeps its final overwrite behavior but cannot prune hook lookups in advance.
+- Publish a [startup hooks guide](https://github.com/thomaspeklak/agent-sandbox/blob/v0.27.0/docs/STARTUP_HOOKS.md), input/output JSON schemas, troubleshooting advice, and an optional standalone Pi intercom namespace example. The example hook is installed and enabled separately.
+
+### Security
+
+- Require explicit host-execution approval tied to the hook declaration, arguments, entrypoint contents, and project scope. Changed hooks require fresh approval; AGS executes a private copy of the approved entrypoint and refuses untrusted project hook overlays. **Approval is not a sandbox or transitive integrity check**: imported code, libraries, and scripts passed as interpreter arguments are not content-tracked.
+- Reject malformed responses, reserved environment keys, protected runtime/trust/cache mounts, and ambiguous destination overlaps. Lockdown rejects surviving hook secret references and host bind contributions, but **approved hooks still run with host-user authority**, including in lockdown.
+
+### Upgrade notes
+
+- Upgrade the host AGS executable; no image rebuild is needed. Hooks are opt-in, so existing configurations continue unchanged. Hook secret references require a host 1Password CLI supporting `op inject`.
+
 ## [0.26.0] - 2026-10-07
 
 ### Added

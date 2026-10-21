@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "ags"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "base64",
  "crossterm 0.28.1",

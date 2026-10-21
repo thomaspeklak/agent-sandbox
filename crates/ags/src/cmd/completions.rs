@@ -47,7 +47,7 @@ const BASH: &str = r#"_ags_completion() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
   fi
 
-  local commands="setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes t3"
+  local commands="setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools hooks node runtime runtimes t3"
   local agents="pi claude codex gemini opencode t3 shell"
   local shells="fish zsh bash"
   local modes="wrappers aliases both"
@@ -107,6 +107,18 @@ const BASH: &str = r#"_ags_completion() {
       local t3_flags="--repository -h --help"
       if [[ "${COMP_WORDS[2]:-}" == stop || "${COMP_WORDS[2]:-}" == upgrade ]]; then t3_flags="$t3_flags --all"; fi
       COMPREPLY=( $(compgen -W "$t3_flags" -- "$cur") )
+      return 0
+      ;;
+    hooks)
+      if [[ "${COMP_WORDS[2]}" == "validate" && "$COMP_CWORD" == 3 ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+      elif [[ "$prev" == "--config" || "$prev" == "--context" || "$prev" == "--workdir" ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+      elif [[ "$prev" == "--agent" ]]; then
+        COMPREPLY=( $(compgen -W "$agents" -- "$cur") )
+      else
+        COMPREPLY=( $(compgen -W "describe schema validate test prepare input output --config --context --workdir --agent -h --help" -- "$cur") )
+      fi
       return 0
       ;;
     node|runtime|runtimes)
@@ -237,14 +249,14 @@ complete -F _ags_completion ags
 const ZSH: &str = r#"#compdef ags
 
 local -a commands agents shells modes
-commands=(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes t3)
+commands=(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools hooks node runtime runtimes t3)
 agents=(pi claude codex gemini opencode t3 shell)
 shells=(fish zsh bash)
 modes=(wrappers aliases both)
 
 if (( CURRENT == 2 )); then
   _alternative \
-    'subcommand:subcommand:(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes t3)' \
+    'subcommand:subcommand:(setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools hooks node runtime runtimes t3)' \
     'run-flag:run flag:(--agent --browser --tmux --psp --psp-keep --yolo --root --lockdown --wayland-compositor-passthrough --stop-when-done --defaults -D --config --add-dir -d --env --op-secret-set -1 -h --help)'
   return
 fi
@@ -307,6 +319,18 @@ case "$words[2]" in
     _arguments '1:command:(t3)' '2:action:(status stop upgrade)' '3:environment ID:' '--repository[Repository checkout]:checkout:_files -/' "${t3_bulk[@]}" '(-h --help)'{-h,--help}'[Show help]'
     return
     ;;
+  hooks)
+    _arguments \
+      '1:action:(describe schema validate test)' \
+      '2:event, file or hook:' \
+      '3:schema kind:(input output)' \
+      '--config[Config file]:config file:_files' \
+      '--context[Input JSON context]:context file:_files' \
+      '--workdir[Host working directory]:directory:_files -/' \
+      '--agent[Selected agent]:agent:(pi claude codex gemini opencode t3 shell)' \
+      '(-h --help)'{-h,--help}'[Show help]'
+    return
+    ;;
   node|runtime|runtimes)
     _arguments \
       '1:action:(install list)' \
@@ -349,7 +373,7 @@ _arguments -S \
 
 const FISH: &str = r#"complete -c ags -f
 
-set -l __ags_subcommands setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools node runtime runtimes t3
+set -l __ags_subcommands setup doctor update-image update-agents prune-workspace-caches install uninstall create-aliases completions tools hooks node runtime runtimes t3
 set -l __ags_agents pi claude codex gemini opencode t3 shell
 set -l __ags_shells fish zsh bash
 set -l __ags_modes wrappers aliases both
@@ -364,6 +388,7 @@ complete -c ags -n "__fish_use_subcommand" -a install -d "Install assets/config 
 complete -c ags -n "__fish_use_subcommand" -a uninstall -d "Reserved no-op"
 complete -c ags -n "__fish_use_subcommand" -a create-aliases -d "Create wrappers and/or aliases"
 complete -c ags -n "__fish_use_subcommand" -a completions -d "Print completion script"
+complete -c ags -n "__fish_use_subcommand" -a hooks -d "Describe, validate or execute trusted prepare hooks"
 complete -c ags -n "__fish_use_subcommand" -a tools -d "Choose sandbox tools by profession"
 complete -c ags -n "__fish_use_subcommand" -a node -d "Install or list user-managed Node versions"
 complete -c ags -n "__fish_use_subcommand" -a t3 -d "Manage T3 repository environment"
@@ -424,6 +449,13 @@ complete -c ags -n "__fish_seen_subcommand_from create-aliases" -s h -l help -d 
 # completions
 complete -c ags -n "__fish_seen_subcommand_from completions" -l shell -r -a "$__ags_shells" -d "Shell to generate for"
 complete -c ags -n "__fish_seen_subcommand_from completions" -s h -l help -d "Show help"
+
+# prepare hooks (test executes host code)
+complete -c ags -n "__fish_seen_subcommand_from hooks" -a "describe schema validate test prepare input output"
+complete -c ags -n "__fish_seen_subcommand_from hooks" -l config -r -d "Config file"
+complete -c ags -n "__fish_seen_subcommand_from hooks" -l context -r -d "Input context JSON"
+complete -c ags -n "__fish_seen_subcommand_from hooks" -l workdir -r -d "Host working directory"
+complete -c ags -n "__fish_seen_subcommand_from hooks" -l agent -r -a "$__ags_agents"
 
 # node runtime
 complete -c ags -n "__fish_seen_subcommand_from node runtime runtimes" -a "install list" -d "Node runtime action"
