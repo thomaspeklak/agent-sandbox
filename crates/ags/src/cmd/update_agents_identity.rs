@@ -56,7 +56,7 @@ node <<'AGS_RUNTIME_INVENTORY'
 {snapshot}
 const agents = {agents};
 let dependencies = {{}};
-if (agents.some(agent => agent === 'pi' || agent === 'gemini')) {{
+if (agents.some(agent => ['pi', 'gemini', 't3'].includes(agent))) {{
   const output = require('node:child_process').execFileSync('/usr/local/bin/pnpm', ['list', '-g', '--depth=0', '--json'], {{
     env: {{ ...process.env, PNPM_HOME: '/usr/local/pnpm', PNPM_CONFIG_STORE_DIR: '/tmp/ags-pnpm-verification-store', PNPM_CONFIG_GLOBAL_BIN_DIR: '/usr/local/pnpm/bin' }},
     encoding: 'utf8'
@@ -72,4 +72,31 @@ fs.writeFileSync('/run/ags-update/inventory.json', JSON.stringify(snapshot(agent
 AGS_RUNTIME_INVENTORY
 "#
     )
+}
+
+pub(super) fn verification_script(agents: &[Agent]) -> String {
+    let mut script =
+        String::from("set -e\nexport DISABLE_AUTOUPDATER=1 OPENCODE_DISABLE_AUTOUPDATE=true\n");
+    for agent in agents {
+        let launcher = match agent {
+            Agent::Pi => "/usr/local/pnpm/bin/pi",
+            Agent::Gemini => "/usr/local/pnpm/bin/gemini",
+            Agent::T3 => "/usr/local/pnpm/bin/t3",
+            Agent::Codex => "/usr/local/pnpm/codex",
+            Agent::Claude => "/opt/claude-home/.local/bin/claude",
+            Agent::Opencode => "/opt/opencode-home/.opencode/bin/opencode",
+            Agent::Shell => continue,
+        };
+        script.push_str(&format!(
+            "timeout 60 {} --version\n",
+            crate::util::shell_quote(launcher)
+        ));
+    }
+    if agents.contains(&Agent::T3) {
+        let terminal = include_str!("update_agents_t3_terminal.js");
+        let verification = include_str!("update_agents_t3_verify.sh").replace("# AGS_T3_TERMINAL_PROBE", &format!("cat > \"$T3_VERIFY_DIR/terminal.js\" <<'AGS_T3_TERMINAL'\n{terminal}\nAGS_T3_TERMINAL\nnode \"$T3_VERIFY_DIR/terminal.js\" \"$T3_VERIFY_BIN\" \"$T3_VERIFY_DIR/home/.t3\" \"$T3_VERIFY_DIR\""));
+        script.push_str(&verification);
+        script.push('\n');
+    }
+    script
 }

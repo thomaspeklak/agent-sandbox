@@ -343,6 +343,23 @@ fn generated_reconciliation_scripts_have_valid_bash_syntax() {
 }
 
 #[test]
+fn t3_package_path_lookup_failure_stops_before_preparation_and_publication() {
+    let script = all_agents_script();
+    let runtime = &script[script.rfind("\nT3_PACKAGE_PATH=").unwrap()..];
+    let output = Command::new("bash")
+        .args([
+            "-c",
+            &format!(
+                "set -e\npnpm_dependency_path() {{ printf /stale/package; return 3; }}\nnode() {{ printf prepared; }}\n{runtime}\nprintf published"
+            ),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stdout.is_empty(), "runtime preparation must not run");
+}
+
+#[test]
 fn legacy_pi_spec_resolves_to_current_default() {
     assert_eq!(resolve_pi_spec(LEGACY_PI_SPECS[0]), DEFAULT_PI_SPEC);
     assert_eq!(resolve_pi_spec("@custom/pi"), "@custom/pi");

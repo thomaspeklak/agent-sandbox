@@ -42,6 +42,12 @@
           }
         }
       }
+    },
+    {
+      "id": "t3",
+      "name": "T3 Code",
+      "description": "Persistent repository environment for the T3 Code desktop over SSH.",
+      "provider": { "type": "pnpm", "package": "t3" }
     }
   ],
   "tools": [

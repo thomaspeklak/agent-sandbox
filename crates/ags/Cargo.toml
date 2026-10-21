@@ -9,7 +9,9 @@ crossterm = "0.28"
 dirs = "6"
 libc = "0.2"
 ratatui = "0.30"
+rand = "0.10"
 regex = "1"
+russh = { version = "0.64.1", default-features = false, features = ["ring"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -17,5 +19,6 @@ tempfile = "3"
 time = { version = "0.3", features = ["parsing"] }
 toml = "0.8"
 toml_edit = "0.22"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "io-std", "sync", "signal", "time"] }
 tui-input = "0.15"
 url = "2"

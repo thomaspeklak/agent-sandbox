@@ -192,7 +192,7 @@ pub(crate) fn execute_with_payload_sources(
 /// `CONTAINER_HOST` and `CONTAINER_CONNECTION` select Podman's remote client;
 /// a default configured connection does too. A local API socket is not enough:
 /// descriptors cannot cross the remote client/server protocol safely.
-fn ensure_local_podman() -> Result<(), PodmanError> {
+pub(crate) fn ensure_local_podman() -> Result<(), PodmanError> {
     if ["CONTAINER_HOST", "CONTAINER_CONNECTION"]
         .iter()
         .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))

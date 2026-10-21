@@ -80,6 +80,16 @@ const documents = [
     keywords: ["error", "fix", "missing", "debug", "problem", "doctor"],
   },
   {
+    slug: "t3",
+    source: "docs/T3.md",
+    title: "T3 Code integration",
+    navTitle: "T3 Code",
+    group: "integrate",
+    description:
+      "Connect T3 desktop to persistent repository environments and manage their lifecycle, worktrees, and provider homes.",
+    keywords: ["t3", "desktop", "ssh", "environment", "worktrees", "providers"],
+  },
+  {
     slug: "glimpse",
     source: "docs/GLIMPSE.md",
     title: "Glimpse host UI",

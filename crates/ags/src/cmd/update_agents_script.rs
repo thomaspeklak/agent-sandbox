@@ -5,6 +5,9 @@ use crate::config::{
 };
 use crate::util::shell_quote;
 
+#[path = "update_agents_pnpm.rs"]
+mod pnpm;
+
 pub(super) fn resolve_pi_spec(spec: &str) -> &str {
     if LEGACY_PI_SPECS.contains(&spec) {
         DEFAULT_PI_SPEC
@@ -324,46 +327,8 @@ pub(super) fn build_install_script(
     providers: &[LockedAgentProvider],
     opencode_download: Option<&ToolDownloadSource>,
 ) -> Result<String, String> {
-    let pi_package = if enabled_agents.contains(&Agent::Pi) {
-        require_provider(Agent::Pi, providers)?;
-        let package = resolve_pi_spec(pi_spec);
-        crate::config::validate_pnpm_package(package, "[update].pi_spec")?;
-        Some(package)
-    } else {
-        None
-    };
-    let gemini_package = if enabled_agents.contains(&Agent::Gemini) {
-        let AgentProviderPolicy::Pnpm { package } = require_provider(Agent::Gemini, providers)?
-        else {
-            unreachable!("validated Gemini provider must be pnpm")
-        };
-        Some(package.as_str())
-    } else {
-        None
-    };
-    let protected_packages = [pi_package, gemini_package]
-        .into_iter()
-        .flatten()
-        .map(shell_quote)
-        .collect::<Vec<_>>()
-        .join(" ");
-    let protected_args = if protected_packages.is_empty() {
-        String::new()
-    } else {
-        format!(" {protected_packages}")
-    };
-    let pi_install = if let Some(package) = pi_package {
-        let package = shell_quote(package);
-        format!("install_pnpm_candidate pi {package}")
-    } else {
-        String::new()
-    };
-    let pi_cleanup = if let Some(package) = pi_package {
-        let package = shell_quote(package);
-        format!("commit_pnpm_agent pi {package}{protected_args}")
-    } else {
-        format!("remove_pnpm_agents_for_bin_except pi{protected_args}")
-    };
+    let (pnpm_install, pnpm_cleanup, pnpm_verification) =
+        pnpm::actions(pi_spec, enabled_agents, providers)?;
     let codex_action = if enabled_agents.contains(&Agent::Codex) {
         require_provider(Agent::Codex, providers)?;
         r#"echo '[ags] updating codex...' >&2
@@ -376,18 +341,6 @@ remove_legacy_pnpm_agent @openai/codex codex
         r#"remove_pnpm_agent @openai/codex codex
 echo '[ags] removing codex data...' >&2
 rm -rf /opt/codex-home/* /opt/codex-home/.[!.]* /opt/codex-home/..?*"#
-    };
-    let gemini_install = if let Some(package) = gemini_package {
-        let package = shell_quote(package);
-        format!("install_pnpm_candidate gemini {package}")
-    } else {
-        String::new()
-    };
-    let gemini_cleanup = if let Some(package) = gemini_package {
-        let package = shell_quote(package);
-        format!("commit_pnpm_agent gemini {package}{protected_args}")
-    } else {
-        format!("remove_pnpm_agents_for_bin_except gemini{protected_args}")
     };
     let opencode_action = if enabled_agents.contains(&Agent::Opencode) {
         require_provider(Agent::Opencode, providers)?;
@@ -420,22 +373,15 @@ chmod +x /usr/local/pnpm/claude"#
 rm -f /usr/local/pnpm/claude
 rm -rf /opt/claude-home/* /opt/claude-home/.[!.]* /opt/claude-home/..?*"#
     };
-    let disabled_pnpm_cleanup = [
-        (!enabled_agents.contains(&Agent::Pi)).then_some("pi"),
-        (!enabled_agents.contains(&Agent::Gemini)).then_some("gemini"),
-    ]
-    .into_iter()
-    .flatten()
-    .map(|name| format!("rm -f /usr/local/pnpm/{name} /usr/local/pnpm/bin/{name}"))
-    .collect::<Vec<_>>()
-    .join("\n");
-    let pnpm_verification = [(pi_package, "pi"), (gemini_package, "gemini")]
-        .into_iter()
-        .filter_map(|(package, name)| {
-            package.map(|package| format!("verify_pnpm_agent {} {name}", shell_quote(package)))
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let t3_runtime = if enabled_agents.contains(&Agent::T3) {
+        format!(
+            "T3_PACKAGE_PATH=\"$(pnpm_dependency_path {})\"\nexport T3_PACKAGE_PATH\nnode <<'AGS_T3_RUNTIME'\n{}\nAGS_T3_RUNTIME",
+            shell_quote(pnpm::package(Agent::T3, pi_spec, providers)?),
+            include_str!("update_agents_t3.js")
+        )
+    } else {
+        "rm -rf /usr/local/pnpm/ags-t3-runtime".to_owned()
+    };
 
     let helpers = PNPM_RECONCILE_HELPERS;
     let opencode_recovery = OPENCODE_RECOVERY_HELPER;
@@ -454,15 +400,13 @@ rm -f /usr/local/pnpm/pnpm /usr/local/pnpm/pn /usr/local/pnpm/pnpx /usr/local/pn
 rm -f /home/dev/.npm-global/bin/pi /home/dev/.npm-global/bin/codex /home/dev/.npm-global/bin/gemini /home/dev/.npm-global/bin/opencode
 rm -rf /home/dev/.npm-global/lib/node_modules/@mariozechner/pi-coding-agent /home/dev/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent /home/dev/.npm-global/lib/node_modules/@openai/codex /home/dev/.npm-global/lib/node_modules/@google/gemini-cli /home/dev/.npm-global/lib/node_modules/opencode-ai
 {helpers}
-{pi_install}
-{gemini_install}
-{pi_cleanup}
-{gemini_cleanup}
+{pnpm_install}
+{pnpm_cleanup}
 {codex_action}
 {opencode_action}
 {claude_action}
-{disabled_pnpm_cleanup}
 {pnpm_verification}
+{t3_runtime}
 "#,
     ))
 }
@@ -478,7 +422,7 @@ fn require_provider(
         .ok_or_else(|| format!("enabled agent '{}' has no provider", agent.as_str()))?;
     crate::config::validate_agent_provider(agent, provider, "agent provider")?;
     match (agent, provider) {
-        (Agent::Pi | Agent::Gemini, AgentProviderPolicy::Pnpm { .. })
+        (Agent::Pi | Agent::Gemini | Agent::T3, AgentProviderPolicy::Pnpm { .. })
         | (
             Agent::Claude,
             AgentProviderPolicy::BuiltinInstaller {

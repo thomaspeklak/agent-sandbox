@@ -55,7 +55,7 @@ pub(crate) fn validate_agent_provider(
     context: &str,
 ) -> Result<(), String> {
     match (agent, provider) {
-        (Agent::Pi | Agent::Gemini, AgentProviderPolicy::Pnpm { package }) => {
+        (Agent::Pi | Agent::Gemini | Agent::T3, AgentProviderPolicy::Pnpm { package }) => {
             validate_pnpm_package(package, &format!("{context}.provider.package"))
         }
         (

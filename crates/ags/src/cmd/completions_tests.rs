@@ -2,6 +2,27 @@ use super::render;
 use crate::cli::Shell;
 
 #[test]
+fn bash_t3_bulk_completion_is_offered_only_for_disruptive_actions() {
+    for action in ["status", "stop", "upgrade"] {
+        let output = std::process::Command::new("bash")
+            .args(["--noprofile", "--norc", "-c"])
+            .arg(format!("{}\nCOMP_WORDS=(ags t3 {action} -); COMP_CWORD=3; _ags_completion; printf '%s\\n' \"${{COMPREPLY[@]}}\"", render(Shell::Bash)))
+            .output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(
+            output.lines().any(|line| line == "--all"),
+            action != "status"
+        );
+        assert!(output.lines().any(|line| line == "--repository"));
+    }
+}
+
+#[test]
 fn bash_completion_contains_core_flags() {
     let script = render(Shell::Bash);
     assert!(script.contains("--agent"));

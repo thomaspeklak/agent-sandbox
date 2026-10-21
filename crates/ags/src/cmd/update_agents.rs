@@ -147,19 +147,7 @@ fn run_candidate(
     )
     .map_err(UpdateAgentsError::InstallFailed)?;
 
-    let mut verification_script =
-        String::from("set -e\nexport DISABLE_AUTOUPDATER=1 OPENCODE_DISABLE_AUTOUPDATE=true\n");
-    for agent in enabled_agents {
-        let launcher = match agent {
-            Agent::Pi => "/usr/local/pnpm/bin/pi",
-            Agent::Gemini => "/usr/local/pnpm/bin/gemini",
-            Agent::Codex => "/usr/local/pnpm/codex",
-            Agent::Claude => "/opt/claude-home/.local/bin/claude",
-            Agent::Opencode => "/opt/opencode-home/.opencode/bin/opencode",
-            Agent::Shell => continue,
-        };
-        verification_script.push_str(&format!("timeout 60 {} --version\n", shell_quote(launcher)));
-    }
+    let mut verification_script = identity::verification_script(enabled_agents);
 
     println!("Checking agent updates in an isolated runtime candidate...");
     println!(

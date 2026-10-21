@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::options::BuildLaunchPlanOptions;
 use crate::BROWSER_HOST_LOOPBACK;
 use crate::agent::{self, AgentProfile, OPENCODE_INSTALL_HOME};
 use crate::auth_proxy::host::AuthProxyGuard;
@@ -34,35 +35,6 @@ const HOST_SERVICES_HINT: &str =
 /// The only container destination accepted for the AGS-owned bootstrap asset.
 pub const ONEPASSWORD_BOOTSTRAP_CONTAINER_PATH: &str = "/run/ags/onepassword-bootstrap";
 
-pub struct BuildLaunchPlanOptions<'a> {
-    pub browser_mode: bool,
-    pub tmux_mode: bool,
-    pub guard_enabled: bool,
-    pub lockdown: bool,
-    pub ssh_auth_sock: Option<&'a Path>,
-    pub resolved_secrets: &'a HashMap<String, String>,
-    pub auth_proxy_runtime_dir: Option<&'a Path>,
-    pub clipboard_runtime_dir: Option<&'a Path>,
-    pub clipboard_mode: ClipboardMode,
-    pub host_ui_runtime_dir: Option<&'a Path>,
-    pub host_ui_session_id: Option<&'a str>,
-    pub webview_relay_runtime_dir: Option<&'a Path>,
-    pub psp_socket: Option<&'a Path>,
-    pub psp_session_id: Option<&'a str>,
-    pub extra_mounts: &'a [PlanMount],
-    pub extra_mount_dirs: &'a [PathBuf],
-    pub env: &'a [(String, String)],
-    pub stop_when_done: bool,
-    pub root_mode: bool,
-    pub wayland_passthrough: bool,
-    /// Anonymous item FDs prepared for the final-process bootstrap.
-    pub payload_fd_count: usize,
-    /// Container path of the mounted bootstrap. Must be present with payload FDs.
-    pub bootstrap_path: Option<&'a str>,
-    /// Exact host path of the private, per-run bootstrap asset.
-    pub bootstrap_host_path: Option<&'a Path>,
-}
-
 /// Intermediate env-assembly context. Sidecar fields mirror
 /// [`BuildLaunchPlanOptions`] as `Option` references so `build_env` can derive
 /// enabled-flags via `.is_some()` rather than receiving pre-computed booleans.
@@ -84,7 +56,7 @@ struct BuildEnvContext<'a> {
     lockdown: bool,
 }
 
-const PNPM_AGENTS: &[Agent] = &[Agent::Pi, Agent::Codex, Agent::Gemini];
+const PNPM_AGENTS: &[Agent] = &[Agent::Pi, Agent::Codex, Agent::Gemini, Agent::T3];
 
 /// Cache volume mappings: (host suffix, container path, env var, agent owners).
 /// Empty owners are general caches; an empty env var emits no environment variable.

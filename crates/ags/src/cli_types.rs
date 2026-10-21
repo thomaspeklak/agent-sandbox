@@ -106,4 +106,5 @@ pub enum SubCommand {
     Tools(ToolConfigOptions),
     Node(NodeOptions),
     Hooks(crate::hooks::cli::Options),
+    T3(T3Options),
 }

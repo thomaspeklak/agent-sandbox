@@ -151,7 +151,7 @@ fn add_infrastructure_mounts(
     }
 }
 
-fn validate_protected_cache_mounts(
+pub(crate) fn validate_protected_cache_mounts(
     mounts: &[PlanMount],
     cache_dir: &Path,
     workspace_cache: Option<&WorkspacePnpmCache>,

@@ -38,6 +38,14 @@ cargo test -p ags
 node --test agent/tests/clipboard-*.test.mjs
 ```
 
+The T3 folder-picker lifecycle regression can also exercise a local published
+v0.0.45 runtime's real filesystem RPC and native PTY. Set `AGS_T3_NATIVE_BINARY`
+to its executable (with the complete platform bundle alongside it):
+
+```bash
+AGS_T3_NATIVE_BINARY=/absolute/path/to/t3 cargo test -p ags --test t3_lifecycle folder_picker_defaults_to_checkout_and_preserves_custom_directory_on_upgrade -- --test-threads=1
+```
+
 Useful run examples:
 
 ```bash
