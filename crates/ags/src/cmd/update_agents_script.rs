@@ -295,13 +295,15 @@ printf '%s  %s\n' "$OPENCODE_SHA256" "$OPENCODE_ARCHIVE" | sha256sum -c -
 mkdir -p "$OPENCODE_STAGE/bin"
 tar -xOzf "$OPENCODE_ARCHIVE" -- __MEMBER__ > "$OPENCODE_STAGE/bin/opencode"
 chmod 0755 "$OPENCODE_STAGE/bin/opencode"
-OPENCODE_ACTUAL_VERSION="$("$OPENCODE_STAGE/bin/opencode" --version)"
+OPENCODE_VERSION_OUTPUT="$("$OPENCODE_STAGE/bin/opencode" --version)"
+OPENCODE_ACTUAL_VERSION="$(printf '%s\n' "$OPENCODE_VERSION_OUTPUT" | awk '{print $NF}')"
 [ "${OPENCODE_ACTUAL_VERSION#v}" = __VERSION__ ]
 rm -rf "$OPENCODE_BACKUP"
 if [ -e "$OPENCODE_ACTIVE" ]; then mv "$OPENCODE_ACTIVE" "$OPENCODE_BACKUP"; fi
 : > "$OPENCODE_TRANSACTION"
 mv "$OPENCODE_STAGE" "$OPENCODE_ACTIVE"
-OPENCODE_ACTUAL_VERSION="$(/opt/opencode-home/.opencode/bin/opencode --version)"
+OPENCODE_VERSION_OUTPUT="$(/opt/opencode-home/.opencode/bin/opencode --version)"
+OPENCODE_ACTUAL_VERSION="$(printf '%s\n' "$OPENCODE_VERSION_OUTPUT" | awk '{print $NF}')"
 [ "${OPENCODE_ACTUAL_VERSION#v}" = __VERSION__ ]
 rm -f "$OPENCODE_TRANSACTION"
 rm -rf "$OPENCODE_BACKUP"
