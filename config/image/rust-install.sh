@@ -15,6 +15,9 @@ case "$RUSTUP_VERSION" in
 esac
 
 export RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
+# The seed toolchain lives in a lower overlay layer, where renaming a directory
+# fails with EXDEV; let rustup fall back to copy-and-delete instead.
+export RUSTUP_PERMIT_COPY_RENAME=1
 export PATH="/usr/local/cargo/bin:$PATH"
 unset RUSTUP_TOOLCHAIN
 
