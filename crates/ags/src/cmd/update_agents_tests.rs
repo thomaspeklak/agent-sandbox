@@ -195,13 +195,16 @@ fn opencode_uses_verified_transactional_release_install() {
     let checksum = script.find("sha256sum -c -").unwrap();
     let extraction = script.find("tar -xOzf").unwrap();
     let stage_validation = script
-        .find("OPENCODE_STAGE/bin/opencode\" --version")
+        .find("verify_opencode_version \"$OPENCODE_STAGE/bin/opencode\" staged")
         .unwrap();
     let backup = script
         .find("mv \"$OPENCODE_ACTIVE\" \"$OPENCODE_BACKUP\"")
         .unwrap();
     let activation = script
         .find("mv \"$OPENCODE_STAGE\" \"$OPENCODE_ACTIVE\"")
+        .unwrap();
+    let active_validation = script
+        .find("verify_opencode_version \"$OPENCODE_ACTIVE/bin/opencode\" activated")
         .unwrap();
     let commit = script.rfind("rm -f \"$OPENCODE_TRANSACTION\"").unwrap();
     let legacy_cleanup = script
@@ -218,7 +221,8 @@ fn opencode_uses_verified_transactional_release_install() {
     assert!(extraction < stage_validation);
     assert!(stage_validation < backup);
     assert!(backup < activation);
-    assert!(activation < commit);
+    assert!(activation < active_validation);
+    assert!(active_validation < commit);
     assert!(commit < legacy_cleanup);
 }
 

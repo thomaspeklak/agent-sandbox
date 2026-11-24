@@ -1,9 +1,12 @@
 use crate::cli::Agent;
 use crate::config::{
-    AgentProviderPolicy, ArchiveMemberMatch, BuiltinAgentInstaller, DEFAULT_PI_SPEC,
-    LEGACY_PI_SPECS, LockedAgentProvider, ToolArchiveFormat, ToolDownloadSource,
+    AgentProviderPolicy, BuiltinAgentInstaller, DEFAULT_PI_SPEC, LEGACY_PI_SPECS,
+    LockedAgentProvider, ToolDownloadSource,
 };
 use crate::util::shell_quote;
+
+#[path = "update_agents_opencode.rs"]
+mod opencode;
 
 pub(super) fn resolve_pi_spec(spec: &str) -> &str {
     if LEGACY_PI_SPECS.contains(&spec) {
@@ -238,85 +241,6 @@ $packages
 EOF
 }"#;
 
-const OPENCODE_RECOVERY_HELPER: &str = r#"OPENCODE_ACTIVE=/opt/opencode-home/.opencode
-OPENCODE_STAGE=/opt/opencode-home/.opencode.stage
-OPENCODE_BACKUP=/opt/opencode-home/.opencode.previous
-OPENCODE_TRANSACTION=/opt/opencode-home/.opencode.transaction
-OPENCODE_ARCHIVE=/tmp/ags-opencode.tar.gz
-recover_opencode_transaction() {
-  if [ -e "$OPENCODE_TRANSACTION" ]; then
-    rm -rf "$OPENCODE_ACTIVE"
-    if [ -e "$OPENCODE_BACKUP" ]; then mv "$OPENCODE_BACKUP" "$OPENCODE_ACTIVE"; fi
-    rm -f "$OPENCODE_TRANSACTION"
-  elif [ ! -e "$OPENCODE_ACTIVE" ] && [ -e "$OPENCODE_BACKUP" ]; then
-    mv "$OPENCODE_BACKUP" "$OPENCODE_ACTIVE"
-  elif [ -e "$OPENCODE_ACTIVE" ] && [ -e "$OPENCODE_BACKUP" ]; then
-    rm -rf "$OPENCODE_BACKUP"
-  fi
-  rm -rf "$OPENCODE_STAGE"
-  rm -f "$OPENCODE_ARCHIVE"
-}
-recover_opencode_transaction"#;
-
-fn opencode_action(download: Option<&ToolDownloadSource>) -> Result<String, String> {
-    let Some(download) = download else {
-        return Ok(r#"remove_pnpm_agent opencode-ai opencode
-echo '[ags] removing opencode data...' >&2
-rm -rf /opt/opencode-home/.opencode /opt/opencode-home/.opencode.stage /opt/opencode-home/.opencode.previous
-rm -f /opt/opencode-home/.opencode.transaction"#
-            .to_owned());
-    };
-    if download.archive != ToolArchiveFormat::TarGz
-        || download.member_match != ArchiveMemberMatch::Exact
-        || download.install_as != "opencode"
-    {
-        return Err(
-            "OpenCode release source must install an exact member named 'opencode' from tar.gz"
-                .to_owned(),
-        );
-    }
-    let x86_64 = download
-        .artifacts
-        .get("x86_64")
-        .ok_or_else(|| "OpenCode release is missing x86_64 artifact".to_owned())?;
-    let aarch64 = download
-        .artifacts
-        .get("aarch64")
-        .ok_or_else(|| "OpenCode release is missing aarch64 artifact".to_owned())?;
-    let action = r#"echo '[ags] updating opencode...' >&2
-trap recover_opencode_transaction EXIT
-case "$(uname -m)" in
-  x86_64|amd64) OPENCODE_URL=__X86_URL__; OPENCODE_SHA256=__X86_SHA__ ;;
-  aarch64|arm64) OPENCODE_URL=__ARM_URL__; OPENCODE_SHA256=__ARM_SHA__ ;;
-  *) echo 'unsupported architecture for OpenCode' >&2; exit 1 ;;
-esac
-curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-delay 1 "$OPENCODE_URL" -o "$OPENCODE_ARCHIVE"
-printf '%s  %s\n' "$OPENCODE_SHA256" "$OPENCODE_ARCHIVE" | sha256sum -c -
-mkdir -p "$OPENCODE_STAGE/bin"
-tar -xOzf "$OPENCODE_ARCHIVE" -- __MEMBER__ > "$OPENCODE_STAGE/bin/opencode"
-chmod 0755 "$OPENCODE_STAGE/bin/opencode"
-OPENCODE_ACTUAL_VERSION="$("$OPENCODE_STAGE/bin/opencode" --version)"
-[ "${OPENCODE_ACTUAL_VERSION#v}" = __VERSION__ ]
-rm -rf "$OPENCODE_BACKUP"
-if [ -e "$OPENCODE_ACTIVE" ]; then mv "$OPENCODE_ACTIVE" "$OPENCODE_BACKUP"; fi
-: > "$OPENCODE_TRANSACTION"
-mv "$OPENCODE_STAGE" "$OPENCODE_ACTIVE"
-OPENCODE_ACTUAL_VERSION="$(/opt/opencode-home/.opencode/bin/opencode --version)"
-[ "${OPENCODE_ACTUAL_VERSION#v}" = __VERSION__ ]
-rm -f "$OPENCODE_TRANSACTION"
-rm -rf "$OPENCODE_BACKUP"
-rm -f "$OPENCODE_ARCHIVE"
-trap - EXIT
-remove_pnpm_agent opencode-ai opencode"#
-        .replace("__X86_URL__", &shell_quote(&x86_64.url))
-        .replace("__X86_SHA__", &shell_quote(&x86_64.sha256))
-        .replace("__ARM_URL__", &shell_quote(&aarch64.url))
-        .replace("__ARM_SHA__", &shell_quote(&aarch64.sha256))
-        .replace("__MEMBER__", &shell_quote(&download.member))
-        .replace("__VERSION__", &shell_quote(&download.version));
-    Ok(action)
-}
-
 pub(super) fn build_install_script(
     pi_spec: &str,
     release_age: u32,
@@ -393,9 +317,9 @@ rm -rf /opt/codex-home/* /opt/codex-home/.[!.]* /opt/codex-home/..?*"#
         require_provider(Agent::Opencode, providers)?;
         let download = opencode_download
             .ok_or_else(|| "enabled OpenCode agent has no resolved release".to_owned())?;
-        opencode_action(Some(download))?
+        opencode::build_action(Some(download))?
     } else {
-        opencode_action(None)?
+        opencode::build_action(None)?
     };
     let claude_action = if enabled_agents.contains(&Agent::Claude) {
         require_provider(Agent::Claude, providers)?;
@@ -438,7 +362,7 @@ rm -rf /opt/claude-home/* /opt/claude-home/.[!.]* /opt/claude-home/..?*"#
         .join("\n");
 
     let helpers = PNPM_RECONCILE_HELPERS;
-    let opencode_recovery = OPENCODE_RECOVERY_HELPER;
+    let opencode_recovery = opencode::RECOVERY_SCRIPT;
     Ok(format!(
         r#"set -e
 mkdir -p "$HOME/.config/pnpm" /usr/local/pnpm /opt/codex-home /opt/claude-home
