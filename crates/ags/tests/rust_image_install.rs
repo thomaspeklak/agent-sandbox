@@ -3,7 +3,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
-fn install(existing: bool) -> (tempfile::TempDir, std::process::Output) {
+fn install(existing_version: Option<&str>) -> (tempfile::TempDir, std::process::Output) {
     let root = tempfile::tempdir().unwrap();
     let bin = root.path().join("cargo/bin");
     fs::create_dir_all(&bin).unwrap();
@@ -16,12 +16,15 @@ case "${0##*/}:$*" in
   'rustup:toolchain list')
     if [ -f "$TEST_ROOT/compiler" ]; then echo 'stable-x86_64-unknown-linux-gnu (default)'; fi ;;
   'rustup:toolchain install '* | 'rustup:component add '*)
-    touch "$TEST_ROOT/compiler" "$TEST_ROOT/components" ;;
+    # Updating a seeded directory on overlayfs may require a copy fallback.
+    if [ -f "$TEST_ROOT/compiler" ]; then test "${RUSTUP_PERMIT_COPY_RENAME:-}" = 1; fi
+    echo '1.99.0 (fixture)' > "$TEST_ROOT/compiler"
+    touch "$TEST_ROOT/components" ;;
   'rustup:default stable') test -f "$TEST_ROOT/compiler" ;;
   'rustc:+stable -V')
     # rustup proxies may auto-install the minimal profile on a version probe.
-    touch "$TEST_ROOT/compiler"
-    echo 'rustc 1.99.0 (fixture)' ;;
+    if [ ! -f "$TEST_ROOT/compiler" ]; then echo '1.99.0 (fixture)' > "$TEST_ROOT/compiler"; fi
+    printf 'rustc %s\n' "$(cat "$TEST_ROOT/compiler")" ;;
   'cargo:+stable -V') echo 'cargo 1.99.0' ;;
   'rustfmt:+stable --version' | 'cargo:+stable clippy --version')
     test -f "$TEST_ROOT/components" ;;
@@ -33,8 +36,8 @@ esac
         fs::write(&path, proxy).unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    if existing {
-        fs::write(root.path().join("compiler"), "").unwrap();
+    if let Some(version) = existing_version {
+        fs::write(root.path().join("compiler"), version).unwrap();
         fs::write(root.path().join("components"), "").unwrap();
     }
     let script = ags::assets::image_recipe("rust-install.sh")
@@ -43,6 +46,7 @@ esac
     fs::write(&path, script).unwrap();
     let output = Command::new("sh")
         .arg(path)
+        .env_remove("RUSTUP_PERMIT_COPY_RENAME")
         .env("TEST_ROOT", root.path())
         .env("RUST_TRIPLE", "x86_64-unknown-linux-gnu")
         .env("RUSTUP_VERSION", "1.29.1")
@@ -54,7 +58,7 @@ esac
 
 #[test]
 fn fresh_install_includes_rustfmt_and_clippy_before_version_probes() {
-    let (root, output) = install(false);
+    let (root, output) = install(None);
     assert!(
         output.status.success(),
         "{}",
@@ -71,8 +75,18 @@ fn fresh_install_includes_rustfmt_and_clippy_before_version_probes() {
 }
 
 #[test]
+fn seeded_toolchain_upgrade_permits_copy_rename() {
+    let (_, output) = install(Some("1.98.0 (fixture)"));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn unchanged_toolchain_is_not_reinstalled() {
-    let (root, output) = install(true);
+    let (root, output) = install(Some("1.99.0 (fixture)"));
     assert!(
         output.status.success(),
         "{}",

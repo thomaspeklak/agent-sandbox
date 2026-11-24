@@ -43,7 +43,8 @@ fi
 if ! rustup toolchain list | grep -Eq "^stable-$RUST_TRIPLE([[:space:]]|$)" || \
    [ "$(rustc +stable -V 2>/dev/null || true)" != "rustc $RUSTC_VERSION" ]; then
   echo "Installing Rust stable ($RUSTC_VERSION)"
-  rustup toolchain install stable --profile minimal \
+  # Overlayfs can reject renames of directories copied from the seed layer (EXDEV).
+  RUSTUP_PERMIT_COPY_RENAME=1 rustup toolchain install stable --profile minimal \
     --component rustfmt --component clippy --no-self-update
 fi
 rustup default stable
