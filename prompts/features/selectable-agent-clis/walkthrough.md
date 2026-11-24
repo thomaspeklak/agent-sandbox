@@ -36,3 +36,20 @@ unchanged environment-specific failure in
 `secrets_resolve::os_runner_kills_and_reaps_timed_out_helper`, where a killed
 descendant remains visible in this container. Networked agent installation is
 verified through generated command tests rather than executed in normal CI.
+
+## OpenCode v2 updater compatibility
+
+The OpenCode installer now accepts plain versions, `v`-prefixed versions, and
+OpenCode v2's command-prefixed output in both staged and activated validation.
+Matching remains exact. Mismatches report the phase, expected version, and actual
+output; execution failures also preserve the command's status and stderr.
+
+The OpenCode script lives in `update_agents_opencode.rs` to keep the shared
+installer module under 500 lines. Six executable-shell regression tests use a
+local checksum-verified archive to cover accepted formats, rejected output,
+execution failures, rollback to an existing install, and failed first installs.
+
+Verification passed: `cargo test -p ags`,
+`cargo clippy -p ags --all-targets -- -D warnings`, `cargo fmt --all --check`, and
+`git diff --check`. Podman is unavailable in this sandbox, so live container
+installation was not exercised.
